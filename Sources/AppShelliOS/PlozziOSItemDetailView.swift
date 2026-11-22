@@ -3908,6 +3908,7 @@ private struct PlozziOSInlineEpisodeSkeleton: View {
 }
 
 struct PlozziOSInlineEpisodeEntry: View {
+    @ScaledMetric(relativeTo: .subheadline) private var overviewFontSize: CGFloat = 15
     @Environment(\.plozzCardCaptionSettings) private var captionSettings
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozzCardStyle) private var cardStyle
@@ -3939,14 +3940,17 @@ struct PlozziOSInlineEpisodeEntry: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing) {
+        let spoilers = appModel.settings.spoilers.settings
+        let hidesText = spoilers.shouldHideText(for: episode)
+        let title = hidesText ? Text(spoilers.maskedTitle(for: episode)) : Text(verbatim: episode.title)
+        return VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing) {
             Button {
                 onPlay(episode, false)
             } label: {
                 episodeArtwork
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text(verbatim: episode.title))
+            .accessibilityLabel(title)
             // An unreleased episode has no file behind it, so tapping it can only
             // fail. It stays visible and legible — that IS the information — but
             // is inert, and its actions menu is withdrawn since none apply.
@@ -3964,7 +3968,7 @@ struct PlozziOSInlineEpisodeEntry: View {
                         )
                         .contentShape(Circle())
                 }
-                .accessibilityLabel("More actions for \(episode.title)")
+                .accessibilityLabel("More actions for \(title)")
                 .opacity(episode.isUpcomingUnaired ? 0 : 1)
                 .disabled(episode.isUpcomingUnaired)
             }
@@ -4002,25 +4006,30 @@ struct PlozziOSInlineEpisodeEntry: View {
 
             if captionSettings.showsLabels(in: .episodes) {
                 VStack(alignment: .leading, spacing: 3) {
-                    if let number = episode.episodeNumber {
+                    if !hidesText, let number = episode.episodeNumber {
                         Text("Episode \(number)")
                             .font(.caption2.weight(.semibold))
                             .textCase(.uppercase)
                             .plozzForeground(.secondary)
                     }
-                    Text(episode.title)
+                    title
                         .font(.headline)
                         .lineLimit(1)
                     if let overview = episode.overview, !overview.isEmpty {
-                        Text(overview.overviewMarkdown ?? AttributedString(overview))
-                            .font(.subheadline)
-                            .plozzForeground(.secondary)
-                            .lineLimit(2)
-                            .frame(
-                                maxWidth: .infinity,
-                                minHeight: 40,
-                                alignment: .topLeading
-                            )
+                        Group {
+                            if hidesText {
+                                SpoilerSafeOverviewText(
+                                    overview: overview, hidesSpoilers: true, mode: spoilers.mode,
+                                    lineCount: 2, fontSize: overviewFontSize, reservesSpace: false
+                                )
+                            } else {
+                                Text(overview.overviewMarkdown ?? AttributedString(overview))
+                                    .font(.subheadline)
+                                    .plozzForeground(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 40, alignment: .topLeading)
                     } else {
                         Color.clear.frame(height: 40).accessibilityHidden(true)
                     }
@@ -4055,16 +4064,9 @@ struct PlozziOSInlineEpisodeEntry: View {
     }
 
     private var episodeArtwork: some View {
-        // `.episodeThumbnail` rather than a hand-rolled `backdropURL ?? posterURL`:
-        // `backdropURL` is the SHOW's artwork, so preferring it showed series art
-        // on every episode row here while tvOS — which uses the shared placement —
-        // was correct. Going through the placement also picks up the external
-        // artwork fallback when a server has no still of its own.
-        FallbackAsyncImage(
-            references: episode.artworkReferences(for: .episodeThumbnail),
-            variant: .landscapeCard,
-            asyncFallbackURL: { await ArtworkRouter.shared.artworkURL(.thumbnail, for: episode) },
-            pinIdentity: episode.stablePresentationID
+        PlozziOSEpisodeStill(
+            item: episode, spoilers: appModel.settings.spoilers.settings,
+            showsPlaceholderWhileLoading: !captionSettings.showsLabels(in: .episodes)
         ) {
             // Shared with the tvOS cards so a missing episode still looks the same
             // on every platform; this was a bare filled rectangle with no glyph.
@@ -4076,7 +4078,6 @@ struct PlozziOSInlineEpisodeEntry: View {
                 ).titleLine
             )
         }
-        .showingPlaceholderWhileLoading(!captionSettings.showsLabels(in: .episodes))
         .frame(width: cardWidth, height: cardWidth * 9 / 16)
         .overlay {
             // The shared wash — this card's own gradient is where it came from.

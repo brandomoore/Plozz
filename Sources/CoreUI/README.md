@@ -1363,6 +1363,11 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   existing spoiler-safe title inside the artwork slot. Loaded art remains
   label-free, visible captions are not duplicated, and loading/failure never
   changes card height. Spoiler blur applies to images, not fallback names.
+  The mobile series episode rail and Episode Info use `EpisodeArtworkSource`.
+  Blur obscures an unstarted episode's still; Placeholder Art selects only show
+  artwork or a neutral placeholder, even after the real still was cached.
+  In-progress episodes keep their still, but their title and synopsis remain
+  protected until watched. Hiding ratings is a separate profile preference.
 - **Content state** — `ContentStateView` renders the `LoadState`
   loading / loaded / empty / failed states identically across features.
 - **Mobile settings surfaces** — `SettingsPageSurface` keeps the native scroll

@@ -2499,7 +2499,7 @@ final class SettingsInteractionTests: XCTestCase {
     }
 
     func testSpoilerSwitchesAndMenuRemainIndependent() {
-        openSettingsPage("Spoiler Protection", verifyTitleLayout: false)
+        openSettingsPage("All screens", verifyTitleLayout: false)
         let protection = app.switches["Protect unwatched episodes"]
         let ratings = app.switches["Hide ratings until watched"]
         let treatment = button("Thumbnail treatment")
@@ -3104,7 +3104,7 @@ final class SettingsInteractionTests: XCTestCase {
     ) {
         launch(settingsRoot: true, arguments: arguments)
         let parent: String? = switch title {
-        case "Customize Home", "Customize Libraries", "App navigation", "Detail Page", "Spoiler Protection":
+        case "Customize Home", "Customize Libraries", "App navigation", "Detail Page", "All screens":
             "Screens & Navigation"
         case "Music player", "Circadian Mode": "Appearance"
         default: nil

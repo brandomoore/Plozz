@@ -17,6 +17,30 @@ enum PlozziOSMediaLayout {
     }
 }
 
+struct PlozziOSEpisodeStill<Placeholder: View>: View {
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
+    let item: MediaItem
+    let spoilers: SpoilerSettings
+    var showsPlaceholderWhileLoading = false
+    @ViewBuilder let placeholder: () -> Placeholder
+
+    var body: some View {
+        let source = EpisodeArtworkSource(
+            item: item, spoilerSettings: spoilers, policy: artworkPolicy.forArea(.episodes)
+        )
+        FallbackAsyncImage(
+            references: source.references, variant: .landscapeCard, artworkPolicy: source.policy,
+            asyncFallbackURL: source.fallbackURL, pinIdentity: source.pinIdentity,
+            content: { image in
+                ArtworkFillImage(image)
+                    .blur(radius: spoilers.mode == .blur && spoilers.shouldHideThumbnail(for: item) ? 28 : 0)
+            },
+            placeholder: placeholder
+        )
+        .showingPlaceholderWhileLoading(showsPlaceholderWhileLoading)
+    }
+}
+
 struct PlozziOSPosterCard: View {
     let item: MediaItem?
     var style: PosterCardView.Style = .poster
