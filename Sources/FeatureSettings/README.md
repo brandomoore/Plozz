@@ -3,7 +3,8 @@
 **Tracker v1 exposure:** Connecting a tracker starts its supported tracking activity.
 The first switch is named for the service (for example, **Use Trakt**). Turning it off
 pauses tracking without disconnecting. **Watch history** groups 2-way sync, its libraries
-and the last result. Library controls are hidden when 2-way sync is off. Turning it on
+and the last result. A **Beta** badge appears beside **2-way sync** before and after
+opt-in; it does not apply to playback reporting. Library controls are hidden when 2-way sync is off. Turning it on
 asks which libraries to sync; canceling reads no history and leaves sync off. **Start sync**
 enrolls only the confirmed libraries. Once enabled, one library displays its name and badge directly. For multiple libraries,
 the collapsed row shows the selected count; expanding it lists each library once with its badge and switch.

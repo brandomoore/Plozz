@@ -52,10 +52,30 @@ struct TrackerHistorySyncNavigationRow: View {
         SettingsPageLink {
             TrackerHistorySyncSettingsView(session: session, sync: sync)
         } label: {
-            SettingsDisclosureLabel { Text("2-way sync") }
+            SettingsDisclosureLabel { TrackerTwoWaySyncLabel() }
         }
         .settingsActionRow()
         .accessibilityIdentifier("tracker-history.ongoing-sync")
+    }
+}
+
+private struct TrackerTwoWaySyncLabel: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(spacing: 8))
+        layout {
+            Text("2-way sync")
+            Text("Beta")
+                .font(.caption.weight(.medium))
+                .settingsRowSecondary()
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(.quaternary, in: Capsule())
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -127,7 +147,7 @@ private struct TrackerTwoWaySyncRows: View {
             SettingsSectionGroup("Watch history") {
                 controls
             } footer: {
-                Text("Beta: Changes from \(trackerName) update matching titles in Plozz, not on Plex, Jellyfin, or Emby.")
+                Text("Changes from \(trackerName) update matching titles in Plozz, not on Plex, Jellyfin, or Emby.")
                 if sync.isEnabled && !sync.isBusy && !sync.identity.allowsForegroundChecks {
                     Text("Use Sync now to check for later changes.").font(.footnote).plozzForeground(.secondary)
                 }
@@ -139,7 +159,7 @@ private struct TrackerTwoWaySyncRows: View {
     }
 
     @ViewBuilder private var controls: some View {
-        Toggle("2-way sync", isOn: Binding(get: { sync.isEnabled }, set: setEnabled))
+        Toggle(isOn: Binding(get: { sync.isEnabled }, set: setEnabled)) { TrackerTwoWaySyncLabel() }
             .accessibilityIdentifier("tracker-history.sync-enabled")
             .disabled(!sync.isEnabled && sync.isBusy)
             .sheet(isPresented: $choosingLibraries, onDismiss: finishLibraryChoice) {
