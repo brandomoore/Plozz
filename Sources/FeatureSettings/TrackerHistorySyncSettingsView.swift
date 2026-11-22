@@ -103,20 +103,17 @@ private struct TrackerTwoWaySyncRows: View {
         shares.contains { $0.id != share.id && $0.serverName == share.serverName } ? share.historyDisplayName : share.serverName
     }
     private var selectedShares: [TrackerHistoryImportSession.Destination] {
-        shares.filter { selected.contains($0.id) }
+        let ids = selected
+        return shares.filter { ids.contains($0.id) }
     }
     private var destinations: String { selectedShares.map(name).formatted(.list(type: .and)) }
     private var librarySummary: some View {
         LabeledContent("Libraries") {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(selectedShares.prefix(3)) { share in
-                    TrackerLibraryLabel(name: name(share), transport: share.transportKind)
-                }
-                if selectedShares.count > 3 {
-                    Text("+\(selectedShares.count - 3)")
-                } else if selectedShares.isEmpty {
-                    Text("None")
-                }
+            HStack(spacing: 6) {
+                Text("\(selectedShares.count) of \(shares.count) selected")
+                Image(systemName: editingLibraries ? "chevron.up" : "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .accessibilityHidden(true)
             }
         }
     }

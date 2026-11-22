@@ -628,6 +628,11 @@ private final class AtlasModel {
             sources.append(.init(kind: .mediaShare, id: "cedar", name: "Cedar Loft", user: "Mara"))
             if !arguments.contains("--history-single-share") {
                 sources.append(.init(kind: .mediaShare, id: "mariner", name: "Mariner Archive", user: "Theo"))
+                if arguments.contains("--history-ten-shares") {
+                    for number in 3...10 {
+                        sources.append(.init(kind: .mediaShare, id: "archive-\(number)", name: "Archive \(number)", user: "Mara"))
+                    }
+                }
             }
         }
         providers = sources

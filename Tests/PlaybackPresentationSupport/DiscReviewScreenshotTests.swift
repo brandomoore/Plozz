@@ -362,9 +362,9 @@ extension AtlasUI {
         }
         app.terminate()
     }
-    private func openConnectedAccount(serversOnly: Bool = false, singleShare: Bool = false) {
+    private func openConnectedAccount(serversOnly: Bool = false, singleShare: Bool = false, tenShares: Bool = false) {
         start("trackers", ["--history-ongoing-sync"] + (serversOnly ? ["--history-servers-only"] : [])
-              + (singleShare ? ["--history-single-share"] : []))
+              + (singleShare ? ["--history-single-share"] : []) + (tenShares ? ["--history-ten-shares"] : []))
         #if os(tvOS)
         go(el("settings-page-publicmetadb"))
         #else
@@ -454,6 +454,33 @@ extension AtlasUI {
         XCTAssertTrue(el("tracker-history.sync-server.cedar").label.contains("Cedar Loft, SMB"))
         XCTAssertTrue(el("tracker-history.sync-server.mariner").label.contains("Mariner Archive, WebDAV"))
         shot("library-badge-picker")
+    }
+
+    func testTenLibrariesUseOneSummaryAndUpdateItsCount() {
+        openConnectedAccount(tenShares: true)
+        defer { app.terminate() }
+        let libraries = el("tracker-history.libraries")
+        let cedar = el("tracker-history.sync-server.cedar")
+        func assertSummary(_ count: Int) {
+            let text = "\(libraries.label) \(libraries.value as? String ?? "")"
+            XCTAssertTrue(text.contains("\(count) of 10 selected"), text)
+            XCTAssertFalse(text.contains("Cedar Loft") || text.contains("Mariner Archive"), text)
+        }
+        assertSummary(10)
+        XCTAssertFalse(cedar.exists)
+        shot("ten-libraries-collapsed")
+        go(libraries)
+        assertSummary(10)
+        XCTAssertTrue(cedar.label.contains("Cedar Loft, SMB"))
+        go(cedar)
+        assertSummary(9)
+        shot("ten-libraries-expanded")
+        #if os(tvOS)
+        XCUIRemote.shared.press(.up)
+        #endif
+        go(libraries)
+        XCTAssertTrue(cedar.waitForNonExistence(timeout: 5))
+        assertSummary(9)
     }
     func testDisconnect() { scenario("connected",[("","account-connected","@publicmetadb.enabled"),("Disconnect","account-disconnect-confirm","Disconnect PublicMetaDB?")]) }
     func testReplace() { scenario("connected",[("Replace API key","account-replace-confirm","Replace this profile")]) }
