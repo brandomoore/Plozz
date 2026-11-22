@@ -175,7 +175,9 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         let text = VNRecognizeTextRequest()
         try VNImageRequestHandler(cgImage: XCTUnwrap(row.image.cgImage)).perform([text])
         let lines = try XCTUnwrap(text.results)
-        XCTAssertTrue(lines.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ").contains("Trakt"))
+        let visible = lines.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+        XCTAssertEqual(visible.replacingOccurrences(of: "'", with: "’"), message.label,
+                       "Check rendered words, not the untruncated accessibility label")
         let ink = lines.reduce(CGRect.null) { $0.union($1.boundingBox) }
         XCTAssertGreaterThanOrEqual(ink.minY * message.frame.height, 10, "Last line crowds the bottom edge")
         XCTAssertGreaterThanOrEqual((1 - ink.maxY) * message.frame.height, 10, "First line crowds the divider")

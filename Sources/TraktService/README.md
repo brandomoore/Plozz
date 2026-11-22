@@ -124,6 +124,11 @@ pagination totals, exact page sizes and unique record IDs. The relevant
 capped, malformed or changing results fail the comparison instead of becoming a
 partial import. Reads reuse coordinated OAuth refresh and retain profile/grant
 fences before and after each request.
+If only the final watch page corrects the total downward and its size explains the
+correction exactly, Plozz discards that read and checks two open-ended date ranges.
+Both must paginate completely and together reproduce the exact set of individual
+play IDs. A mismatch, duplicate outside the overlap, or activity change still stops sync.
+Paused playback and export do not use this recovery path.
 When diagnostics are enabled, `TRAKT_HISTORY incomplete` records which check rejected
 the response (activity timestamps, pagination, or duplicate records). It uses fixed labels,
 never account identifiers, URLs, header values, or watch history.

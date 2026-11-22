@@ -108,6 +108,36 @@ final class TraktHistorySnapshotTests: XCTestCase {
         }
     }
 
+    func testLowerFinalWatchCountRequiresExactMembershipAcrossIndependentDateRanges() async throws {
+        let old = (1...100).map { watch($0).replacingOccurrences(of: date, with: "2000-05-01T12:00:00Z") }
+        let recent = watch(101).replacingOccurrences(of: date, with: "2090-05-01T12:00:00Z")
+        let unexpectedID = recent.replacingOccurrences(of: #""id":101"#, with: #""id":102"#)
+        for (lastRange, count, activityChanged) in [(recent, 1, false), ("", 0, false), (unexpectedID, 1, false), (recent, 1, true)] {
+            let http = RecordingHTTPClient()
+            http.stub(pathSuffix: "/sync/last_activities", json: activity())
+            if activityChanged {
+                http.stub(pathSuffix: "/sync/last_activities", json: activity("2026-10-24T12:00:01.000Z"))
+            }
+            let path = "/users/me/history"
+            let full = "[" + old.joined(separator: ",") + "]"
+            http.stub(pathSuffix: path, json: full, headers: headers(count: 105))
+            http.stub(pathSuffix: path, json: "[\(recent)]", headers: headers(page: 2, count: 101))
+            http.stub(pathSuffix: path, json: full, headers: headers(count: 100))
+            http.stub(pathSuffix: path, json: "[\(lastRange)]", headers: headers(count: count))
+            http.stub(pathSuffix: "/sync/playback", json: "[]", headers: headers())
+            if lastRange == recent && !activityChanged {
+                let result = try await snapshot(http)
+                XCTAssertEqual(Set(result.observations.map(\.recordID)), Set((1...101).map { "watched/\($0)" }))
+            } else {
+                do { _ = try await snapshot(http); XCTFail("Missing, substituted or changing history must not authorize sync") }
+                catch { XCTAssertEqual(error as? TrackerHistoryError, .incompleteSnapshot) }
+                XCTAssertEqual(http.sentPaths.contains("/sync/playback"), activityChanged)
+            }
+            XCTAssertEqual(http.sent.filter { $0.path == path }.map { $0.queryItems.map(\.name) },
+                           [["page", "limit"], ["page", "limit"], ["end_at", "page", "limit"], ["start_at", "page", "limit"]])
+        }
+    }
+
     func testActivityChangesInvalidateTheWholeSnapshot() async {
         let http = http(history: "[\(watch())]", historyCount: 1)
         http.stub(pathSuffix: "/sync/last_activities", json: activity("2026-10-24T12:00:01.000Z"))

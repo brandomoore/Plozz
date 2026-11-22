@@ -44,7 +44,15 @@ struct TrackerHistoryImportFixture: View {
                             makeSession: model.makeExportSession
                         )
                     } else if ProcessInfo.processInfo.arguments.contains("--history-direct-sync") {
+                        #if os(iOS)
+                        List {
+                            TrackerHistorySyncLink(makeSession: model.makeSession)
+                                .settingsSearchGroup(SettingsSearchCatalog.targets(on: .trakt))
+                        }
+                        .settingsPageSurface()
+                        #else
                         TrackerHistorySyncLink(makeSession: model.makeSession)
+                        #endif
                     } else {
                         TrackerHistoryImportView(makeSession: model.makeSession)
                     }

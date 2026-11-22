@@ -9,7 +9,50 @@ enum TraktHistoryDiagnostics {
     }
 }
 
-struct TraktHistoryRecord: Decodable, Sendable {
+struct TraktCorrectedWatchTotal: Error {
+    let ids: Set<Int>
+}
+
+extension TraktClient {
+    func verifyWatchRanges(
+        _ correction: TraktCorrectedWatchTotal, accessToken: String,
+        validateScope: @escaping @Sendable () async throws -> Void
+    ) async throws -> [TraktHistoryRecord] {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = .gmt
+        guard let boundary = calendar.dateInterval(of: .year, for: Date())?.start else {
+            throw TrackerHistoryError.incompleteSnapshot
+        }
+        // Open-ended halves cover all dates. Overlap by a second so boundary inclusivity
+        // cannot drop a play. Only identical copies of the same play may overlap.
+        let start = boundary.addingTimeInterval(-1)
+        var verified: [Int: TraktHistoryRecord] = [:]
+        for (field, cutoff) in [("end_at", boundary), ("start_at", start)] {
+            let records: [TraktHistoryRecord] = try await paginatedGET(
+                path: "/users/me/history", accessToken: accessToken, requiresCompleteEvidence: true,
+                query: [URLQueryItem(name: field, value: cutoff.formatted(.iso8601))], validateScope: validateScope
+            )
+            for record in records {
+                guard correction.ids.contains(record.id),
+                      let date = record.watchedAt.flatMap(Self.parseTimestamp),
+                      field == "end_at" ? date <= cutoff : date >= cutoff else {
+                    throw TraktHistoryDiagnostics.incomplete("watches", "date-range")
+                }
+                if let previous = verified.updateValue(record, forKey: record.id) {
+                    guard (start...boundary).contains(date), previous == record else {
+                        throw TraktHistoryDiagnostics.incomplete("watches", "range-overlap")
+                    }
+                }
+            }
+        }
+        guard verified.count == correction.ids.count else {
+            throw TraktHistoryDiagnostics.incomplete("watches", "range-membership")
+        }
+        return verified.values.sorted { $0.id < $1.id }
+    }
+}
+
+struct TraktHistoryRecord: Decodable, Equatable, Sendable {
     let id: Int
     let type: String
     let movie: TraktMovieRef?

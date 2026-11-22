@@ -132,6 +132,9 @@ private struct TrackerTwoWaySyncRows: View {
                     Text("Use Sync now to check for later changes.").font(.footnote).plozzForeground(.secondary)
                 }
             }
+            #if os(iOS)
+            .fixedSize(horizontal: false, vertical: true)
+            #endif
         }
     }
 
@@ -168,7 +171,9 @@ private struct TrackerTwoWaySyncRows: View {
                 } else { TrackerHistoryImportFailure(error: error) }
             }
             #if os(iOS)
+            .lineLimit(nil)
             .padding(.vertical, MobileSettingsMetrics.descriptionBottomInset - MobileSettingsMetrics.controlVerticalInset)
+            .fixedSize(horizontal: false, vertical: true)
             #endif
         } else if sync.isEnabled {
             syncResult

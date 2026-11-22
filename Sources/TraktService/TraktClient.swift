@@ -285,10 +285,15 @@ struct TraktClient: Sendable {
         validateScope: @escaping @Sendable () async throws -> Void
     ) async throws -> TrackerHistorySnapshot {
         let before = try await historyActivity(accessToken: accessToken, validateScope: validateScope)
-        let watches: [TraktHistoryRecord] = try await paginatedGET(
-            path: "/users/me/history", accessToken: accessToken,
-            requiresCompleteEvidence: true, validateScope: validateScope
-        )
+        let watches: [TraktHistoryRecord]
+        do {
+            watches = try await paginatedGET(
+                path: "/users/me/history", accessToken: accessToken,
+                requiresCompleteEvidence: true, reportCorrectedWatchTotal: true, validateScope: validateScope
+            )
+        } catch let correction as TraktCorrectedWatchTotal {
+            watches = try await verifyWatchRanges(correction, accessToken: accessToken, validateScope: validateScope)
+        }
         let resumes: [TraktHistoryRecord] = try await paginatedGET(
             path: "/sync/playback", accessToken: accessToken,
             requiresCompleteEvidence: true, validateScope: validateScope
@@ -330,6 +335,7 @@ struct TraktClient: Sendable {
     func paginatedGET<T: Decodable & TraktPageIdentifiable>(
         path: String, accessToken: String?, requiresCompleteEvidence: Bool,
         query: [URLQueryItem] = [], maximumResponseBytes: Int? = nil,
+        reportCorrectedWatchTotal: Bool = false,
         validateScope: @Sendable () async throws -> Void
     ) async throws -> [T] {
         let limit = 100
@@ -384,6 +390,15 @@ struct TraktClient: Sendable {
                       let count = response.value(forHTTPHeaderField: "X-Pagination-Item-Count").flatMap(Int.init),
                       let pages = response.value(forHTTPHeaderField: "X-Pagination-Page-Count").flatMap(Int.init) else {
                     throw TraktHistoryDiagnostics.incomplete(source, "pagination-headers")
+                }
+                // Some unfiltered watch histories advertise a larger total until the last page.
+                // Never return that read. Supply only its IDs for a separately verified read.
+                if reportCorrectedWatchTotal, let original = expectedItemCount, count < original,
+                   expectedPageCount == pages, page == pages, page > 1,
+                   !entries.isEmpty, entries.count <= limit, seenIDs.count + entries.count == count {
+                    let ids = seenIDs.union(entries.map(\.id))
+                    guard ids.count == count else { throw TraktHistoryDiagnostics.incomplete(source, "duplicate-record") }
+                    throw TraktCorrectedWatchTotal(ids: ids)
                 }
                 guard (0...(limit * maximumPages)).contains(count),
                       (expectedItemCount == nil || expectedItemCount == count),

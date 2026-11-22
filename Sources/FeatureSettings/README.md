@@ -7,7 +7,8 @@ and the last result. Library controls are hidden when 2-way sync is off. Turning
 asks which libraries to sync; canceling reads no history and leaves sync off. **Start sync**
 enrolls only the confirmed libraries. Once enabled, one library displays its name and badge directly. For multiple libraries,
 the collapsed row shows the selected count; expanding it lists each library once with its badge and switch.
-On mobile, wrapped sync errors use the same inner clearance as Settings descriptions; the group owns the horizontal inset.
+On mobile, the Settings list must show the entire sync error at the available width.
+Wrapped errors use the same inner clearance as Settings descriptions; the group owns the horizontal inset.
 **Account** groups connection status and account actions. Every tracker uses a red **Disconnect** button.
 **2-way sync** brings supported
 tracker activity into matching Plozz libraries. On first enrollment, **Sync history**
