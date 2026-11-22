@@ -16,10 +16,11 @@ earlier builds.
 Connecting a new PublicMetaDB tracking account enables playback reporting. The
 account's tracker switch can pause it without disconnecting. Refreshing a saved
 key preserves the previous reporting choice; it never opts an existing user in.
-Only **File share sync (Beta)** requires separate beta enrollment. An existing
-pre-beta sync grant cannot authorize a foreground or manual sync. The opt-in
-and cancellation flow was checked on iPhone and Apple TV simulators; the live
-provider results below predate that change.
+**Enable 2-way sync** is separate from normal reporting. Enabling it checks for
+new activity and offers **Sync history / Skip** for existing watches. Neither
+choice changes managed-server watch state. Earlier builds did not offer historical
+sync. The live provider results below predate the history choice; they do not
+verify the new enrollment flow. A pre-beta grant cannot authorize checks.
 
 The branch is not merge-ready. Integration `8ae592a88caa` includes `main`
 through `cd5468e5dd37`. The iPhone simulator app built and installed from

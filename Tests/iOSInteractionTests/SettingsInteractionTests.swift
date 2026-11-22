@@ -1221,14 +1221,48 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertFalse(app.buttons["Micro"].exists)
     }
 
-    func testTrackersHideUnreleasedWetrakr() {
+    func testTrackersOpenNamedAccountPagesAndReturnToOneList() {
         openSettingsPage("Trackers")
-        let wetrakr = NSPredicate(format: "label CONTAINS[c] %@", "WeTrakr")
-        for _ in 0..<3 {
-            XCTAssertEqual(app.buttons.matching(wetrakr).count, 0, app.debugDescription)
-            XCTAssertEqual(app.staticTexts.matching(wetrakr).count, 0, app.debugDescription)
-            app.collectionViews.firstMatch.swipeUp()
+        XCTAssertFalse(app.buttons["settings-page-wetrakr"].exists)
+        XCTAssertFalse(app.buttons["settings-page-lastfm"].exists)
+        XCTAssertFalse(app.buttons["publicmetadb.pair"].exists, "The index has links, not account controls.")
+        for (id, title) in [("trakt", "Trakt"), ("simkl", "Simkl"), ("anilist", "AniList"),
+                            ("mal", "MyAnimeList"), ("publicmetadb", "PublicMetaDB")] {
+            let row = app.buttons["settings-page-\(id)"]
+            reveal(row)
+            row.tap()
+            let bar = app.navigationBars[title]
+            XCTAssertTrue(bar.waitForExistence(timeout: 5), app.debugDescription)
+            if id == "publicmetadb" {
+                XCTAssertTrue(app.buttons["publicmetadb.pair"].waitForExistence(timeout: 5))
+            } else {
+                XCTAssertFalse(app.buttons["publicmetadb.pair"].exists)
+            }
+            bar.buttons["BackButton"].tap()
+            XCTAssertTrue(app.navigationBars["Trackers"].waitForExistence(timeout: 5))
         }
+    }
+
+    func testTrackerSearchOpensAccountControlWithoutVisitingIndex() {
+        launchNavigation(directPresentation: true)
+        app.buttons["fixture-open-settings"].tap()
+        let field = app.searchFields.firstMatch
+        if !field.waitForExistence(timeout: 2) { app.buttons["Search"].tap() }
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("PublicMetaDB API key")
+        let result = app.buttons["settings-search-result-publicmetadb-account"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        result.tap()
+        let bar = app.navigationBars["PublicMetaDB"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5))
+        let connect = app.buttons["publicmetadb.pair"]
+        XCTAssertTrue(connect.waitForExistence(timeout: 5))
+        XCTAssertTrue(connect.isHittable, "The connection prerequisite must be visible without scrolling.")
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            bar.buttons["BackButton"].tap()
+        }
+        XCTAssertTrue(result.waitForExistence(timeout: 5), "Search must not add Trackers to the back stack.")
     }
 
     func testRootOrganizationMatchesAcrossAdaptiveLayouts() {

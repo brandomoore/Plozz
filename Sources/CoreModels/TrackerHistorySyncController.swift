@@ -34,6 +34,18 @@ public enum TrackerHistorySyncError: Error, Equatable {
     case unavailable, permissionChanged, historyTooLarge, timedOut, revocationFailed
 }
 
+public struct TrackerHistorySyncResult: Codable, Equatable, Sendable {
+    public let completedAt: Date
+    public let confirmedCount: Int
+    public let hasMoreChanges: Bool
+}
+
+public enum TrackerHistorySyncCheckStatus: String, Codable, Sendable {
+    /// Started, but no finish was recorded (including cancellation or process exit).
+    case incomplete
+    case failed, completed
+}
+
 public struct TrackerHistorySyncGrant: DurableLocalStateValue, Equatable {
     public static let durableLocalStateSchemaID = "tracker-history-sync-grant.v1"
     static let currentBetaConsentVersion = 1
@@ -50,6 +62,12 @@ public struct TrackerHistorySyncGrant: DurableLocalStateValue, Equatable {
     var enrollmentIDs: [String: UUID]?
     // An absent version is a pre-beta grant, not consent to this beta.
     var betaConsentVersion: Int?
+    // Applies only to original shares with uninterrupted watched consent.
+    var includesExistingWatched: Bool?
+    var checkID: UUID?
+    public internal(set) var lastCheckStatus: TrackerHistorySyncCheckStatus?
+    /// The last successful check of this selection, not necessarily the latest attempt.
+    public internal(set) var lastCompletedResult: TrackerHistorySyncResult?
 
     var authorizesSync: Bool { enabled && betaConsentVersion == Self.currentBetaConsentVersion }
 }
@@ -67,8 +85,10 @@ public final class TrackerHistorySyncController {
     public var isBusy: Bool { isWorking || isEditing }
     private var isWorking = false
     private var isEditing = false
-    public private(set) var confirmedCount = 0
-    public private(set) var hasMoreChanges = false
+    public var confirmedCount: Int { grant?.lastCompletedResult?.confirmedCount ?? 0 }
+    public var hasMoreChanges: Bool { grant?.lastCompletedResult?.hasMoreChanges ?? false }
+    /// Only this controller's fresh enrollment can offer a choice. Never restored from disk.
+    public private(set) var pendingHistoryGrantID: UUID?
     private let store: DurableLocalStateStore
     private let isAuthorized: @MainActor @Sendable () -> Bool
     private let makeSession: @MainActor (
@@ -140,17 +160,22 @@ public final class TrackerHistorySyncController {
                 guard !stored.scope.accounts.isEmpty, !stored.categories.isEmpty, stored.reviewCount >= 0 else {
                     throw DurableLocalStateError.malformedPayload
                 }
+                if let result = stored.lastCompletedResult, result.confirmedCount < 0 {
+                    throw DurableLocalStateError.malformedPayload
+                }
                 if let enrollments = stored.enrollmentIDs,
                    !Set(enrollments.keys).isSubset(of: Set(stored.scope.accounts.map(\.accountID))) {
                     throw DurableLocalStateError.malformedPayload
                 }
             }
             grant = stored
+            if !isEnabled || pendingHistoryGrantID != stored?.id { pendingHistoryGrantID = nil }
             error = nil
         } catch { report(error) }
     }
 
     public func stop() {
+        pendingHistoryGrantID = nil
         generation = UUID()
         operation?.cancel()
         activeSession?.cancel()
@@ -194,6 +219,7 @@ public final class TrackerHistorySyncController {
         reviewedSnapshot: @MainActor () async throws -> TrackerHistorySnapshot
     ) async {
         guard !isBusy else { return }
+        pendingHistoryGrantID = nil
         isWorking = true
         generation = UUID()
         let current = generation
@@ -205,6 +231,7 @@ public final class TrackerHistorySyncController {
             }
             let selectedScope = try contextScope.selectingAccounts(accountIDs)
             guard permits(selectedScope) else { throw TrackerHistoryError.invalidSelection }
+            let previous: TrackerHistorySyncGrant? = try store.load(for: grantKey())
             let reviewed = try await reviewedSnapshot()
             try requireContext(current)
             let session = try makeSession(contextScope, isAuthorized)
@@ -215,7 +242,9 @@ public final class TrackerHistorySyncController {
             guard snapshot.observations.count <= Self.maximumObservations else {
                 throw TrackerHistorySyncError.historyTooLarge
             }
-            let previous: TrackerHistorySyncGrant? = try store.load(for: grantKey())
+            guard try store.load(TrackerHistorySyncGrant.self, for: grantKey()) == previous else {
+                throw TrackerHistorySyncError.permissionChanged
+            }
             var next = TrackerHistorySyncGrant(
                 id: UUID(), identity: identity, scope: selectedScope,
                 categories: categories, createdAt: Date(), enabled: false, reviewCount: 0,
@@ -236,16 +265,17 @@ public final class TrackerHistorySyncController {
                 await Task.yield()
             }
             try requireContext(current)
+            guard try store.load(TrackerHistorySyncGrant.self, for: grantKey()) == next else {
+                removeLedger(next)
+                throw TrackerHistorySyncError.permissionChanged
+            }
             next.enabled = true
             try store.save(next, for: grantKey())
             grant = next
             revocationPending = false
             error = nil
-            if let previous {
-                for index in 0..<Self.bucketCount {
-                    try store.remove(bucketKey(previous, index))
-                }
-            }
+            pendingHistoryGrantID = categories.contains(.watched) ? next.id : nil
+            if let previous { removeLedger(previous) }
         } catch {
             if generation == current { report(error) }
         }
@@ -296,8 +326,9 @@ public final class TrackerHistorySyncController {
             let latest = try requireGrant(previous, current)
             var next = TrackerHistorySyncGrant(
                 id: UUID(), identity: identity, scope: scope, categories: categories,
-                createdAt: latest.createdAt, enabled: true, lastAttemptAt: latest.lastAttemptAt,
-                reviewCount: latest.reviewCount, enrollmentIDs: enrollments, betaConsentVersion: latest.betaConsentVersion
+                createdAt: latest.createdAt, enabled: true,
+                reviewCount: latest.reviewCount, enrollmentIDs: enrollments, betaConsentVersion: latest.betaConsentVersion,
+                includesExistingWatched: categories.contains(.watched) ? latest.includesExistingWatched : nil
             )
             do {
                 var buckets = try loadBuckets(latest)
@@ -368,24 +399,75 @@ public final class TrackerHistorySyncController {
         for index in 0..<Self.bucketCount { try? store.remove(bucketKey(obsolete, index)) }
     }
 
+    public func skipExistingHistory(for grantID: UUID) {
+        if pendingHistoryGrantID == grantID { pendingHistoryGrantID = nil }
+    }
+
+    public func syncExistingHistory(for grantID: UUID) async {
+        guard pendingHistoryGrantID == grantID else { return }
+        let current = generation
+        // A foreground check may already be settling receipts. Don't cancel a
+        // dispatched write or start a second writer for the same ledger.
+        if let operation { await operation.value }
+        guard pendingHistoryGrantID == grantID, generation == current, !isBusy,
+              isEnabled, let grant, grant.id == grantID, grant.categories.contains(.watched) else { return }
+        await runCheck(grant, admittingExistingHistory: true)
+    }
+
     public func synchronize(manual: Bool = true) async {
         guard !isBusy, !revocationPending else { return }
         reload()
         guard error == nil, isEnabled, let grant else { return }
         guard manual || (identity.allowsForegroundChecks
             && Date().timeIntervalSince(grant.lastAttemptAt ?? .distantPast) >= 15 * 60) else { return }
+        await runCheck(grant, admittingExistingHistory: false)
+    }
+
+    private func runCheck(_ expected: TrackerHistorySyncGrant, admittingExistingHistory: Bool) async {
+        guard !isBusy else { return }
+        if admittingExistingHistory {
+            guard pendingHistoryGrantID == expected.id else { return }
+            pendingHistoryGrantID = nil
+        }
+        let current = UUID()
+        var admitted: TrackerHistorySyncGrant
+        do {
+            admitted = try requireGrant(expected, generation)
+            if admittingExistingHistory {
+                guard admitted.includesExistingWatched != true else { return }
+                admitted.includesExistingWatched = true
+            }
+            admitted.lastAttemptAt = Date()
+            admitted.checkID = current
+            admitted.lastCheckStatus = .incomplete
+            // Publish consent and the start of its check atomically. A relaunch
+            // after this write can never present this attempt as a success.
+            try store.save(admitted, for: grantKey())
+            grant = admitted
+            error = nil
+        } catch {
+            if error as? TrackerHistorySyncError == .permissionChanged { reload() }
+            report(error)
+            return
+        }
         #if canImport(OSLog)
         Logger(subsystem: "com.plozz.app", category: "tracker-history")
             .debug("Tracker history synchronization started")
         #endif
         isWorking = true
-        generation = UUID()
-        let current = generation
-        let work = Task { await perform(grant, generation: current) }
+        generation = current
+        let work = Task { [admitted] in
+            await perform(admitted, generation: current, drainBatches: admittingExistingHistory)
+            activeSession?.cancel()
+            activeSession = nil
+            operation = nil
+            isWorking = false
+        }
         operation = work
-        let deadline = Task {
+        let deadline = Task { [admitted] in
             do { try await Task.sleep(for: .seconds(60)) } catch { return }
-            guard generation == current else { return }
+            guard generation == current, operation != nil else { return }
+            markCheckFailed(admitted, current)
             stop()
             report(TrackerHistorySyncError.timedOut)
         }
@@ -395,117 +477,41 @@ public final class TrackerHistorySyncController {
             work.cancel()
         }
         deadline.cancel()
-        activeSession?.cancel()
-        activeSession = nil
-        operation = nil
-        isWorking = false
     }
 
-    private func perform(_ initial: TrackerHistorySyncGrant, generation current: UUID) async {
+    private func markCheckFailed(_ expected: TrackerHistorySyncGrant, _ current: UUID) {
+        guard var latest = try? requireCheck(expected, current) else { return }
+        latest.lastCheckStatus = .failed
+        if let buckets = try? loadBuckets(latest) { latest.reviewCount = Self.reviewCount(buckets) }
         do {
-            try requireGrant(initial, current)
-            var persisted = initial
-            persisted.lastAttemptAt = Date()
-            try store.save(persisted, for: grantKey())
-            grant = persisted
-            confirmedCount = 0
-            hasMoreChanges = false
+            try store.save(latest, for: grantKey())
+            grant = latest
+        } catch { report(error) }
+    }
+
+    private func perform(_ initial: TrackerHistorySyncGrant, generation current: UUID, drainBatches: Bool) async {
+        do {
+            try requireCheck(initial, current)
+            var confirmed = 0
+            var more = false
             var buckets = try loadBuckets(initial)
             for account in initial.scope.accounts {
-                try requireGrant(initial, current)
                 let scope = try initial.scope.selectingAccounts([account.accountID])
-                let session = try makeSession(scope) { [weak self] in
-                    guard let self else { return false }
-                    do {
-                        try self.requireGrant(initial, current)
-                        return true
-                    } catch {
-                        if self.generation == current { self.report(error) }
-                        return false
-                    }
-                }
-                activeSession = session
-                var considered: Set<String> = []
-                var hashes: [String: String] = [:]
-                await session.compare { snapshot in
-                    try self.requireGrant(initial, current)
-                    guard snapshot.trackerID == initial.identity.trackerID else {
-                        throw TrackerHistoryError.scopeChanged
-                    }
-                    guard snapshot.observations.count <= Self.maximumObservations else {
-                        throw TrackerHistorySyncError.historyTooLarge
-                    }
-                    var newRecords: [String] = []
-                    for observation in snapshot.observations {
-                        let hash = try Self.fingerprint(observation)
-                        hashes[observation.recordID] = hash
-                        guard initial.categories.contains(where: { $0.includes(observation.fact) }),
-                              !Self.isEnrolled(hash, account.accountID, initial, buckets) else { continue }
-                        let receipt = Self.receiptKey(account.accountID, hash, initial)
-                        if buckets[Self.bucket(receipt)].receipts[receipt] == nil {
-                            newRecords.append(observation.recordID)
-                        }
-                    }
-                    self.hasMoreChanges = self.hasMoreChanges || newRecords.count > Self.batchSize
-                    considered = Set(newRecords.sorted().prefix(Self.batchSize))
-                    return considered
-                }
-                try requireGrant(initial, current)
-                if let error = session.error { throw error }
-                guard let plan = session.plan else { throw TrackerHistoryError.incompleteSnapshot }
-                let rows = plan.rows.filter { !considered.isDisjoint(with: $0.recordIDs) }
-                var selected: Set<UUID> = []
-                var continuations: Set<UUID> = []
-                for row in rows {
-                    if row.comparison == .playing {
-                        #if canImport(OSLog)
-                        Logger(subsystem: "com.plozz.app", category: "tracker-history")
-                            .debug("Tracker history synchronization skipped active playback")
-                        #endif
-                        continue
-                    }
-                    let receipt: Receipt
-                    let targetKey = row.target.map { Self.digest(Data($0.id.utf8)) }
-                    let blocked = targetKey.map { buckets[Self.bucket($0)].blockedTargets.contains($0) } ?? false
-                    let continues = try canContinue(row, plan: plan, hashes: hashes, grant: initial, buckets: buckets)
-                    if (row.comparison == .ready || continues), let change = row.change,
-                       !change.isDestructive, !blocked {
-                        receipt = .pending
-                        selected.insert(row.id)
-                        if continues { continuations.insert(row.id) }
-                    } else if row.comparison == .alreadyMatches {
-                        receipt = .matched
-                    } else {
-                        receipt = .review
-                    }
-                    try record(
-                        receipt, row: row, hashes: hashes, accountID: account.accountID,
-                        grant: initial, buckets: &buckets
+                var remaining: Set<String>?
+                repeat {
+                    let batch = try await processBatch(
+                        scope: scope, accountID: account.accountID, grant: initial, generation: current,
+                        remaining: remaining, buckets: &buckets
                     )
-                }
-                if !selected.isEmpty {
-                    try requireGrant(initial, current)
-                    persisted.reviewCount = Self.reviewCount(buckets)
-                    try store.save(persisted, for: grantKey())
-                    grant = persisted
-                    await session.apply(
-                        rowIDs: selected, overridingConflicts: continuations, confirmsDestructiveChanges: false
-                    )
-                    try requireGrant(initial, current)
-                    for row in rows where session.outcomes[row.id] == .confirmed {
-                        try record(
-                            .confirmed, row: row, hashes: hashes, accountID: account.accountID,
-                            grant: initial, buckets: &buckets, confirmedBaseline: session.confirmedBaselines[row.id]
-                        )
-                        confirmedCount += 1
-                    }
-                    if let error = session.error { throw error }
-                }
-                session.cancel()
-                activeSession = nil
+                    confirmed += batch.confirmed
+                    more = more || batch.deferred || (!drainBatches && !batch.remaining.isEmpty)
+                    remaining = batch.remaining
+                } while drainBatches && remaining?.isEmpty == false
             }
-            try requireGrant(initial, current)
+            var persisted = try requireCheck(initial, current)
             persisted.reviewCount = Self.reviewCount(buckets)
+            persisted.lastCheckStatus = .completed
+            persisted.lastCompletedResult = .init(completedAt: Date(), confirmedCount: confirmed, hasMoreChanges: more)
             try store.save(persisted, for: grantKey())
             grant = persisted
             #if canImport(OSLog)
@@ -513,8 +519,107 @@ public final class TrackerHistorySyncController {
                 .debug("Tracker history synchronization completed")
             #endif
         } catch {
-            if generation == current { report(error) }
+            if generation == current {
+                if !Task.isCancelled { markCheckFailed(initial, current) }
+                report(error)
+            }
         }
+    }
+
+    private struct Batch {
+        var confirmed = 0
+        var deferred = false
+        var remaining: Set<String> = []
+    }
+
+    private func processBatch(
+        scope: WatchMutationServerScope, accountID: String, grant initial: TrackerHistorySyncGrant, generation current: UUID,
+        remaining: Set<String>?, buckets: inout [Bucket]
+    ) async throws -> Batch {
+        try requireCheck(initial, current)
+        let session = try makeSession(scope) { [weak self] in
+            guard let self else { return false }
+            do {
+                try self.requireCheck(initial, current)
+                return true
+            } catch {
+                if self.generation == current { self.report(error) }
+                return false
+            }
+        }
+        activeSession = session
+        defer { session.cancel(); activeSession = nil }
+        var batch = Batch()
+        var considered: Set<String> = []
+        var hashes: [String: String] = [:]
+        // Every batch compares fresh, complete evidence. Only consider each
+        // first-snapshot candidate once: active playback or a moving tracker
+        // cannot cause an unbounded loop or starve later records.
+        await session.compare { [buckets] snapshot in
+            try self.requireCheck(initial, current)
+            guard snapshot.trackerID == initial.identity.trackerID else { throw TrackerHistoryError.scopeChanged }
+            guard snapshot.observations.count <= Self.maximumObservations else { throw TrackerHistorySyncError.historyTooLarge }
+            var newRecords: [String] = []
+            for observation in snapshot.observations {
+                let hash = try Self.fingerprint(observation)
+                hashes[observation.recordID] = hash
+                guard initial.categories.contains(where: { $0.includes(observation.fact) }),
+                      !Self.isEnrolled(hash, accountID, initial, buckets, watched: Self.isWatched(observation)) else { continue }
+                let receipt = Self.receiptKey(accountID, hash, initial)
+                guard buckets[Self.bucket(receipt)].receipts[receipt] == nil else { continue }
+                if remaining?.contains(observation.recordID) == false { batch.deferred = true }
+                else { newRecords.append(observation.recordID) }
+            }
+            considered = Set(newRecords.sorted().prefix(Self.batchSize))
+            batch.remaining = Set(newRecords).subtracting(considered)
+            return considered
+        }
+        try requireCheck(initial, current)
+        if let error = session.error { throw error }
+        guard let plan = session.plan else { throw TrackerHistoryError.incompleteSnapshot }
+        let rows = plan.rows.filter { !considered.isDisjoint(with: $0.recordIDs) }
+        var selected: Set<UUID> = []
+        var continuations: Set<UUID> = []
+        for row in rows {
+            if row.comparison == .playing {
+                batch.deferred = true
+                continue
+            }
+            let receipt: Receipt
+            let targetKey = row.target.map { Self.digest(Data($0.id.utf8)) }
+            let blocked = targetKey.map { buckets[Self.bucket($0)].blockedTargets.contains($0) } ?? false
+            let continues = try canContinue(row, plan: plan, hashes: hashes, grant: initial, buckets: buckets)
+            if (row.comparison == .ready || continues), let change = row.change,
+               !change.isDestructive, !blocked {
+                receipt = .pending
+                selected.insert(row.id)
+                if continues { continuations.insert(row.id) }
+            } else if row.comparison == .alreadyMatches {
+                receipt = .matched
+            } else {
+                receipt = .review
+            }
+            try record(receipt, row: row, hashes: hashes, accountID: accountID, grant: initial, buckets: &buckets)
+            // A coalesced watch earns receipts for its aliases in later batches too.
+            batch.remaining.subtract(row.recordIDs)
+        }
+        if !selected.isEmpty {
+            var persisted = try requireCheck(initial, current)
+            persisted.reviewCount = Self.reviewCount(buckets)
+            try store.save(persisted, for: grantKey())
+            grant = persisted
+            await session.apply(rowIDs: selected, overridingConflicts: continuations, confirmsDestructiveChanges: false)
+            try requireCheck(initial, current)
+            for row in rows where session.outcomes[row.id] == .confirmed {
+                try record(
+                    .confirmed, row: row, hashes: hashes, accountID: accountID,
+                    grant: initial, buckets: &buckets, confirmedBaseline: session.confirmedBaselines[row.id]
+                )
+                batch.confirmed += 1
+            }
+            if let error = session.error { throw error }
+        }
+        return batch
     }
 
     private func record(
@@ -542,13 +647,15 @@ public final class TrackerHistorySyncController {
             buckets[index].confirmedTargets = confirmed
             try store.save(buckets[index], for: bucketKey(grant, index))
         }
+        var dirtyPages: Set<Int> = []
         for recordID in row.recordIDs {
             guard let hash = hashes[recordID] else { throw TrackerHistoryError.incompleteSnapshot }
             let key = Self.receiptKey(accountID, hash, grant)
             let index = Self.bucket(key)
             buckets[index].receipts[key] = value
-            try store.save(buckets[index], for: bucketKey(grant, index))
+            dirtyPages.insert(index)
         }
+        for index in dirtyPages { try store.save(buckets[index], for: bucketKey(grant, index)) }
         if value == .confirmed, let target = row.target {
             let key = Self.digest(Data(target.id.utf8))
             let index = Self.bucket(key)
@@ -583,7 +690,7 @@ public final class TrackerHistorySyncController {
                     if let receipt = buckets[Self.bucket(receiptKey)].receipts[receiptKey] {
                         return receipt == .confirmed || receipt == .matched
                     }
-                    return Self.isEnrolled(hash, target.accountID, grant, buckets)
+                    return Self.isEnrolled(hash, target.accountID, grant, buckets, watched: Self.isWatched(other.observation))
                 }
             }) else { return false }
         }
@@ -625,6 +732,9 @@ public final class TrackerHistorySyncController {
             )
         }
         var updated = grant
+        // Another controller may still be comparing an older copy of these
+        // receipts. Fence that check before it can settle over the reviewed import.
+        if updated.lastCheckStatus == .incomplete { updated.checkID = nil }
         updated.reviewCount = Self.reviewCount(buckets)
         try store.save(updated, for: grantKey())
         self.grant = updated
@@ -659,9 +769,17 @@ public final class TrackerHistorySyncController {
               let stored: TrackerHistorySyncGrant = try store.load(for: grantKey()),
               stored.authorizesSync, stored.id == expected.id, stored.identity == identity,
               stored.scope == expected.scope, stored.categories == expected.categories,
+              stored.includesExistingWatched == expected.includesExistingWatched,
               stored.enrollmentIDs == expected.enrollmentIDs else {
             throw TrackerHistorySyncError.permissionChanged
         }
+        return stored
+    }
+
+    @discardableResult
+    private func requireCheck(_ expected: TrackerHistorySyncGrant, _ current: UUID) throws -> TrackerHistorySyncGrant {
+        let stored = try requireGrant(expected, current)
+        guard stored.checkID == current else { throw TrackerHistorySyncError.permissionChanged }
         return stored
     }
 
@@ -679,6 +797,8 @@ public final class TrackerHistorySyncController {
             throw DurableLocalStateError.addressMismatch
         }
         grant.enabled = false
+        // Invalidate a disabled enrollment manifest that's still staging pages.
+        grant.checkID = UUID()
         try store.save(grant, for: key)
         return grant
     }
@@ -744,12 +864,23 @@ public final class TrackerHistorySyncController {
         digest(Data("\(enrollment.uuidString):\(key)".utf8))
     }
 
+    private static func isWatched(_ observation: TrackerHistoryObservation) -> Bool {
+        switch observation.fact {
+        case .watched: observation.kind == .movie || observation.kind == .episode
+        case .animeList(let progress): observation.kind == .movie && progress.status == .completed
+        default: false
+        }
+    }
+
     private static func isEnrolled(
-        _ hash: String, _ accountID: String, _ grant: TrackerHistorySyncGrant, _ buckets: [Bucket]
+        _ hash: String, _ accountID: String, _ grant: TrackerHistorySyncGrant, _ buckets: [Bucket], watched: Bool
     ) -> Bool {
         let page = buckets[bucket(hash)]
-        if page.baseline.contains(hash) { return true }
-        guard let enrollment = grant.enrollmentIDs?[accountID] else { return false }
+        let enrollment = grant.enrollmentIDs?[accountID]
+        if page.baseline.contains(hash) {
+            return !(watched && grant.includesExistingWatched == true && enrollment == nil)
+        }
+        guard let enrollment else { return false }
         return page.shareBaselines?[enrollment]?.contains(hash) == true
     }
 

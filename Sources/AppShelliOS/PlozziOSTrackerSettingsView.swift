@@ -11,55 +11,95 @@ import FeatureSettings
 
 struct PlozziOSTrackerSettingsView: View {
     let appModel: PlozziOSAppModel
+    @State private var destination: SettingsSearchPage?
+
+    private var pages: [SettingsSearchPage] {
+        let pages: [SettingsSearchPage] = [.trakt, .simkl, .wetrakr, .anilist, .myanimelist, .publicMetaDB]
+        return pages.filter { $0 != .wetrakr || appModel.wetrakrService.isConfigured }
+    }
 
     var body: some View {
         List {
-            Text("Connect a tracker to report what you watch in this profile. Syncing history to media shares is optional.")
-            .font(.footnote)
-            .plozzForeground(.secondary)
-            .listRowInsets(EdgeInsets())
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
-
-            SettingsSectionGroup(verbatim: "Trakt") {
-                TraktSettingsContent(service: appModel.traktService, makeHistoryImport: appModel.makeTraktHistoryImport)
-            }
-            .settingsSearchGroup(SettingsSearchCatalog.targets(on: .trakt))
-
-            SettingsSectionGroup(verbatim: "Simkl") {
-                SimklSettingsContent(service: appModel.simklService, makeHistoryImport: appModel.makeSimklHistoryImport)
-            }
-            .settingsSearchGroup(SettingsSearchCatalog.targets(on: .simkl))
-            if appModel.wetrakrService.isConfigured {
-                SettingsSectionGroup(verbatim: "WeTrakr") {
-                    WetrakrSettingsContent(service: appModel.wetrakrService, makeHistoryImport: appModel.makeWetrakrHistoryImport)
+            SettingsSectionGroup {
+                ForEach(pages, id: \.self) { page in
+                    if let account = page.trackerAccount {
+                        Button { destination = page } label: {
+                            SettingsDisclosureLabel { Text(verbatim: account.name) }
+                        }
+                        .settingsActionRow()
+                        .accessibilityIdentifier("settings-page-\(account.rowID)")
+                    }
                 }
-                .settingsSearchGroup(SettingsSearchCatalog.targets(on: .wetrakr))
+            } footer: {
+                Text("Connect a tracker to report what you watch in this profile. Syncing history to media shares is optional.")
             }
-
-            SettingsSectionGroup(verbatim: "AniList") {
-                AniListSettingsContent(service: appModel.anilistService, makeHistoryImport: appModel.makeAniListHistoryImport)
-            }
-            .settingsSearchGroup(SettingsSearchCatalog.targets(on: .anilist))
-
-            SettingsSectionGroup(verbatim: "MyAnimeList") {
-                MALSettingsContent(service: appModel.malService, makeHistoryImport: appModel.makeMALHistoryImport)
-            }
-            .settingsSearchGroup(SettingsSearchCatalog.targets(on: .myanimelist))
-            PublicMetaDBSettingsContent(
-                service: appModel.publicMetaDBService, makeHistoryImport: appModel.makePublicMetaDBHistoryImport
-            )
-            .settingsSearchGroup(SettingsSearchCatalog.targets(on: .publicMetaDB))
         }
         .settingsPageSurface()
         .navigationTitle("Trackers")
-        .task {
-            async let trakt: Void = appModel.traktService.refreshStatus()
-            async let simkl: Void = appModel.simklService.refreshStatus()
-            async let wetrakr: Void = appModel.wetrakrService.refreshStatus()
-            async let anilist: Void = appModel.anilistService.refreshStatus()
-            async let mal: Void = appModel.malService.refreshStatus()
-            _ = await (trakt, simkl, wetrakr, anilist, mal)
+        .navigationDestination(item: $destination) { page in
+            PlozziOSTrackerAccountPage(page: page, appModel: appModel)
+        }
+    }
+}
+
+struct PlozziOSTrackerAccountPage: View {
+    let page: SettingsSearchPage
+    let appModel: PlozziOSAppModel
+
+    var body: some View {
+        if let account = page.trackerAccount, page != .lastfm,
+           page != .wetrakr || appModel.wetrakrService.isConfigured {
+            List {
+                accountSection
+                    .settingsSearchGroup(SettingsSearchCatalog.targets(on: page))
+            }
+            .settingsPageSurface()
+            .navigationTitle(Text(verbatim: account.name))
+            .task { await refreshStatus() }
+        } else {
+            ContentUnavailableView("Setting unavailable", systemImage: "magnifyingglass")
+        }
+    }
+
+    @ViewBuilder private var accountSection: some View {
+        if page == .publicMetaDB {
+            PublicMetaDBSettingsContent(
+                service: appModel.publicMetaDBService, makeHistoryImport: appModel.makePublicMetaDBHistoryImport
+            )
+        } else {
+            SettingsSectionGroup {
+                switch page {
+                case .trakt:
+                    TraktSettingsContent(service: appModel.traktService, makeHistoryImport: appModel.makeTraktHistoryImport)
+                case .simkl:
+                    SimklSettingsContent(service: appModel.simklService, makeHistoryImport: appModel.makeSimklHistoryImport)
+                case .wetrakr:
+                    WetrakrSettingsContent(service: appModel.wetrakrService, makeHistoryImport: appModel.makeWetrakrHistoryImport)
+                case .anilist:
+                    AniListSettingsContent(service: appModel.anilistService, makeHistoryImport: appModel.makeAniListHistoryImport)
+                case .myanimelist:
+                    MALSettingsContent(service: appModel.malService, makeHistoryImport: appModel.makeMALHistoryImport)
+                default: EmptyView()
+                }
+            }
+        }
+    }
+
+    private func refreshStatus() async {
+        // Returning from a browser or reopening a page must not abandon a pending code.
+        switch page {
+        case .trakt: await appModel.traktService.refreshStatus()
+        case .wetrakr: await appModel.wetrakrService.refreshStatus()
+        case .simkl:
+            if case .connecting = appModel.simklService.phase { return }
+            await appModel.simklService.refreshStatus()
+        case .anilist:
+            if case .awaitingToken = appModel.anilistService.phase { return }
+            await appModel.anilistService.refreshStatus()
+        case .myanimelist:
+            if case .awaitingAuthorizationCode = appModel.malService.phase { return }
+            await appModel.malService.refreshStatus()
+        default: break
         }
     }
 }
@@ -133,6 +173,7 @@ private struct TraktSettingsContent: View {
                 Task { await service.refreshStatus() }
             }
             .settingsActionRow()
+            .trackerConnectionSearchTarget(.trakt)
             if canReconnect {
                 Button("Reconnect Trakt") { confirmingReconnect = true }
                     .settingsActionRow()
@@ -143,6 +184,7 @@ private struct TraktSettingsContent: View {
     private var connectButton: some View {
         Button("Connect Trakt", action: connect)
             .settingsActionRow()
+            .trackerConnectionSearchTarget(.trakt)
     }
 
     private func connect() {
@@ -186,6 +228,7 @@ private struct WetrakrSettingsContent: View {
         case .disconnected:
             Button("Connect WeTrakr", action: connect)
                 .settingsActionRow()
+                .trackerConnectionSearchTarget(.wetrakr)
         case .authorizing:
             loadingStatus
             Button("Cancel", role: .cancel) { service.cancelConnect() }
@@ -211,10 +254,12 @@ private struct WetrakrSettingsContent: View {
             errorStatus(message)
             Button("Connect WeTrakr", action: connect)
                 .settingsActionRow()
+                .trackerConnectionSearchTarget(.wetrakr)
         case let .syncError(message, canReconnect):
             errorStatus(message)
             Button("Retry") { Task { await service.refreshStatus() } }
                 .settingsActionRow()
+                .trackerConnectionSearchTarget(.wetrakr)
             if canReconnect {
                 Button("Reconnect WeTrakr") { confirmingReconnect = true }
                     .settingsActionRow()
@@ -278,6 +323,7 @@ private struct SimklSettingsContent: View {
             service.connect()
         }
         .settingsActionRow()
+        .trackerConnectionSearchTarget(.simkl)
     }
 }
 
@@ -322,6 +368,7 @@ private struct AniListSettingsContent: View {
             service.connect()
         }
         .settingsActionRow()
+        .trackerConnectionSearchTarget(.anilist)
     }
 
     @ViewBuilder
@@ -406,6 +453,14 @@ private struct MALSettingsContent: View {
             service.connect()
         }
         .settingsActionRow()
+        .trackerConnectionSearchTarget(.myanimelist)
+    }
+}
+
+private extension View {
+    /// When account controls don't exist yet, reveal their connection prerequisite instead.
+    func trackerConnectionSearchTarget(_ page: SettingsSearchPage) -> some View {
+        settingsSearchAnchor("connect-\(page.rawValue)", fallbackFor: SettingsSearchCatalog.targets(on: page))
     }
 }
 

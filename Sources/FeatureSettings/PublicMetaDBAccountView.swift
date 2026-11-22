@@ -15,9 +15,8 @@
                 PublicMetaDBPlaybackFailure(failure: issue)
             }
             if service.trackerEnabled, let makeHistoryImport {
-                TrackerHistorySyncLink(makeSession: makeHistoryImport, isCurrent: {
-                    service.connectionID == connectionID && service.phase == .connected && service.trackerEnabled
-                })
+                TrackerHistorySyncLink(makeSession: makeHistoryImport)
+                    .id(service.historyActivationID)
             }
         }
     }

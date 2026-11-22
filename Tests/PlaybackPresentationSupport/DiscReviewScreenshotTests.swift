@@ -320,9 +320,9 @@ final class DiscReviewScreenshotTests: XCTestCase {
     }
     func testSync() {
         start("sync",["--history-ongoing-sync"]); let enabled=el("tracker-history.sync-enabled"); XCTAssertTrue(enabled.waitForExistence(timeout:6)); shot("ongoing-sync-off"); go(enabled)
-        let confirm = app.buttons["Enable beta sync"].firstMatch
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5)); shot("ongoing-sync-beta-consent"); go(confirm)
-        XCTAssertTrue(el("tracker-history.sync-watched").waitForExistence(timeout:8)); shot("ongoing-sync-on"); app.terminate()
+        let skip = app.buttons["Skip"].firstMatch
+        XCTAssertTrue(skip.waitForExistence(timeout: 5)); shot("existing-history-choice"); go(skip)
+        XCTAssertTrue(el("tracker-history.sync-now").waitForExistence(timeout:8)); shot("ongoing-sync-on"); app.terminate()
     }
 }
 
@@ -383,8 +383,8 @@ extension AtlasUI {
     func testAccount() {
         openConnectedAccount()
         defer { app.terminate() }
-        let activation = el("publicmetadb.enabled"), sync = el("tracker-history.ongoing-sync")
-        XCTAssertEqual(sync.label, "File share sync (Beta)")
+        let activation = el("publicmetadb.enabled"), sync = el("tracker-history.sync-enabled")
+        XCTAssertEqual(sync.label, "Enable 2-way sync")
         XCTAssertEqual(activation.value as? String, "1", "Connecting enables basic tracking.")
         XCTAssertTrue(activation.isHittable && sync.isHittable)
         for id in ["publicmetadb.ratings", "publicmetadb.watchlist", "publicmetadb.compare-history",
@@ -406,23 +406,19 @@ extension AtlasUI {
         XCTAssertEqual(activation.value as? String, "1")
         XCTAssertTrue(sync.waitForExistence(timeout: 5))
 
+        XCTAssertEqual(sync.value as? String, "0", "Reporting must not enroll the profile in sync.")
         go(sync)
-        let syncSwitch = el("tracker-history.sync-enabled")
-        XCTAssertTrue(syncSwitch.waitForExistence(timeout: 5))
-        XCTAssertEqual(syncSwitch.label, "Apply new activity from PublicMetaDB")
-        for name in ["Cedar Loft", "Mariner Archive"] { XCTAssertTrue(app.staticTexts[name].exists, name) }
-        for name in ["Northbank Cinema", "Lantern House"] { XCTAssertFalse(app.staticTexts[name].exists, name) }
-        XCTAssertEqual(syncSwitch.value as? String, "0", "Reporting must not enroll the profile in sync.")
-        go(syncSwitch)
-        go(app.buttons["Enable beta sync"].firstMatch)
-        XCTAssertTrue(el("tracker-history.sync-watched").waitForExistence(timeout: 5))
-        returnToAccount(from: "File share sync (Beta)", tvBackID: "tracker-history.sync-back", row: sync)
+        let skip = app.buttons["Skip"].firstMatch
+        XCTAssertTrue(skip.waitForExistence(timeout: 5))
+        go(skip)
+        XCTAssertTrue(el("tracker-history.sync-now").waitForExistence(timeout: 5))
+        XCTAssertTrue(activation.exists, "Both controls belong to the same account page.")
     }
 
     func testConnectedWithoutMediaSharesHidesOngoingSync() {
         openConnectedAccount(serversOnly: true)
         defer { app.terminate() }
-        XCTAssertFalse(el("tracker-history.ongoing-sync").exists)
+        XCTAssertFalse(el("tracker-history.sync-enabled").exists)
         XCTAssertTrue(el("publicmetadb.enabled").isHittable)
     }
     func testDisconnect() { scenario("connected",[("","account-connected","@publicmetadb.enabled"),("Disconnect","account-disconnect-confirm","Disconnect PublicMetaDB?")]) }
@@ -534,7 +530,7 @@ extension AtlasUI {
         XCTAssertFalse(el("\(id).export-history").exists)
         XCTAssertFalse(el("lastfm.history").exists)
         let provider = id == "mal" ? "myanimelist" : id
-        let sync = el("\(provider).ongoing-sync"), activation = el("\(provider).enabled")
+        let sync = el("tracker-history.sync-enabled"), activation = el("\(provider).enabled")
         XCTAssertEqual(activation.label, "Enable tracker")
         XCTAssertEqual(activation.value as? String, "1")
         go(activation)
@@ -546,8 +542,7 @@ extension AtlasUI {
         if supportsSync && !serversOnly {
             XCTAssertTrue(sync.waitForExistence(timeout: 5))
             shot("tracker-\(id)")
-            go(sync)
-            XCTAssertTrue(el("tracker-history.sync-enabled").waitForExistence(timeout: 5))
+            XCTAssertEqual(sync.label, "Enable 2-way sync")
         } else {
             XCTAssertFalse(sync.exists)
             shot("tracker-\(id)" + (serversOnly ? "-servers-only" : ""))

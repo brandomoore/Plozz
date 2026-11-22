@@ -365,7 +365,7 @@ production app running in English and a dedicated test profile/account. Do not
 run connection-changing scenarios against a household profile. Setup,
 authentication and input use production controls, not seeded profiles, injected
 credentials or fixture hosts. TV navigation can open Settings from Live TV.
-On iOS/iPadOS, open the Trackers page with **Connect PublicMetaDB** available.
+On iOS/iPadOS, open **Settings > Trackers > PublicMetaDB** with **Connect PublicMetaDB** available.
 `negative` and `direct` use the native secure field in `PublicMetaDBLiveHistoryTests`.
 Neither uses a browser, pairing code, or relay revocation.
 

@@ -260,7 +260,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try require(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_USER"] == name,
                     "Inspect only the isolated test profile")
         try openSettings()
-        try tapVisible(app.buttons["settings-category-trackers"])
+        try selectPublicMetaDBAccount()
         try tapVisible(app.buttons["publicmetadb.pair"], tapping: false)
         XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Connect PublicMetaDB")
         XCTAssertFalse(activation.exists)
@@ -896,7 +896,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let settings = app.buttons["Settings for \(user)"]
         XCTAssertTrue(settings.waitForExistence(timeout: 10))
         settings.tap()
-        try tapVisible(app.buttons["settings-category-trackers"])
+        try selectPublicMetaDBAccount()
         try tapVisible(app.buttons["publicmetadb.pair"], tapping: false)
         XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Connect PublicMetaDB")
     }
@@ -909,7 +909,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     func testPlaybackReportingIsDisabled() throws {
         try openPublicMetaDBAccount()
         XCTAssertEqual(activation.value as? String, "0")
-        XCTAssertFalse(app.buttons["tracker-history.ongoing-sync"].exists)
+        XCTAssertFalse(ongoingMaster.exists)
         recordState()
     }
 
@@ -974,7 +974,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testDisconnectAndVerifyRelaunch() throws {
         try openSettings()
-        try tapVisible(app.buttons["settings-category-trackers"])
+        try selectPublicMetaDBAccount()
         try assertSavedConnection()
         try tapVisible(app.buttons["Disconnect"])
         let confirmation = app.popovers.buttons["Disconnect"].firstMatch
@@ -988,7 +988,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
         try assertDisconnectedConnection()
         try openSettings()
-        try tapVisible(app.buttons["settings-category-trackers"])
+        try selectPublicMetaDBAccount()
         try assertDisconnectedConnection()
         recordState()
     }
@@ -997,7 +997,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try openPublicMetaDBAccount()
         let before = try XCTUnwrap(activation.value as? String)
         try openSettings()
-        try tapVisible(app.buttons["settings-category-trackers"])
+        try selectPublicMetaDBAccount()
         try assertSavedConnection()
         XCTAssertEqual(activation.value as? String, before)
         XCTAssertFalse(app.buttons["publicmetadb.browse"].exists)
@@ -1027,7 +1027,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try require(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_HISTORY_USER"] == name,
                     "Connect only the explicitly selected isolated test profile")
         try openSettings()
-        try tapVisible(app.buttons["settings-category-trackers"])
+        try selectPublicMetaDBAccount()
         try beginNewConnectionEntry()
         try await pasteManualKeyAndConnect()
     }
@@ -1112,7 +1112,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     private func prepareConnectionReplacement() throws {
         try openSettings()
-        try tapVisible(app.buttons["settings-category-trackers"])
+        try selectPublicMetaDBAccount()
         let enter = app.buttons["publicmetadb.pair"]
         try tapVisible(enter, tapping: false)
         XCTAssertEqual(enter.label, "Replace API key")
@@ -2564,9 +2564,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     private func assertOngoingImportIsDisabled() throws {
         try require(ongoingMaster.waitForExistence(timeout: 10) && ongoingMaster.value as? String == "0",
                     "Expected ongoing sync to be off")
-        try require(ongoingDestinations.count == 0 && !app.switches["tracker-history.sync-watched"].exists
-            && !app.switches["tracker-history.sync-resume"].exists && !app.buttons["tracker-history.sync-now"].exists,
-                    "Off must hide all sync options")
+        try require(!app.buttons["tracker-history.sync-now"].exists, "Off must not allow a sync")
         recordState()
     }
 
@@ -2591,8 +2589,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         app.switches.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tracker-history.sync-server."))
     }
 
-    // Off hides the complete eligible set. A matching comparison row (or an account ID supplied
-    // by the runner) cannot prove there isn't another share. Never grant first and narrow later.
+    // The driver never grants permission or broadens a preconfigured test grant.
     private func verifyOngoingImport(categories: Set<String>, fromCurrentSettings: Bool = false) throws {
         if !fromCurrentSettings { try openOngoingImportSettings(relaunch: false) }
         try require(ongoingMaster.waitForExistence(timeout: 10) && ongoingMaster.value as? String == "1",
@@ -2600,19 +2597,17 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let accountID = try XCTUnwrap(ProcessInfo.processInfo.environment["PLOZZ_TRACKER_IMPORT_ACCOUNT"])
         try require(accountID.hasPrefix("share:") && accountID.count > "share:".count,
                     "Expected a dedicated share account ID")
-        let destination = ongoingDestinations.element
-        try require(ongoingDestinations.count == 1 && destination.identifier == "tracker-history.sync-server.\(accountID)"
-            && destination.value as? String == "1", "Expected only the dedicated share")
         let supported: Set<String> = ["watched", "resume"]
-        try require(!categories.isEmpty && categories.isSubset(of: supported), "Expected explicit supported categories")
-        let controls = app.switches.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tracker-history.sync-"))
-            .allElementsBoundByIndex.map(\.identifier)
-        let expected = ["tracker-history.sync-enabled", destination.identifier] + supported.map { "tracker-history.sync-\($0)" }
-        try require(controls.sorted() == expected.sorted(), "Refuse unknown or ambiguous sync options")
-        for category in supported {
-            let control = app.switches["tracker-history.sync-\(category)"]
-            try require(control.exists && control.value as? String == (categories.contains(category) ? "1" : "0"),
-                        "Existing grant does not match the authorized \(category) selection")
+        try require(categories == supported, "This view cannot verify a legacy category-specific grant")
+        let libraries = app.buttons["tracker-history.libraries"]
+        if libraries.exists {
+            if ongoingDestinations.count == 0 { try tapVisible(libraries) }
+            let selected = ongoingDestinations.allElementsBoundByIndex.filter { $0.value as? String == "1" }
+            try require(selected.map(\.identifier) == ["tracker-history.sync-server.\(accountID)"],
+                        "Expected only the dedicated library to be enabled")
+        } else {
+            try require(app.descendants(matching: .any)["tracker-history.library.\(accountID)"].firstMatch.exists,
+                        "Expected exactly the dedicated library")
         }
     }
 
@@ -2670,15 +2665,15 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     private func openOngoingImportSettings(relaunch: Bool = true) throws {
         try openPublicMetaDBAccount(relaunch: relaunch)
-        try showOngoingImportSettings()
+        try tapVisible(ongoingMaster, tapping: false, maximumSwipes: 32)
     }
 
     private func showOngoingImportSettings() throws {
-        let link = app.buttons["tracker-history.ongoing-sync"]
-        try tapVisible(link, tapping: false, maximumSwipes: 32)
-        try require(link.isEnabled, "Expected this account to offer media-share sync")
-        try tapVisible(link)
-        try require(ongoingMaster.waitForExistence(timeout: 15), "Expected the ongoing-sync settings page")
+        if !ongoingMaster.exists {
+            // Only the deferred comparison harness still has a separate entry.
+            try tapVisible(app.buttons["tracker-history.ongoing-sync"])
+        }
+        try tapVisible(ongoingMaster, tapping: false)
     }
 
     func testFinishIndependentServerLibraries() throws {
@@ -3534,16 +3529,22 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         XCTAssertEqual(activation.label, "Enable tracker")
         try require(activation.value as? String == "1",
                     "This read-only route check needs an already active tracker and an eligible media share.")
-        try tapVisible(app.buttons["tracker-history.ongoing-sync"])
-        XCTAssertTrue(ongoingMaster.waitForExistence(timeout: 10))
-        try tapVisible(app.navigationBars["File share sync (Beta)"].buttons.firstMatch)
+        try tapVisible(ongoingMaster, tapping: false)
+        try tapVisible(app.navigationBars["PublicMetaDB"].buttons["BackButton"])
         XCTAssertTrue(app.navigationBars["Trackers"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["settings-page-publicmetadb"].exists)
     }
 
     private func openPublicMetaDBAccount(relaunch: Bool = true) throws {
         try openSettings(relaunch: relaunch)
-        try tapVisible(app.buttons["settings-category-trackers"])
+        try selectPublicMetaDBAccount()
         try tapVisible(activation, tapping: false)
+    }
+
+    private func selectPublicMetaDBAccount() throws {
+        try tapVisible(app.buttons["settings-category-trackers"])
+        try tapVisible(app.buttons["settings-page-publicmetadb"])
+        XCTAssertTrue(app.navigationBars["PublicMetaDB"].waitForExistence(timeout: 10))
     }
 
     private func openSettings(relaunch: Bool = true) throws {

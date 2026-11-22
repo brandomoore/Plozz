@@ -2,9 +2,10 @@
 
 **Tracker v1 exposure:** Connecting a tracker starts its supported tracking activity.
 The connected account exposes the tracker switch directly; turning it off pauses
-tracking without removing the account. **File share sync (Beta)** names the tracker and
-lists the file shares it would update before enrollment. It applies new activity only;
-it does not backfill tracker history or change watch history on Plex or other media servers.
+tracking without removing the account. **Enable 2-way sync** also brings supported
+tracker activity into matching Plozz libraries. On first enrollment, **Sync history**
+includes existing watches; **Skip** leaves them alone. Neither choice writes to Plex,
+Jellyfin, or Emby.
 One-time imports and exports, PublicMetaDB watchlists, history management, ratings, contributions,
 discovery, external-ID tools, and the Last.fm listening-history browser are not v1 destinations.
 The implementation notes for those tools below describe deferred code, not shipping entry points.
@@ -88,17 +89,13 @@ competing changes to one destination item cannot be selected together. See
 [PublicMetaDBService](../PublicMetaDBService/README.md) for current
 coverage, history fidelity, and remaining integration work.
 
-**File share sync (Beta)** offers only profile-scoped media shares, not managed
-servers. Connecting a tracker, reporting playback, and approving a one-time
-import do not enroll anyone. Pre-beta permissions cannot authorize sync; remove
-the previous permission before enrolling again. **Apply new activity from [tracker]** starts
-off. Confirming **Enable beta sync** on this device enrolls the profile’s current
-eligible shares and supported history categories without backfilling old records.
-While it is on, share and category switches edit that selection. Turning it off
-stops future imports without clearing watch history. **Sync now** and revocation
-use the same controller on TV and mobile. `TrackerHistorySyncLink(makeSession:)`
-is the direct connected-account entry; it offers enrollment only when eligible
-and reads no tracker history just to display the link or page. The comparison
+**Enable 2-way sync** is off until the user enables it on the tracker account page.
+Only Plozz-managed watch state for this profile's selected network libraries can change.
+Enrollment checks for new activity immediately. The separate **Sync history / Skip**
+decision concerns only existing watches, never old playback positions or outgoing history.
+Later checks use the provider's supported categories and foreground policy. **Sync now**
+also runs a check. Disabling 2-way sync leaves reporting on and does not undo updates.
+Pre-beta permissions cannot authorize sync. Opening settings reads no tracker history. The comparison
 entry retains its reviewed snapshot as evidence, not the previous page's write
 authorization; returning to comparison creates a fresh session.
 The comparison distinguishes a previously watched title from one never watched,
@@ -326,9 +323,8 @@ Results use the current platform's destination and retain their query on Back.
 Protected destinations retain their normal profile/PIN checks; search never
 selects a server, library or user, enables a prerequisite, or submits an editor.
 Unavailable controls lead to their existing prerequisite or availability message.
-PublicMetaDB results lead to the current profile's Connect, Retry, or **Playback reporting** row.
-**Playback reporting** is the only indexed PublicMetaDB preference. Search never
-starts pairing or grants device-local consent. **File share sync (Beta)** stays in the selected tracker:
+PublicMetaDB results lead to the current profile's Connect, Retry, or **Enable tracker** row.
+Search never starts pairing or grants device-local consent. **Enable 2-way sync** stays in the selected tracker:
 its grant, eligible media shares, and supported categories depend on that connection.
 Individual histories, transfers, contributions, and list contents are not indexed.
 On mobile, custom quality keeps its normal modal editor: Cancel discards the draft, Apply

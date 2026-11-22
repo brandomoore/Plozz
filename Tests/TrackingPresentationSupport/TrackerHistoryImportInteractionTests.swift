@@ -117,19 +117,28 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         app.launchArguments = ["--tracker-history-import-fixture", "--history-ongoing-sync", "--history-direct-sync"]
         app.launch()
         activate(app.buttons["fixture.history.open"])
-        activate(element("tracker-history.ongoing-sync"))
         let master = element("tracker-history.sync-enabled")
         XCTAssertTrue(master.waitForExistence(timeout: 5))
         waitForReport(";reads=0")
         activate(master)
-        XCTAssertTrue(app.buttons["Enable beta sync"].firstMatch.waitForExistence(timeout: 5))
-        cancelConfirmation()
-        waitForReport(";sync=false;")
-        waitForReport(";reads=0")
-        activate(master)
-        activate(app.buttons["Enable beta sync"].firstMatch)
+        activate(app.buttons["Skip"].firstMatch)
         waitForReport(";sync=true;destinations=cedar,mariner;categories=resume,watched;")
         assertReport(jellyfin: 0, plex: 0, cedar: 0, mariner: 0)
+    }
+
+    func testSyncHistoryAppliesExistingWatchOnlyToSelectedLibrary() {
+        app.launchArguments = ["--tracker-history-import-fixture", "--history-ongoing-sync", "--history-direct-sync"]
+        app.launch()
+        activate(app.buttons["fixture.history.open"])
+        activate(element("tracker-history.libraries"))
+        activate(element("tracker-history.sync-server.mariner"))
+        activate(element("tracker-history.sync-enabled"))
+        activate(app.buttons["Sync history"].firstMatch)
+        waitForReport("cedar=1,played=true")
+        assertReport(jellyfin: 0, plex: 0, cedar: 1, mariner: 0)
+        activate(app.buttons["tracker-history.sync-now"])
+        XCTAssertTrue(app.buttons["tracker-history.sync-now"].wait(for: \.isEnabled, toEqual: true, timeout: 10))
+        assertReport(jellyfin: 0, plex: 0, cedar: 1, mariner: 0)
     }
 
     func testIncompleteTraktEnrollmentNamesSourceAndLeavesSharesUnchanged() {
@@ -137,15 +146,14 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
                                "--history-incomplete-trakt", "--history-watched-only"]
         app.launch()
         activate(app.buttons["fixture.history.open"])
-        activate(element("tracker-history.ongoing-sync"))
         let master = element("tracker-history.sync-enabled")
         XCTAssertTrue(master.waitForExistence(timeout: 5))
-        XCTAssertEqual(master.label, "Apply new activity from Trakt")
+        XCTAssertEqual(master.label, "Enable 2-way sync")
         activate(master)
-        activate(app.buttons["Enable beta sync"].firstMatch)
         XCTAssertTrue(app.staticTexts["Sync is off. Plozz couldn’t verify your full Trakt history. Try again later."]
             .waitForExistence(timeout: 5))
         XCTAssertEqual(master.value as? String, "0")
+        XCTAssertFalse(app.buttons["Sync history"].exists)
         waitForReport(";sync=false;")
         assertReport(jellyfin: 0, plex: 0, cedar: 0, mariner: 0)
     }
@@ -347,17 +355,18 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
             #if os(iOS)
             XCTAssertEqual(master.value as? String, "0")
             #endif
-            for option in [watched, resume, cedar, mariner, syncNow] { XCTAssertFalse(option.exists) }
+            for option in [watched, resume, syncNow] { XCTAssertFalse(option.exists) }
         }
         XCTAssertTrue(master.waitForExistence(timeout: 5), app.debugDescription)
         assertOff()
         activate(master)
-        activate(app.buttons["Enable beta sync"].firstMatch)
+        activate(app.buttons["Skip"].firstMatch)
         waitForReport(";sync=true;destinations=cedar,mariner;categories=\(defaults);")
-        for option in [cedar, mariner, watched, syncNow] { XCTAssertTrue(option.exists && option.isEnabled) }
-        XCTAssertEqual(resume.exists, !watchedOnly)
+        activate(element("tracker-history.libraries"))
+        for option in [cedar, mariner, syncNow] { XCTAssertTrue(option.exists && option.isEnabled) }
+        XCTAssertFalse(watched.exists || resume.exists)
         #if os(iOS)
-        for option in [master, cedar, mariner, watched] + (watchedOnly ? [] : [resume]) {
+        for option in [master, cedar, mariner] {
             XCTAssertEqual(option.value as? String, "1", option.identifier)
         }
         #endif
@@ -367,21 +376,18 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
             XCTAssertFalse(element("tracker-history.sync-server.\(server)").exists)
         }
         if watchedOnly {
-            XCTAssertTrue(app.staticTexts["Use Sync now to import new history."].exists)
+            XCTAssertTrue(app.staticTexts["Use Sync now to check for later changes."].exists)
         } else {
             activate(master)
             assertOff()
             activate(master)
-            activate(app.buttons["Enable beta sync"].firstMatch)
+            activate(app.buttons["Skip"].firstMatch)
             waitForReport(";sync=true;destinations=cedar,mariner;categories=\(defaults);")
-            activate(resume)
-            waitForReport(";sync=true;destinations=cedar,mariner;categories=watched;")
         }
         activate(mariner)
-        waitForReport(";sync=true;destinations=cedar;categories=watched;")
+        waitForReport(";sync=true;destinations=cedar;categories=\(defaults);")
         #if os(iOS)
         XCTAssertEqual(mariner.value as? String, "0")
-        if !watchedOnly { XCTAssertEqual(resume.value as? String, "0") }
         #endif
         assertReport(jellyfin: 0, plex: 0, cedar: 0, mariner: 0)
         activate(app.buttons["fixture.history.new-play"])
@@ -389,7 +395,7 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         waitForReport("cedar=1,played=true")
         assertReport(jellyfin: 0, plex: 0, cedar: 1, mariner: 0)
         XCTAssertTrue(syncNow.wait(for: \.isEnabled, toEqual: true, timeout: 10))
-        activate(watchedOnly ? watched : cedar)
+        activate(master)
         assertOff()
     }
 

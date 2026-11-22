@@ -4102,57 +4102,47 @@
       "reason": "Deferred watchlist controls have no v1 destination or search entry.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncNavigationRow|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"File share sync (Beta)\") }": {
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|PlozziOSTrackerSettingsView|body|Button|SettingsDisclosureLabel { Text(verbatim: account.name) }": {
+      "count": 1,
+      "reason": "Opens one named tracker account. Search routes to that account directly.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncNavigationRow|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"2-way sync\") }": {
       "count": 1,
       "reason": "Ongoing sync is a destination for one connected tracker with eligible shares or an existing grant. Global search has no account selection.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncSettingsView|body|Button|\"Remove previous permission\"": {
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|body|Button|\"Remove previous permission\"": {
       "count": 1,
       "reason": "Revokes a stale device-local permission for the selected connection.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncSettingsView|body|Button|\"Sync now\"": {
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|body|Button|\"Sync now\"": {
       "count": 1,
       "reason": "Runs the selected tracker grant now; not a scheduling preference.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncSettingsView|body|Toggle|\"Apply new activity from \\(trackerName)\"": {
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|body|Toggle|\"Enable 2-way sync\"": {
       "count": 1,
       "reason": "Enrollment or revocation is bound to this device, profile, tracker connection and eligible media shares; there is no global sync switch.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncSettingsView|body|Toggle|\"Watched status\"": {
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|body|Button|LabeledContent(\"Libraries\", value: destinations)": {
       "count": 1,
-      "reason": "Edits the watched category of the selected connection's active grant; availability depends on tracker capabilities.",
+      "reason": "Expands the active connection's eligible library selection.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncSettingsView|body|Toggle|\"Playback progress\"": {
-      "count": 1,
-      "reason": "Edits resume import for one active grant only when the selected tracker supports it.",
-      "covered_by": []
-    },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncSettingsView|body|Toggle|<dynamic>": {
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|body|Toggle|<dynamic>": {
       "count": 1,
       "reason": "Selects one eligible media share in this connection's grant; a share or user name cannot be a global result.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncLink|body|Button|SettingsDisclosureLabel { Text(\"File share sync (Beta)\") }": {
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|body|Button|\"Sync history\"": {
       "count": 1,
       "reason": "This action belongs to an eligible tracker connection’s sync settings, not to global search.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncLink|body|Button|\"Done\"": {
-      "count": 1,
-      "reason": "This action belongs to an eligible tracker connection’s sync settings, not to global search.",
-      "covered_by": []
-    },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncSettingsView|body|Button|\"Enable beta sync\"": {
-      "count": 1,
-      "reason": "This action belongs to an eligible tracker connection’s sync settings, not to global search.",
-      "covered_by": []
-    },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncSettingsView|body|Button|\"Cancel\"": {
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|body|Button|\"Skip\"": {
       "count": 1,
       "reason": "This action belongs to an eligible tracker connection’s sync settings, not to global search.",
       "covered_by": []

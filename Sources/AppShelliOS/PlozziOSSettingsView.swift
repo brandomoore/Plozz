@@ -1540,7 +1540,9 @@ private struct PlozziOSSettingsSearchDestination: View {
             .id(ObjectIdentifier(appModel.settings.libraryPresentation))
         case .liveTV, .liveTVSources, .liveTVGuide, .liveTVVisibility: profilePage(.liveTV)
         case .language: profilePage(.language)
-        case .trackers, .publicMetaDB, .trakt, .simkl, .wetrakr, .anilist, .myanimelist, .lastfm: profilePage(.trackers)
+        case .trackers: profilePage(.trackers)
+        case .publicMetaDB, .trakt, .simkl, .wetrakr, .anilist, .myanimelist:
+            PlozziOSTrackerAccountPage(page: entry.page, appModel: appModel)
         case .downloads: profilePage(.downloads)
         case .profiles:
             List {
@@ -1576,7 +1578,7 @@ private struct PlozziOSSettingsSearchDestination: View {
             } else {
                 ContentUnavailableView("Setting unavailable", systemImage: "magnifyingglass")
             }
-        case .topShelf:
+        case .topShelf, .lastfm:
             ContentUnavailableView("Setting unavailable", systemImage: "magnifyingglass")
         case .releaseNotes:
             ReleaseNotesSettingsView(model: .shared)
