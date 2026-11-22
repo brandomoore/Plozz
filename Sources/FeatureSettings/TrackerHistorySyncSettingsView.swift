@@ -105,8 +105,6 @@ private struct TrackerTwoWaySyncRows: View {
     @State private var choosingLibraries = false
     @State private var confirmedLibraries: Set<String>?
     @State private var editingLibraries = false
-    @State private var offeredGrant: UUID?
-    @State private var showHistoryChoice = false
     @State private var operation: Task<Void, Never>?
 
     private var trackerName: String {
@@ -126,7 +124,6 @@ private struct TrackerTwoWaySyncRows: View {
         let ids = selected
         return shares.filter { ids.contains($0.id) }
     }
-    private var destinations: String { selectedShares.map(name).formatted(.list(type: .and)) }
     private var librarySummary: some View {
         LabeledContent("Libraries") {
             HStack(spacing: 6) {
@@ -147,7 +144,13 @@ private struct TrackerTwoWaySyncRows: View {
             SettingsSectionGroup("Watch history") {
                 controls
             } footer: {
-                Text("Changes from \(trackerName) update matching titles in Plozz, not on Plex, Jellyfin, or Emby.")
+                if !sync.isEnabled, let onlyShare = shares.count == 1 ? shares.first : nil {
+                    Text("Sync existing and new watch history from \(trackerName) to \(name(onlyShare)) in Plozz.")
+                } else if !sync.isEnabled {
+                    Text("Sync existing and new watch history from \(trackerName) to the libraries you choose in Plozz.")
+                } else {
+                    Text("Changes from \(trackerName) update matching titles in Plozz, not on Plex, Jellyfin, or Emby.")
+                }
                 if sync.isEnabled, sync.supportedCategories.contains(.resume),
                    sync.grant?.categories.contains(.resume) == false {
                     Text("This setup syncs watched titles only. Turn 2-way sync off and on to include resume positions.")
@@ -170,23 +173,6 @@ private struct TrackerTwoWaySyncRows: View {
                 TrackerSyncLibraryChooser(shares: shares, name: name) { accounts in
                     confirmedLibraries = accounts
                     choosingLibraries = false
-                }
-            }
-            .alert("Sync existing watch history from \(trackerName)?", isPresented: $showHistoryChoice) {
-                Button("Sync history") {
-                    guard let id = offeredGrant, sync.isEnabled, sync.grant?.id == id else { return }
-                    offeredGrant = nil
-                    operation = Task { await sync.syncExistingHistory(for: id) }
-                }
-                Button("Skip", role: .cancel) {
-                    if let offeredGrant { sync.skipExistingHistory(for: offeredGrant) }
-                    offeredGrant = nil
-                }
-            } message: {
-                if sync.grant?.categories.contains(.resume) == true {
-                    Text("Import watched titles and resume positions into \(destinations). New activity syncs either way.")
-                } else {
-                    Text("Mark matching titles as watched in \(destinations). New activity syncs either way.")
                 }
             }
         if sync.isEnabled { activeLibraries }
@@ -288,12 +274,11 @@ private struct TrackerTwoWaySyncRows: View {
     }
 
     private func setEnabled(_ enabled: Bool) {
-        offeredGrant = nil
-        showHistoryChoice = false
         editingLibraries = false
         confirmedLibraries = nil
         if enabled {
-            choosingLibraries = true
+            if shares.count == 1, let share = shares.first { startSync([share.id]) }
+            else { choosingLibraries = true }
         } else {
             operation?.cancel()
             sync.disable()
@@ -303,6 +288,10 @@ private struct TrackerTwoWaySyncRows: View {
     private func finishLibraryChoice() {
         guard let accounts = confirmedLibraries else { return }
         confirmedLibraries = nil
+        startSync(accounts)
+    }
+
+    private func startSync(_ accounts: Set<String>) {
         guard !sync.isEnabled, !sync.isBusy else { return }
         operation = Task {
             if let plan = reviewedPlan {
@@ -310,11 +299,8 @@ private struct TrackerTwoWaySyncRows: View {
             } else {
                 await sync.enable(from: session, accountIDs: accounts, categories: sync.supportedCategories)
             }
-            guard !Task.isCancelled, sync.isEnabled, sync.error == nil, let id = sync.grant?.id else { return }
+            guard !Task.isCancelled, sync.isEnabled, sync.error == nil else { return }
             await sync.synchronize()
-            guard !Task.isCancelled, sync.isEnabled, sync.pendingHistoryGrantID == id else { return }
-            offeredGrant = id
-            showHistoryChoice = true
         }
     }
 

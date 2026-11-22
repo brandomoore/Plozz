@@ -53,8 +53,8 @@ tracker-owned history store. Existing conflict, parental authorization,
 current-item revalidation, cancellation, outbox and readback safeguards apply.
 
 **2-way sync** saves permission for selected media shares, not managed server users.
-Enrollment records a baseline; **Sync history** explicitly includes existing
-watches and eligible pauses. Foreground checks and **Sync now** use the same
+Enrollment automatically imports existing watches and eligible pauses for the selected
+shares. Foreground checks and **Sync now** use the same
 activity-gated reader. No background polling timer is started. Removals and
 aggregate counts do not identify a resume position.
 No PRO/VIP rewatch session is created. See the shared

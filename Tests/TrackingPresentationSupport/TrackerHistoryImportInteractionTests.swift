@@ -133,9 +133,10 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         XCTAssertFalse(element("tracker-history.libraries").exists)
         activate(master)
         confirmAllLibraries()
-        activate(app.buttons["Skip"].firstMatch)
         waitForReport(";sync=true;destinations=cedar,mariner;categories=resume,watched;")
-        assertReport(jellyfin: 0, plex: 0, cedar: 0, mariner: 0)
+        waitForReport("mariner=1,played=true")
+        assertReport(jellyfin: 0, plex: 0, cedar: 1, mariner: 1)
+        XCTAssertFalse(app.buttons["Sync history"].exists)
     }
 
     func testSyncHistoryAppliesExistingWatchOnlyToSelectedLibrary() {
@@ -145,7 +146,6 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         activate(element("tracker-history.sync-enabled"))
         activate(element("tracker-history.choose.cedar"))
         activate(element("tracker-history.start-sync"))
-        activate(app.buttons["Sync history"].firstMatch)
         waitForReport(";sync=true;destinations=cedar;")
         waitForReport("cedar=1,played=true")
         assertReport(jellyfin: 0, plex: 0, cedar: 1, mariner: 0)
@@ -190,13 +190,14 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
 
     #if os(iOS)
     func testOneTapChecksAllEntriesAndExplainsSkipsWithoutRepeatingUpdates() {
-        app.launchArguments = ["--tracker-history-import-fixture", "--history-ongoing-sync", "--history-direct-sync", "--history-result-batch"]
+        app.launchArguments = ["--tracker-history-import-fixture", "--history-ongoing-sync", "--history-direct-sync",
+                               "--history-result-batch", "--history-initially-empty"]
         app.launch()
         activate(app.buttons["fixture.history.open"])
         activate(element("tracker-history.sync-enabled"))
         activate(element("tracker-history.choose.cedar"))
         activate(element("tracker-history.start-sync"))
-        activate(app.buttons["Skip"].firstMatch)
+        XCTAssertTrue(element("tracker-history.sync-now").waitForExistence(timeout: 10))
         activate(element("fixture.history.new-play"))
         activate(element("tracker-history.sync-now"))
         let summary = element("tracker-history.last-sync")
@@ -230,7 +231,6 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         XCTAssertFalse(app.buttons["tracker-history.sync-now"].exists)
         XCTAssertGreaterThan(progress.frame.height, 52)
         activate(element("fixture.history.finish-read"))
-        activate(app.buttons["Skip"].firstMatch)
         XCTAssertTrue(app.buttons["tracker-history.sync-now"].waitForExistence(timeout: 5))
         XCTAssertFalse(progress.exists)
     }
@@ -417,7 +417,7 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
     }
 
     private func verifyOngoingShareSync(additionalArguments: [String] = []) {
-        launch(["--history-ongoing-sync"] + additionalArguments)
+        launch(["--history-ongoing-sync", "--history-initially-empty"] + additionalArguments)
         activate(element("tracker-history.ongoing-sync"))
         let master = element("tracker-history.sync-enabled")
         let watchedOnly = additionalArguments.contains("--history-watched-only")
@@ -441,7 +441,7 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         assertOff()
         activate(master)
         confirmAllLibraries()
-        activate(app.buttons["Skip"].firstMatch)
+        XCTAssertTrue(syncNow.waitForExistence(timeout: 10))
         waitForReport(";sync=true;destinations=cedar,mariner;categories=\(defaults);")
         activate(element("tracker-history.libraries"))
         for option in [cedar, mariner, syncNow] { XCTAssertTrue(option.exists && option.isEnabled) }
@@ -463,7 +463,7 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
             assertOff()
             activate(master)
             confirmAllLibraries()
-            activate(app.buttons["Skip"].firstMatch)
+            XCTAssertTrue(syncNow.waitForExistence(timeout: 10))
             waitForReport(";sync=true;destinations=cedar,mariner;categories=\(defaults);")
             activate(element("tracker-history.libraries"))
         }

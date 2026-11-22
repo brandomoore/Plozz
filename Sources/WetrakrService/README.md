@@ -119,7 +119,7 @@ After comparison, a separate **Ongoing sync** enrollment can import new watched
 states and compatible resume points into Plozz history for selected media shares.
 Managed server users are not destinations. It uses the same
 reader, refresh-stable grant identity, guarded outbox and independent readback;
-only **Sync history** includes existing eligible pauses and watches. Sync does not silently resolve a conflicting share resume.
+the first check automatically includes existing eligible pauses and watches. Sync does not silently resolve a conflicting share resume.
 Disconnect revokes local history permission before coordinated credential removal.
 See the [shared consent lifecycle](../FeatureSettings/README.md).
 

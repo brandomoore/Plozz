@@ -119,8 +119,8 @@ public final class TrackerHistorySyncController {
     private var isEditing = false
     public var confirmedCount: Int { grant?.lastCompletedResult?.confirmedCount ?? 0 }
     public var hasMoreChanges: Bool { grant?.lastCompletedResult?.hasMoreChanges ?? false }
-    /// Only this controller's fresh enrollment can offer a choice. Never restored from disk.
-    public private(set) var pendingHistoryGrantID: UUID?
+    // Coalesce repeated index callbacks, not separate visits to the app.
+    private var lastAttemptThisForeground: Date?
     private let store: DurableLocalStateStore
     private let isAuthorized: @MainActor @Sendable () -> Bool
     private let makeSession: @MainActor (
@@ -212,13 +212,12 @@ public final class TrackerHistorySyncController {
                 }
             }
             grant = stored
-            if !isEnabled || pendingHistoryGrantID != stored?.id { pendingHistoryGrantID = nil }
             error = nil
         } catch { report(error) }
     }
 
     public func stop() {
-        pendingHistoryGrantID = nil
+        lastAttemptThisForeground = nil
         generation = UUID()
         operation?.cancel()
         activeSession?.cancel()
@@ -262,7 +261,6 @@ public final class TrackerHistorySyncController {
         reviewedSnapshot: @MainActor () async throws -> TrackerHistorySnapshot
     ) async {
         guard !isBusy else { return }
-        pendingHistoryGrantID = nil
         isWorking = true
         generation = UUID()
         let current = generation
@@ -294,7 +292,9 @@ public final class TrackerHistorySyncController {
             var next = TrackerHistorySyncGrant(
                 id: UUID(), identity: identity, scope: selectedScope,
                 categories: categories, createdAt: Date(), enabled: false, reviewCount: 0,
-                betaConsentVersion: TrackerHistorySyncGrant.currentBetaConsentVersion
+                betaConsentVersion: TrackerHistorySyncGrant.currentBetaConsentVersion,
+                includesExistingWatched: categories.contains(.watched),
+                includesExistingResumes: categories.contains(.resume)
             )
             // Publish a disabled manifest first. An interrupted enrollment cannot
             // authorize writes or mistake missing baseline pages for new history.
@@ -320,7 +320,6 @@ public final class TrackerHistorySyncController {
             grant = next
             revocationPending = false
             error = nil
-            pendingHistoryGrantID = categories.contains(.watched) ? next.id : nil
             if let previous { removeLedger(previous) }
         } catch {
             if generation == current { report(error) }
@@ -447,51 +446,32 @@ public final class TrackerHistorySyncController {
         for index in 0..<Self.bucketCount { try? store.remove(bucketKey(obsolete, index)) }
     }
 
-    public func skipExistingHistory(for grantID: UUID) {
-        if pendingHistoryGrantID == grantID { pendingHistoryGrantID = nil }
-    }
-
-    public func syncExistingHistory(for grantID: UUID) async {
-        guard pendingHistoryGrantID == grantID else { return }
-        let current = generation
-        // A foreground check may already be settling receipts. Don't cancel a
-        // dispatched write or start a second writer for the same ledger.
-        if let operation { await operation.value }
-        guard pendingHistoryGrantID == grantID, generation == current, !isBusy,
-              isEnabled, let grant, grant.id == grantID, grant.categories.contains(.watched) else { return }
-        await runCheck(grant, admittingExistingHistory: true)
-    }
-
     public func synchronize(manual: Bool = true) async {
         guard !isBusy, !revocationPending else { return }
         reload()
         guard error == nil, isEnabled, let grant else { return }
-        guard manual || (identity.allowsForegroundChecks
-            && Date().timeIntervalSince(grant.lastAttemptAt ?? .distantPast) >= 15 * 60) else { return }
-        await runCheck(grant, admittingExistingHistory: false)
+        if !manual {
+            guard identity.allowsForegroundChecks,
+                  Date().timeIntervalSince(lastAttemptThisForeground ?? .distantPast) >= 15 * 60,
+                  retryDate.map({ $0 <= Date() }) ?? true,
+                  grant.lastCheckStatus != .failed || Date().timeIntervalSince(grant.lastAttemptAt ?? .distantPast) >= 15 * 60
+            else { return }
+        }
+        await runCheck(grant)
     }
 
-    private func runCheck(_ expected: TrackerHistorySyncGrant, admittingExistingHistory: Bool) async {
+    private func runCheck(_ expected: TrackerHistorySyncGrant) async {
         guard !isBusy else { return }
-        if admittingExistingHistory {
-            guard pendingHistoryGrantID == expected.id else { return }
-            pendingHistoryGrantID = nil
-        }
         let current = UUID()
         var admitted: TrackerHistorySyncGrant
         do {
             admitted = try requireGrant(expected, generation)
-            if admittingExistingHistory {
-                guard admitted.includesExistingWatched != true else { return }
-                admitted.includesExistingWatched = true
-                if admitted.categories.contains(.resume) { admitted.includesExistingResumes = true }
-            }
             admitted.lastAttemptAt = Date()
             admitted.checkID = current
             admitted.lastCheckStatus = .incomplete
-            // Publish consent and the start of its check atomically. A relaunch
-            // after this write can never present this attempt as a success.
+            // A relaunch after this write must not present this attempt as a success.
             try store.save(admitted, for: grantKey())
+            lastAttemptThisForeground = admitted.lastAttemptAt
             grant = admitted
             error = nil
         } catch {

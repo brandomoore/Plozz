@@ -771,6 +771,18 @@ final class TrackerHistoryImportTests: XCTestCase {
     }
 
     @MainActor
+    private func restoreLegacySkip(_ sync: TrackerHistorySyncController, store: DurableLocalStateStore) throws {
+        var legacy = try XCTUnwrap(sync.grant)
+        legacy.includesExistingWatched = nil
+        legacy.includesExistingResumes = nil
+        try store.save(legacy, for: DurableLocalStateKey(
+            collection: .trackerDeliveryReceipt, scope: .source(profileID: legacy.scope.profileID, sourceID: legacy.identity.trackerID),
+            recordID: "history-sync"
+        ))
+        sync.reload()
+    }
+
+    @MainActor
     func testSelectionEditPreservesUnprocessedResumeAndProofWithoutBackfillingNewPairs() async throws {
         let context = WatchMutationServerScope(
             profile: .init(id: "profile", name: "Test"), accounts: [account(.mediaShare), account(.mediaShare, id: "second")]
@@ -1025,16 +1037,19 @@ final class TrackerHistoryImportTests: XCTestCase {
             let provider = ImportProvider(.mediaShare, item: item())
             let sync = syncController(provider: provider, evidence: evidence, store: store)
             await enable(sync, evidence: evidence)
+            await sync.synchronize(manual: false)
+            XCTAssertEqual(sync.confirmedCount, initiallyCompleted ? 1 : 0)
             evidence.snapshot = try snapshot([movie(.completed, edited: true)])
             await sync.synchronize()
             XCTAssertNil(sync.error)
             let writes = await provider.writes
-            XCTAssertEqual(writes, initiallyCompleted ? 0 : 1)
+            XCTAssertEqual(sync.confirmedCount, initiallyCompleted ? 0 : 1)
+            XCTAssertEqual(writes, 1)
         }
     }
 
     @MainActor
-    func testOngoingSyncDoesNotBackfillReviewedHistoryOrReplayAfterRestart() async throws {
+    func testOngoingSyncImportsReviewedHistoryWithoutReplayingAfterRestart() async throws {
         let evidence = ImportEvidence(try snapshot([observation()]))
         let secure = HistorySyncSecureStore()
         let store = try DurableLocalStateStore(secureStore: secure)
@@ -1043,11 +1058,11 @@ final class TrackerHistoryImportTests: XCTestCase {
         await enable(sync, evidence: evidence)
         await sync.synchronize()
         var writes = await provider.writes
-        XCTAssertEqual(writes, 0)
+        XCTAssertEqual(writes, 1)
         evidence.snapshot = try snapshot([observation(), observation(id: "new-play")])
         await sync.synchronize()
         XCTAssertNil(sync.error)
-        XCTAssertEqual(sync.confirmedCount, 1)
+        XCTAssertEqual(sync.confirmedCount, 0)
         writes = await provider.writes
         XCTAssertEqual(writes, 1)
         await provider.replace(item: item())
@@ -1206,7 +1221,7 @@ final class TrackerHistoryImportTests: XCTestCase {
     }
 
     @MainActor
-    func testDirectEnrollmentBaselinesHistoryWithoutComparingOrBackfilling() async throws {
+    func testDirectEnrollmentImportsExistingWatchOnFirstAutomaticCheck() async throws {
         let provider = ImportProvider(.mediaShare, item: item())
         let evidence = ImportEvidence(try snapshot([observation()]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
@@ -1218,9 +1233,9 @@ final class TrackerHistoryImportTests: XCTestCase {
         XCTAssertNil(entry.plan)
         let reads = await provider.itemReads
         XCTAssertTrue(reads.isEmpty)
-        await sync.synchronize()
+        await sync.synchronize(manual: false)
         let writes = await provider.writes
-        XCTAssertEqual(writes, 0)
+        XCTAssertEqual(writes, 1)
     }
 
     @MainActor
@@ -1262,10 +1277,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         }
         let sync = controller()
         await enable(sync, evidence: evidence, categories: [.watched, .resume])
-        let id = try XCTUnwrap(sync.pendingHistoryGrantID)
-        await sync.synchronize() // The initial new-activity check does not consume the offer.
-        XCTAssertEqual(sync.confirmedCount, 0)
-        await sync.syncExistingHistory(for: id)
+        await sync.synchronize(manual: false)
         XCTAssertNil(sync.error)
         let result = try XCTUnwrap(sync.grant?.lastCompletedResult)
         XCTAssertEqual(result.confirmedCount, 3)
@@ -1281,15 +1293,14 @@ final class TrackerHistoryImportTests: XCTestCase {
         XCTAssertEqual(managedWrites, 0)
 
         let reopened = controller()
-        evidence.nextRead = { XCTFail("A duplicate or restored decision must not start another check") }
-        await sync.syncExistingHistory(for: id)
-        await reopened.syncExistingHistory(for: id)
+        evidence.nextRead = { XCTFail("Repeated index callbacks in one foreground must not start another check") }
+        await sync.synchronize(manual: false)
         XCTAssertEqual(reopened.grant?.lastCheckStatus, .completed)
         XCTAssertEqual(reopened.grant?.lastCompletedResult, result)
         evidence.nextRead = nil
         await share.replace(item: item())
         evidence.snapshot = try snapshot(watches + [record("progress", "552", .resume(seconds: 200, runtime: 1_000, updatedAt: nil))])
-        await reopened.synchronize()
+        await reopened.synchronize(manual: false)
         XCTAssertNil(reopened.error)
         XCTAssertEqual(reopened.confirmedCount, 1)
         let futureResume = try await share.item(id: resume.id)
@@ -1299,63 +1310,19 @@ final class TrackerHistoryImportTests: XCTestCase {
     }
 
     @MainActor
-    func testSkippedAndUnansweredHistoryChoicesCannotBackfillAfterRelaunch() async throws {
-        for skip in [false, true] {
-            let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-            let provider = ImportProvider(.mediaShare, item: item())
-            let evidence = ImportEvidence(try snapshot([observation()]))
-            let sync = syncController(provider: provider, evidence: evidence, store: store)
-            await enable(sync, evidence: evidence)
-            let id = try XCTUnwrap(sync.pendingHistoryGrantID)
-            if skip {
-                sync.skipExistingHistory(for: id)
-                await sync.syncExistingHistory(for: id)
-            }
-            let reopened = syncController(provider: provider, evidence: evidence, store: store)
-            XCTAssertNil(reopened.pendingHistoryGrantID)
-            await reopened.syncExistingHistory(for: id)
-            XCTAssertNil(reopened.grant?.lastCompletedResult)
-            await reopened.synchronize()
-            XCTAssertEqual(reopened.grant?.lastCompletedResult?.confirmedCount, 0)
-            let oldWrites = await provider.writes
-            XCTAssertEqual(oldWrites, 0)
-            evidence.snapshot = try snapshot([observation(), observation(id: "new")])
-            await reopened.synchronize()
-            XCTAssertEqual(reopened.confirmedCount, 1)
-        }
-    }
-
-    @MainActor
-    func testHistoryChoiceCannotTransferToAnotherProfileReplacementGrantOrEditedSelection() async throws {
+    func testForegroundReturnChecksForNewActivityWithoutBroadeningLegacySkip() async throws {
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
         let provider = ImportProvider(.mediaShare, item: item())
         let evidence = ImportEvidence(try snapshot([observation()]))
-        let old = syncController(provider: provider, evidence: evidence, store: store)
-        await enable(old, evidence: evidence)
-        let oldID = try XCTUnwrap(old.pendingHistoryGrantID)
-        let other = syncController(provider: provider, evidence: evidence, store: store, serverScope: .init(
-            profile: .init(id: "other", name: "Other"), accounts: [account(.mediaShare)]
-        ))
-        await enable(other, evidence: evidence)
-        let otherID = try XCTUnwrap(other.pendingHistoryGrantID)
-        other.skipExistingHistory(for: oldID)
-        await other.syncExistingHistory(for: oldID)
-        XCTAssertEqual(other.pendingHistoryGrantID, otherID)
-        XCTAssertNil(other.grant?.lastAttemptAt)
-        let replacement = syncController(provider: provider, evidence: evidence, store: store)
-        await enable(replacement, evidence: evidence)
-        let replacementID = try XCTUnwrap(replacement.pendingHistoryGrantID)
-        await old.syncExistingHistory(for: oldID)
-        replacement.reload()
-        XCTAssertEqual(replacement.pendingHistoryGrantID, replacementID)
-        XCTAssertNil(replacement.grant?.lastAttemptAt)
-        await replacement.updateSelection(accountIDs: ["account"], categories: [.watched, .resume])
-        await replacement.syncExistingHistory(for: replacementID)
-        XCTAssertNil(replacement.pendingHistoryGrantID)
-        await replacement.synchronize()
-        XCTAssertEqual(replacement.grant?.lastCompletedResult?.confirmedCount, 0)
-        let writes = await provider.writes
-        XCTAssertEqual(writes, 0)
+        let sync = syncController(provider: provider, evidence: evidence, store: store)
+        await enable(sync, evidence: evidence)
+        try restoreLegacySkip(sync, store: store)
+        await sync.synchronize(manual: false)
+        XCTAssertEqual(sync.grant?.lastCompletedResult?.confirmedCount, 0)
+        sync.stop() // Background, then foreground again well within fifteen minutes.
+        evidence.snapshot = try snapshot([observation(), observation(id: "new")])
+        await sync.synchronize(manual: false)
+        XCTAssertEqual(sync.grant?.lastCompletedResult?.confirmedCount, 1)
     }
 
     @MainActor
@@ -1373,7 +1340,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         XCTAssertEqual(controller().grant?.lastCheckStatus, .failed)
         XCTAssertNil(controller().grant?.lastCompletedResult)
         evidence.failRead = false
-        await sync.syncExistingHistory(for: try XCTUnwrap(sync.pendingHistoryGrantID))
+        await sync.synchronize()
         let completed = try XCTUnwrap(sync.grant?.lastCompletedResult)
         XCTAssertEqual(completed.confirmedCount, 1)
 
@@ -1413,9 +1380,8 @@ final class TrackerHistoryImportTests: XCTestCase {
             }]), otherProviders: ["second": second]
         )
         await enable(sync, evidence: evidence)
-        let id = try XCTUnwrap(sync.pendingHistoryGrantID)
         await reconciler.beginLiveSession(accountID: "account", itemID: "server-item", serverScope: context)
-        await sync.syncExistingHistory(for: id)
+        await sync.synchronize(manual: false)
         XCTAssertEqual(sync.grant?.lastCompletedResult?.confirmedCount, 0)
         XCTAssertTrue(sync.hasMoreChanges)
         XCTAssertEqual(sync.grant?.lastCompletedResult?.libraries?.first?.counts, [.playing: 26])
@@ -1526,7 +1492,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         await reopened.synchronize()
         XCTAssertNil(reopened.error)
         let writes = await provider.writes
-        XCTAssertEqual(writes, 0, "Re-enrollment must not backfill pre-consent activity")
+        XCTAssertEqual(writes, 1, "Only fresh enrollment authorizes importing existing history")
     }
 
     @MainActor
@@ -1781,7 +1747,7 @@ final class TrackerHistoryImportTests: XCTestCase {
     }
 
     @MainActor
-    func testReviewedResumeContinuesPastEnrolledWatchHistory() async throws {
+    func testReviewedResumeContinuesPastLegacySkippedWatchHistory() async throws {
         let categorySets: [Set<TrackerHistorySyncCategory>] = [[.resume], [.resume, .watched]]
         for categories in categorySets {
             let oldWatch = try observation(id: "old-watch")
@@ -1790,6 +1756,7 @@ final class TrackerHistoryImportTests: XCTestCase {
             let provider = ImportProvider(.mediaShare, item: item(position: 100))
             let sync = syncController(provider: provider, evidence: evidence, store: store)
             await enable(sync, evidence: evidence, categories: categories)
+            try restoreLegacySkip(sync, store: store)
             await sync.synchronize()
             var writes = await provider.writes
             XCTAssertEqual(writes, 0, "Enrollment must not backfill the old watch")
@@ -2090,7 +2057,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         evidence.snapshot = try snapshot(Array(records.prefix(100_000)))
         await enable(sync, evidence: evidence)
         evidence.snapshot = try snapshot(records)
-        await sync.syncExistingHistory(for: try XCTUnwrap(sync.pendingHistoryGrantID))
+        await sync.synchronize()
         XCTAssertEqual(sync.error as? TrackerHistorySyncError, .historyTooLarge)
         XCTAssertEqual(sync.grant?.lastCheckStatus, .failed)
         XCTAssertNil(sync.grant?.lastCompletedResult)
@@ -2142,6 +2109,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         ])
         let sync = syncController(provider: provider, evidence: evidence, store: store, indexSnapshot: index)
         await enable(sync, evidence: evidence)
+        try restoreLegacySkip(sync, store: store)
         evidence.snapshot = try snapshot([enriched(original.fact)])
         await sync.synchronize()
         XCTAssertNil(sync.error)

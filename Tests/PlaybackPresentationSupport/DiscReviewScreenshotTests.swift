@@ -340,22 +340,14 @@ final class DiscReviewScreenshotTests: XCTestCase {
     func testSync() {
         start("sync",["--history-ongoing-sync"]); let enabled=el("tracker-history.sync-enabled"); XCTAssertTrue(enabled.waitForExistence(timeout:6)); shot("ongoing-sync-off"); go(enabled)
         confirmLibraries()
-        let skip = app.buttons["Skip"].firstMatch
-        XCTAssertTrue(skip.waitForExistence(timeout: 5)); shot("existing-history-choice"); chooseSkip(skip)
         XCTAssertTrue(el("tracker-history.sync-now").waitForExistence(timeout:8)); shot("ongoing-sync-on"); app.terminate()
     }
 
-    private func chooseSkip(_ skip: XCUIElement) {
-        go(skip)
-    }
-
-    private func confirmLibraries(single: Bool = false) {
+    private func confirmLibraries() {
         let start = app.buttons["tracker-history.start-sync"].firstMatch
         XCTAssertTrue(start.waitForExistence(timeout: 5))
-        if !single {
-            XCTAssertFalse(start.isEnabled)
-            go(el("tracker-history.choose-all"))
-        }
+        XCTAssertFalse(start.isEnabled)
+        go(el("tracker-history.choose-all"))
         go(start)
     }
 }
@@ -447,9 +439,6 @@ extension AtlasUI {
         XCTAssertEqual(sync.value as? String, "0", "Reporting must not enroll the profile in sync.")
         go(sync)
         confirmLibraries()
-        let skip = app.buttons["Skip"].firstMatch
-        XCTAssertTrue(skip.waitForExistence(timeout: 5))
-        chooseSkip(skip)
         XCTAssertTrue(el("tracker-history.sync-now").waitForExistence(timeout: 5))
         XCTAssertTrue(activation.exists, "Both controls belong to the same account page.")
     }
@@ -465,10 +454,8 @@ extension AtlasUI {
         openConnectedAccount(singleShare: true)
         let single = el("tracker-history.library.cedar")
         XCTAssertFalse(single.exists)
-        go(el("tracker-history.sync-enabled"))
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Cedar Loft")).firstMatch.exists)
-        confirmLibraries(single: true)
-        chooseSkip(app.buttons["Skip"].firstMatch)
+        go(el("tracker-history.sync-enabled"))
         XCTAssertTrue(single.waitForExistence(timeout: 5))
         XCTAssertTrue([single.label, single.value as? String ?? ""].joined().contains("Cedar Loft, SMB"), single.debugDescription)
         XCTAssertFalse(el("tracker-history.libraries").exists)
@@ -481,7 +468,7 @@ extension AtlasUI {
         XCTAssertFalse(libraries.exists)
         go(el("tracker-history.sync-enabled"))
         confirmLibraries()
-        chooseSkip(app.buttons["Skip"].firstMatch)
+        XCTAssertTrue(el("tracker-history.sync-now").waitForExistence(timeout: 8))
         go(libraries)
         XCTAssertTrue(el("tracker-history.sync-server.cedar").label.contains("Cedar Loft, SMB"))
         XCTAssertTrue(el("tracker-history.sync-server.mariner").label.contains("Mariner Archive, WebDAV"))
@@ -502,7 +489,7 @@ extension AtlasUI {
         go(el("tracker-history.sync-enabled"))
         shot("ten-libraries-chooser")
         confirmLibraries()
-        chooseSkip(app.buttons["Skip"].firstMatch)
+        XCTAssertTrue(el("tracker-history.sync-now").waitForExistence(timeout: 8))
         assertSummary(10)
         XCTAssertFalse(cedar.exists)
         shot("ten-libraries-collapsed")

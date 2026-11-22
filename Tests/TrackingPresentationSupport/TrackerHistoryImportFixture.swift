@@ -576,6 +576,7 @@ private final class HistoryImportFixtureModel {
                 fact: .watched(at: Date(timeIntervalSince1970: changed ? 1_700_000_001 : 1_700_000_000))
             )
         ]
+        if newPlay == 0 && arguments.contains("--history-initially-empty") { records = [] }
         let newBatch = arguments.contains("--history-result-batch") && newPlay > 0
         if arguments.contains("--history-many-records") || newBatch {
             for number in 1...(newBatch ? 25 : 240) {

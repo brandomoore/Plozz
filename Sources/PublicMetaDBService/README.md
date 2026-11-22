@@ -16,11 +16,10 @@ earlier builds.
 Connecting a new PublicMetaDB tracking account enables playback reporting. The
 account's tracker switch can pause it without disconnecting. Refreshing a saved
 key preserves the previous reporting choice; it never opts an existing user in.
-**2-way sync** is separate from normal reporting. Enabling it checks for
-new activity and offers **Sync history / Skip** for existing watches and supported
-resume positions. Neither
-choice changes managed-server watch state. Earlier builds did not offer historical
-sync. The live provider results below predate the history choice; they do not
+**2-way sync** is separate from normal reporting. Enabling it automatically
+imports eligible existing watches and resume positions for the selected shares.
+It never changes managed-server watch state. The live provider results below
+predate automatic historical import; they do not
 verify the new enrollment flow. A pre-beta grant cannot authorize checks.
 External-app pause → Plozz Continue Watching on launch still needs independent
 verification on dedicated Trakt, Simkl, and WeTrakr accounts; PublicMetaDB

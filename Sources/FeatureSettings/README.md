@@ -13,8 +13,8 @@ While a check is running, its current stage and available page counts replace **
 Wrapped errors use the same inner clearance as Settings descriptions; the group owns the horizontal inset.
 **Account** groups connection status and account actions. Every tracker uses a red **Disconnect** button.
 **2-way sync** brings supported
-tracker activity into matching Plozz libraries. On first enrollment, **Sync history**
-includes existing watches and supported paused positions; **Skip** leaves them alone. Neither choice writes to Plex,
+tracker activity into matching Plozz libraries. Enabling sync imports existing watches
+and supported paused positions without a second confirmation. It does not write to Plex,
 Jellyfin, or Emby.
 One-time imports and exports, PublicMetaDB watchlists, history management, ratings, contributions,
 discovery, external-ID tools, and the Last.fm listening-history browser are not v1 destinations.
@@ -101,10 +101,12 @@ coverage, history fidelity, and remaining integration work.
 
 **2-way sync** is off until the user enables it on the tracker account page.
 Only Plozz-managed watch state for this profile's selected network libraries can change.
-Enrollment checks for new activity immediately. The separate **Sync history / Skip**
-decision includes supported paused positions for the originally selected shares, never outgoing history.
+Enrollment starts the first check immediately. A single eligible share is named at the switch;
+with several shares the user chooses the destinations once. Historical import applies only to
+the originally selected shares and categories. Previously skipped history stays skipped.
 Older watched-only enrollments require a fresh opt-in before progress can be imported.
-Later checks use the provider's supported categories and foreground policy. **Sync now**
+Returning to the app checks eligible trackers after the libraries are indexed. Repeated index
+callbacks in the same foreground visit are coalesced; failed checks retain backoff. **Sync now**
 checks all eligible activity present at the start across every selected library in one action.
 Writes are batched internally and checked against current tracker and destination state.
 Disabling 2-way sync leaves reporting on and does not undo updates.
@@ -119,12 +121,10 @@ authorization; returning to comparison creates a fresh session.
 The comparison distinguishes a previously watched title from one never watched,
 even when the current viewing is incomplete. Its resume position is shown separately.
 
-PublicMetaDB and WeTrakr offer watched state and compatible resume points;
-Trakt, Simkl, AniList and MyAnimeList offer watched state only. AniList and
+PublicMetaDB, WeTrakr, Trakt and Simkl offer watched state and compatible resume points. AniList and
 MyAnimeList retain their completed-movie-only import restriction. Unsupported
-categories are neither displayed nor accepted by the controller. Simkl requires
-**Sync now**, which retains its activity-gated read path; the other services can
-check after foreground/index readiness. None installs a polling timer.
+categories are neither displayed nor accepted by the controller. Simkl retains its
+activity-gated read path on foreground checks. None installs a polling timer.
 Anime rating, count and list-update edits do not turn an existing completed movie
 into a new completion for automatic import.
 

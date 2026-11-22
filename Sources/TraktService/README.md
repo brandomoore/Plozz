@@ -151,8 +151,8 @@ of its matched file. It cannot change a managed server. The boundary values
 do not imply an explicit clear or completed watch.
 
 The **2-way sync** enrollment can import watched states and pauses into
-Plozz history for selected media shares. **Sync history** also imports eligible
-existing pauses; **Skip** leaves those alone. Its
+Plozz history for selected media shares. The first check imports eligible
+existing watches and pauses automatically. Its
 connection identity survives coordinated refresh/relaunch and changes on each
 new sign-in, including identical returned tokens. Disconnect revokes device-local
 permission before coordinated credential removal. See the [shared consent lifecycle](../FeatureSettings/README.md).
