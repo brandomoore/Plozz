@@ -678,7 +678,7 @@ struct PlaybackDetailView: View {
                         }
                     }
                 }
-            ] + controlsAutoHideRows + displayFadeRows + discRows + advancedRows
+            ] + controlsAutoHideRows + discRows + advancedRows
         }
         #endif
         return subtitleRows
@@ -686,11 +686,11 @@ struct PlaybackDetailView: View {
             + versionSelectionRows
             + pictureRows
             + bufferRows
+            + [displayFadeGroup]
             + skipIntroRows
             + skipIntervalRows
             + resumeRows
             + scrubbingRows
-            + displayFadeRows
             + controlsAutoHideRows
             + upNextRows
             + playerTabRows
@@ -725,6 +725,7 @@ struct PlaybackDetailView: View {
                 SettingsControlRows {
                     ForEach(bufferRows) { $0.detail() }
                 }
+                displayFadeGroup.detail()
             }
         }.groupedContent()
     }
@@ -1061,30 +1062,25 @@ struct PlaybackDetailView: View {
         ]
     }
 
-    /// Both display fades live in ONE row. They're the same idea — hide the blank
-    /// your TV shows while it renegotiates the picture — and splitting them made
-    /// the page imply a "Display Transitions" grouping the flat master list never
-    /// renders. The toggles are labelled by what they cover, so they need no
-    /// headers or per-toggle paragraphs above them.
-    private var displayFadeRows: [SettingsSplitRow] {
-        [
-            SettingsSplitRow(
-                id: "display-fades",
-                title: "Fade on display changes",
-                description: "If you don't match dynamic range or frame rate on your Apple TV, turn these off for faster transitions.",
-            ) {
-                SettingsControlRows {
-                    // "HDR" and "Dolby Vision" are both `neverTranslate` brands, so
-                    // this label must reach the UI verbatim rather than entering the
-                    // catalog where a translator would have no way to know that.
-                    Toggle(isOn: $playback.settings.fadeOnDynamicRangeChange) {
-                        Text(verbatim: "HDR & Dolby Vision")
-                    }.settingsSearchAnchor("fade-hdr")
-                    Toggle("Frame rate", isOn: $playback.settings.fadeOnFrameRateChange).settingsSearchAnchor("fade-frame-rate")
+    private var displayFadeGroup: SettingsSplitRow {
+        SettingsSplitRow(id: "display-fades", title: "Fade on display changes") {
+            SettingsControlRows {
+                SettingsDescribedControl {
+                    Toggle("Fade when switching between SDR, HDR, and Dolby Vision",
+                           isOn: $playback.settings.fadeOnDynamicRangeChange)
+                        .settingsSearchAnchor("fade-hdr")
+                } description: {
+                    Text("If Match Dynamic Range is off, turn this off for faster transitions.")
                 }
-                .settingsSearchAnchor("display-fades")
+                SettingsDescribedControl {
+                    Toggle("Fade when switching frame rates", isOn: $playback.settings.fadeOnFrameRateChange)
+                        .settingsSearchAnchor("fade-frame-rate")
+                } description: {
+                    Text("If Match Frame Rate is off, turn this off for faster transitions.")
+                }
             }
-        ]
+            .settingsSearchAnchor("display-fades")
+        }
     }
 
     /// Autoplay and the Up Next card, in that order: whether the next episode

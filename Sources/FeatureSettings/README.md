@@ -18,10 +18,12 @@ or paused** also clears the paused picture after four idle seconds without
 resuming playback. **Never** leaves dismissal to the viewer. VoiceOver and
 Switch Control suspend automatic dismissal regardless of the profile setting.
 
-Playback's **Video** section has two cards on TV and mobile. Default player zoom,
-Video upscaling, and beta-only Dolby Vision conversion share the first; Video
-buffer and Live TV buffer share the second. Dividers separate controls within
-each card. The narrow gap marks the change from picture settings to buffering.
+Playback's **Video** section groups Default player zoom, Video upscaling, and
+beta-only Dolby Vision conversion in one card, followed by a card for Video buffer
+and Live TV buffer. Apple TV adds a third card for the two display fades. Each
+switch has its own note about the corresponding Apple TV Match Content setting;
+neither switch changes the display format. Dividers separate controls within a
+card; a narrow gap separates topics.
 **Default player zoom** uses the shared native menu on TV and mobile.
 Each profile stores separate iPhone, iPad and Apple TV choices; the current platform's
 control edits only its own choice. Custom exposes the existing 50-200% range.

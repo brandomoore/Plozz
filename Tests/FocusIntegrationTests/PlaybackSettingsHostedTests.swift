@@ -78,6 +78,52 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         XCTAssertEqual(playback.settings.videoZoom.television.customPercent, 117, "Focus must not adjust zoom.")
     }
 
+    func testVideoGroupShowsEachFadeWithItsMatchingGuidance() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let suite = "VideoFadesTV-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let page = PlaybackDetailView(
+            playback: PlaybackSettingsModel(store: PlaybackSettingsStore(defaults: defaults)),
+            subtitleBehavior: SubtitleBehaviorModel(store: SubtitleBehaviorStore(defaults: defaults)),
+            subtitleStyle: SubtitleStyleModel(store: SubtitleStyleStore(defaults: defaults)),
+            subtitlePolicy: SubtitlePolicyModel(store: SubtitlePolicyStore(defaults: defaults)),
+            audioPolicy: AudioPolicyModel(store: AudioPolicyStore(defaults: defaults))
+        )
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        window.rootViewController = UIHostingController(rootView:
+            SettingsFormLayout(title: Text("Playback"), rows: [page.videoGroup])
+                .environment(\.themePalette, .dark)
+                .environment(\.locale, Locale(identifier: "en_US"))
+                .frame(width: SettingsFormMetrics.pageWidth)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.black)
+        )
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        try await Task.sleep(for: .milliseconds(350))
+        let scroll = try XCTUnwrap(scrollView(in: window))
+        let bottom = max(-scroll.adjustedContentInset.top,
+                         scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+        scroll.setContentOffset(CGPoint(x: 0, y: bottom), animated: false)
+        try await Task.sleep(for: .milliseconds(150))
+        var text = (try visibleText(in: window, attachment: "Video-display-fades-TV"))[...]
+        for part in ["Fade when switching between SDR, HDR, and Dolby Vision",
+                     "If Match Dynamic Range is off, turn this off for faster transitions.",
+                     "Fade when switching frame rates",
+                     "If Match Frame Rate is off, turn this off for faster transitions."] {
+            let match = try XCTUnwrap(text.range(of: part), "Missing or misplaced: \(part) in \(text)")
+            text = text[match.upperBound...]
+        }
+    }
+
     func testUpscalingRowShowsAutomaticAndReflectsProfileChoiceWithNativeFocus() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
