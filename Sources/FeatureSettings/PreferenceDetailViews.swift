@@ -1037,10 +1037,7 @@ struct PlaybackDetailView: View {
         [
             SettingsSplitRow(
                 id: "seek-without-pausing",
-                title: "Seek without pausing",
-                description: playback.settings.seekWithoutPausing
-                    ? "Swipe to scrub while a title is playing and it resumes the moment you land — faster, but a stray swipe can move your position."
-                    : "You must pause before you can scrub — a swipe while playing won't seek or pause. Pause (Play/Pause, or center-press the scrubber), scrub, then press Play to resume. Prevents accidental seeks.",
+                title: "Seek without pausing"
             ) {
                 Toggle("Seek without pausing", isOn: $playback.settings.seekWithoutPausing)
                     .settingsSearchAnchor("seek-without-pausing")

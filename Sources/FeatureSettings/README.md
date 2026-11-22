@@ -35,8 +35,6 @@ transfer and sync.
 
 **Resuming playback** groups the resume-or-start-over prompt with the rewind
 interval for returning to a title. Skip intervals apply during playback instead.
-On Apple TV, the **Seek without pausing** explanation stays inside the Seeking
-card and uses the same description spacing as the buffer and display fade controls.
 
 Live TV's **Clean channel names** switch is profile-scoped and off by default.
 The shared TV/mobile section previews up to three distinct original names from
