@@ -177,7 +177,7 @@ struct SettingsControlGroup<Content: View>: View {
             }
         }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(SettingsFormMetrics.groupInset)
+            .settingsControlGroupPadding()
             .settingsGroupSurface(cornerRadii: cornerRadii)
             .toggleStyle(SettingsSwitchToggleStyle(flushLeading: false))
             .environment(\.settingsFormRowsFlushLeading, false)

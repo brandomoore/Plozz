@@ -1,10 +1,50 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
+#if os(tvOS)
+private extension EnvironmentValues {
+    @Entry var settingsCardInset: CGFloat? = nil
+}
+
+/// The earliest y-coordinate for a divider after a description, even through nested row views.
+private enum DescriptionBoundary: AlignmentID {
+    static func defaultValue(in dimensions: ViewDimensions) -> CGFloat { dimensions[.bottom] }
+    static let alignment = VerticalAlignment(Self.self)
+}
+
+private struct SettingsRowBoundaryLayout: Layout {
+    let dividerInset: CGFloat?
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let row = subviews[0].dimensions(in: proposal)
+        var height = row.height
+        if let dividerInset, let boundary = row[explicit: DescriptionBoundary.alignment] {
+            // Both the row's existing padding and the divider's focus clearance count toward the gap.
+            height = max(height, boundary - dividerInset)
+        }
+        return CGSize(width: row.width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews[0].place(at: bounds.origin, anchor: .topLeading, proposal: proposal)
+    }
+}
+
+public extension View {
+    func settingsControlGroupPadding() -> some View {
+        let inset = SettingsFormMetrics.groupInset
+        return padding(inset).environment(\.settingsCardInset, inset)
+    }
+}
+#endif
+
 /// A control and its supporting copy form one row, including for group separators.
 public struct SettingsDescribedControl<Control: View, Description: View>: View {
     private let control: Control
     private let description: Description
+    #if os(tvOS)
+    @Environment(\.settingsCardInset) private var cardInset
+    #endif
 
     public init(@ViewBuilder control: () -> Control, @ViewBuilder description: () -> Description) {
         self.control = control()
@@ -26,7 +66,11 @@ public struct SettingsDescribedControl<Control: View, Description: View>: View {
                 .settingsHelperText()
                 .fixedSize(horizontal: false, vertical: true)
                 #if os(tvOS)
-                .padding(.bottom, PlozzTheme.Spacing.medium)
+                .alignmentGuide(DescriptionBoundary.alignment) {
+                    $0[.bottom] + (cardInset == nil ? 0 : SettingsFormMetrics.descriptionBoundarySpacing)
+                }
+                .padding(.bottom, cardInset.map { max(0, SettingsFormMetrics.descriptionBoundarySpacing - $0) }
+                         ?? PlozzTheme.Spacing.medium)
                 #elseif os(iOS)
                 .padding(.bottom, MobileSettingsMetrics.descriptionBottomInset - MobileSettingsMetrics.controlVerticalInset)
                 #endif
@@ -57,12 +101,14 @@ public struct SettingsControlRows<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             Group(subviews: content) { rows in
                 ForEach(rows) { row in
-                    row
-                    if row.id != rows.last?.id {
+                    let hasDivider = row.id != rows.last?.id
+                    let clearance = SettingsFormMetrics.dividerFocusClearance
+                    SettingsRowBoundaryLayout(dividerInset: hasDivider ? clearance : nil) { row }
+                    if hasDivider {
                         PlozzDivider()
                             .padding(.leading, dividerLeadingInset ?? textInset)
                             .padding(.trailing, textInset)
-                            .padding(.vertical, SettingsFormMetrics.dividerFocusClearance)
+                            .padding(.vertical, clearance)
                             .accessibilityHidden(true)
                             .allowsHitTesting(false)
                     }

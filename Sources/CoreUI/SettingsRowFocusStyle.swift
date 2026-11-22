@@ -46,6 +46,7 @@ public enum SettingsFormMetrics {
         return .init(topLeading: top, bottomLeading: bottom, bottomTrailing: bottom, topTrailing: top)
     }
     public static let dividerFocusClearance = PlozzTheme.Spacing.xSmall
+    static let descriptionBoundarySpacing = PlozzTheme.Spacing.large + PlozzTheme.Spacing.xxSmall
     public static let illustratedGroupSpacing = PlozzTheme.Spacing.medium
     public static var groupInset: CGFloat {
         #if os(tvOS)

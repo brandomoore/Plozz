@@ -385,8 +385,43 @@ final class SettingsControlRowsHostedTests: XCTestCase {
             let helper = band(1)
             let above = try XCTUnwrap(helper.first) - titleEnd - 1
             let below = image.height - 1 - (try XCTUnwrap(helper.last))
-            XCTAssertEqual(below, above - 8, accuracy: 2, "Leave slightly less space below the helper than above it.")
+            XCTAssertLessThan(below, above)
+            XCTAssertEqual(below, 28, accuracy: 1)
         }
+    }
+
+    func testDescriptionsHaveTheSameClearanceToADividerAndTheCardBottom() throws {
+        let renderer = ImageRenderer(content:
+            SettingsConnectedControlGroups {
+                SettingsControlRows {
+                    SettingsDescribedControl { Color.clear.frame(height: 40) } description: {
+                        Color(red: 0, green: 1, blue: 0).frame(height: 52)
+                    }
+                    SettingsDescribedControl { Color.clear.frame(height: 40) } description: {
+                        Color(red: 0, green: 0, blue: 1).frame(height: 24)
+                    }
+                }
+            }
+            .frame(width: 320)
+            .environment(\.themePalette, .dark)
+            .environment(\.gradientBackgroundsEnabled, false)
+        )
+        renderer.scale = 1
+        let image = try XCTUnwrap(renderer.cgImage)
+        let bytes = try pixels(image)
+        func channel(_ y: Int, _ channel: Int) -> UInt8 {
+            bytes[(y * image.width + image.width / 2) * 4 + channel]
+        }
+        let rows = 0..<image.height
+        let greenEnd = try XCTUnwrap(rows.last { channel($0, 1) > 140 && channel($0, 2) < 100 })
+        let blueStart = try XCTUnwrap(rows.first { channel($0, 2) > 140 && channel($0, 1) < 100 })
+        let blueEnd = try XCTUnwrap(rows.last { channel($0, 2) > 140 && channel($0, 1) < 100 })
+        let dividers = ((greenEnd + 1)..<blueStart).filter { y in
+            Int(channel(y, 0)) > Int(channel(y - 1, 0)) + 5 && Int(channel(y, 0)) > Int(channel(y + 1, 0)) + 5
+        }
+        XCTAssertEqual(dividers.count, 1)
+        let divider = try XCTUnwrap(dividers.first)
+        XCTAssertEqual(divider - greenEnd - 1, image.height - blueEnd - 1)
     }
 
     func testGroupedControlHelperAndDividerShareTheTextKeyline() throws {

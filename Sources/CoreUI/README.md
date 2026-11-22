@@ -878,7 +878,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   a control and its helper in one child view; the divider belongs after both.
   Conditional rows keep their SwiftUI identity, and separators add no focus or
   accessibility stops. Focus fills stay within row bounds, with the shared
-  8pt `dividerFocusClearance` on each side of the line. Icon-led category lists
+  8pt `dividerFocusClearance` on each side of the line. In TV form cards,
+  `SettingsDescribedControl` leaves one 28pt gap from the description to the
+  next divider or the card bottom, counting the inset already supplied there.
+  Settings screens should not add padding below descriptions. Icon-led category lists
   start their dividers at `SettingsRowMetrics.iconTitleInset`, sharing the actual
   row icon width, gap and content padding; leading alignment also follows RTL.
   Illustrated Settings groups instead use a 16pt gap and 16pt padding without
