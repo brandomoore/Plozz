@@ -3800,6 +3800,23 @@ private final class PlozziOSArtworkPrefetchTasks {
     }
 }
 
+/// Only directly playable cards depend on the page's changing Play handler.
+private struct PlozziOSHomePlayButton<Label: View, Fallback: View>: View {
+    @Environment(\.plozziOSRailPlay) private var railPlay
+    let playItem: () -> MediaItem
+    @ViewBuilder let label: () -> Label
+    @ViewBuilder let fallback: () -> Fallback
+
+    var body: some View {
+        if let railPlay {
+            Button { railPlay(playItem()) } label: { label() }
+                .buttonStyle(.plain)
+        } else {
+            fallback()
+        }
+    }
+}
+
 struct PlozziOSHomeMediaCard: View {
     #if DEBUG
     static var routingResolutionCount = 0
@@ -3815,42 +3832,39 @@ struct PlozziOSHomeMediaCard: View {
     var isPendingRemoval: Bool = false
     let provider: (any MediaProvider)?
     var revisit: PlozziOSDetailArtworkRevisit? = nil
-    @State private var downloadRecord: DownloadedMediaRecord?
-    @Environment(\.plozziOSRailPlay) private var railPlay
-
     var body: some View {
-        let playsDirectly = interaction == .play && railPlay != nil && item.isPlayableNow
-        Group {
-            // Direct play needs a handler installed by the page that owns the player,
-            // and an item that is actually playable — a discovery/request stub has
-            // nothing to run — so both fall back to the detail push rather than
-            // opening a broken player.
-            if playsDirectly, let railPlay {
-                Button {
-                    railPlay(Self.resolvedItem(item, appModel: appModel, playsDirectly: true))
-                } label: { card }
-                    .buttonStyle(.plain)
-            } else if provider != nil || !appModel.accountsProviders.resolvedActiveAccounts.isEmpty {
-                MediaArtworkZoomLink(id: item.stablePresentationID) {
-                    PlozziOSHomeCardDetail(
-                        item: item, fallbackProvider: provider
-                    )
+        if interaction == .play && item.isPlayableNow {
+            PlozziOSHomePlayButton {
+                Self.resolvedItem(item, appModel: appModel, playsDirectly: true)
+            } label: {
+                card
+            } fallback: {
+                detailLink
+            }
+        } else {
+            detailLink
+        }
+    }
+
+    @ViewBuilder private var detailLink: some View {
+        if provider != nil || !appModel.accountsProviders.resolvedActiveAccounts.isEmpty {
+            MediaArtworkZoomLink(id: item.stablePresentationID) {
+                PlozziOSHomeCardDetail(item: item, fallbackProvider: provider)
                     .environment(\.plozzMetrics, PlozziOSMediaLayout.metrics(
                         density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize,
                         isRunningOnMac: isRunningOnMac))
                     .environment(\.plozzCardCaptionView, .related)
-                } label: {
-                    card
-                }
-                .buttonStyle(.plain)
-                .task(id: revisit, priority: .utility) {
-                    guard let revisit, revisit.scope == appModel.detailArtworkScopeID else { return }
-                    await revisit.prepare(for: item, snapshots: appModel.detailSnapshotCache,
-                                          replay: appModel.detailArtworkReplay)
-                }
-            } else {
+            } label: {
                 card
             }
+            .buttonStyle(.plain)
+            .task(id: revisit, priority: .utility) {
+                guard !Task.isCancelled, let revisit,
+                      let resources = appModel.detailRevisitResources(for: revisit.scope) else { return }
+                await revisit.prepare(for: item, snapshots: resources.snapshots, replay: resources.replay)
+            }
+        } else {
+            card
         }
     }
 
@@ -3887,7 +3901,7 @@ struct PlozziOSHomeMediaCard: View {
             // "landscape means playable" rule, so presentation and behaviour stay
             // independently controlled.
             showsResumeChip: item.kind != .collection && (showsResumeChip || isLandscape || interaction == .play),
-            downloadState: liveDownloadRecord?.badgeState,
+            downloadState: appModel.downloads.cachedRecord(forSelectedVersionOf: item)?.badgeState,
             // No visible "…" while browsing: the actions people actually reach for
             // live on the detail page, which is far more discoverable than a tiny
             // glyph on artwork. Press-and-hold still opens the menu here. The
@@ -3896,19 +3910,6 @@ struct PlozziOSHomeMediaCard: View {
             showsActionsMenu: false,
             isPendingRemoval: isPendingRemoval
         )
-        .task(id: "\(item.id)|\(item.selectedVersionID ?? "")") {
-            downloadRecord = await appModel.downloads.record(forSelectedVersionOf: item)
-        }
-    }
-
-    /// Re-read from the live registry so an in-flight transfer's progress updates,
-    /// falling back to the value the task fetched. Same pattern the episode rows
-    /// on the detail page use.
-    private var liveDownloadRecord: DownloadedMediaRecord? {
-        guard let downloadRecord else { return nil }
-        return appModel.downloads.records.first {
-            $0.identityKey == downloadRecord.identityKey
-        } ?? downloadRecord
     }
 }
 

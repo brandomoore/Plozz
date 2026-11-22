@@ -9,6 +9,14 @@ import XCTest
 
 @MainActor
 final class HomeCardRoutingTests: XCTestCase {
+    func testDetailPrewarmingCannotReopenAnInactiveViewersCaches() throws {
+        let app = PlozziOSAppModel()
+        let current = try XCTUnwrap(app.detailRevisitResources(for: app.detailArtworkScopeID))
+        XCTAssertTrue(current.snapshots === app.detailSnapshotCache)
+        XCTAssertTrue(current.replay === app.detailArtworkReplay)
+        XCTAssertNil(app.detailRevisitResources(for: "previous-viewer"))
+    }
+
     func testBrowsingDetailAndContinueWatchingCardsDoesNotResolveSources() async throws {
         for interaction in [PlozziOSRailInteraction.openDetail, .play] {
             let before = PlozziOSHomeMediaCard.routingResolutionCount

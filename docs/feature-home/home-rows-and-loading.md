@@ -352,6 +352,12 @@ the page. Browse headings reserve chevron space before their action is available
 only actionable headings are buttons, with the native 44-point touch target.
 Library, featured, Continue Watching, and Live TV rows use their own geometry.
 
+Ordinary Home cards open detail and do not observe the page's Play handler.
+Direct-play cards still open detail if no handler is installed. Download badges
+read the active profile's selected-version download index; mounting a card does
+not start a registry task or scan unrelated downloads for a source ID. Detail-art prewarming validates the current viewer
+once and uses that same scope for both the snapshot cache and bitmap replay.
+
 On iPad, landscape Continue Watching fits complete cards and matches the next
 poster card's visible peek at the same viewport width. Standard density uses
 four cards in wide windows, three at intermediate widths, and two in narrow

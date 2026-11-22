@@ -511,10 +511,9 @@ final class PlozziOSDownloadsModel {
     /// that must answer without awaiting (building a menu as it opens). `records`
     /// is the already-loaded published snapshot, so this needs no actor hop.
     func cachedRecord(forSelectedVersionOf item: MediaItem) -> DownloadedMediaRecord? {
-        let indexedRecords = recordIndex.records
-        guard !indexedRecords.isEmpty else { return nil }
+        guard !recordIndex.isEmpty else { return nil }
         if item.kind == .episode, item.explicitSourceSelection {
-            return DownloadMediaIdentity.selectedRecord(for: item, in: indexedRecords)
+            return DownloadMediaIdentity.selectedRecord(for: item, in: fallbackRecords(forSourceID: item.id))
                 .flatMap { recordIndex.record(forKey: $0.identityKey) }
         }
         // An item can carry SEVERAL identities (the same title on more than one
@@ -539,7 +538,7 @@ final class PlozziOSDownloadsModel {
            ) {
             return record
         }
-        return indexedRecords.first {
+        return fallbackRecords(forSourceID: item.id).first {
             $0.versionID == versionID && $0.snapshot.sourceItemID == item.id
         }.flatMap { recordIndex.record(forKey: $0.identityKey) }
     }
@@ -586,27 +585,24 @@ final class PlozziOSDownloadsModel {
     /// episode row has no explicit version selected, any downloaded copy satisfies
     /// its badge just as the registry's authoritative `record(for:)` lookup does.
     func cachedRecord(for item: MediaItem) -> DownloadedMediaRecord? {
-        let indexedRecords = recordIndex.records
-        guard !indexedRecords.isEmpty else { return nil }
+        guard !recordIndex.isEmpty else { return nil }
         let identities = MediaItemIdentity.identities(for: item)
-        for identity in identities {
-            let key = MediaIdentityKey.string(for: identity)
-            if let record = recordsByKey[key]
-                ?? recordsByIdentityKey[key]?.first {
-                return recordIndex.record(forKey: record.identityKey)
-            }
+        let keys = identities.map(MediaIdentityKey.string(for:))
+        for key in keys {
+            if let record = recordIndex.record(forKey: key) { return record }
         }
-        if identities.isEmpty, let identity = DownloadMediaIdentity.primary(for: item) {
-            let key = MediaIdentityKey.string(for: identity)
-            if let record = recordsByKey[key]
-                ?? recordsByIdentityKey[key]?.first {
-                return recordIndex.record(forKey: record.identityKey)
-            }
+        if identities.isEmpty, let identity = DownloadMediaIdentity.primary(for: item),
+           let record = recordIndex.record(forKey: MediaIdentityKey.string(for: identity)) {
+            return record
+        }
+        // Match the registry: exact copies across all identities precede versioned copies.
+        if let key = keys.compactMap({ recordsByIdentityKey[$0]?.first?.identityKey }).min() {
+            return recordIndex.record(forKey: key)
         }
         let expectedAccountSource = item.sourceAccountID.map {
             "\(DownloadMediaIdentity.accountSourcePrefix)\($0)"
         }
-        let sourceScopedMatches = indexedRecords.filter {
+        let sourceScopedMatches = fallbackRecords(forSourceID: item.id).filter {
             guard case .external(let source, let value) = $0.identity,
                   value == item.id else {
                 return false
@@ -619,6 +615,10 @@ final class PlozziOSDownloadsModel {
         guard expectedAccountSource != nil || sourceScopedMatches.count == 1 else { return nil }
         return sourceScopedMatches.sorted { $0.identityKey < $1.identityKey }.first
             .flatMap { recordIndex.record(forKey: $0.identityKey) }
+    }
+
+    private func fallbackRecords(forSourceID id: String) -> [DownloadedMediaRecord] {
+        recordIndex.fallbackKeys(forSourceID: id).compactMap { recordsByKey[$0] }
     }
 
     @discardableResult

@@ -2136,6 +2136,48 @@ final class DownloadPresentationTests: XCTestCase {
         XCTAssertNotNil(model.records.first?.snapshot.artworkFileName)
     }
 
+    func testHomeBadgeMatchesRegistryWhenAnAlternateIdentityHasAnExactCopy() async throws {
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie,
+                             providerIDs: ["tmdb": "123", "imdb": "tt123"], sourceAccountID: "emby")
+        let aliases = MediaItemIdentity.identities(for: item)
+        XCTAssertGreaterThanOrEqual(aliases.count, 2)
+        let first = try XCTUnwrap(aliases.first)
+        let second = try XCTUnwrap(aliases.dropFirst().first)
+        func copy(_ identity: MediaIdentity, version: String?) -> DownloadedMediaRecord {
+            DownloadedMediaRecord(identity: identity, versionID: version, sourceKind: .managedHTTP,
+                                  status: .completed, localFileName: "media.mkv", bytesDownloaded: 100,
+                                  totalBytes: 100, snapshot: PinnedMediaSnapshot(item: item))
+        }
+        let registry = DownloadedMediaRegistry(store: InMemoryDownloadedMediaStore())
+        _ = try await registry.beginDownload(copy(first, version: "1080p"))
+        let exact = copy(second, version: nil)
+        _ = try await registry.beginDownload(exact)
+        let model = makeModel(registry: registry, storage: try temporaryStorage(),
+                              probe: ArtworkProbe(data: imageData()), startsActive: false)
+        defer { model.beginProfileTransition() }
+        try await waitUntil { model.records.count == 2 }
+        let authoritative = await registry.record(for: item, versionID: nil)
+        XCTAssertEqual(authoritative?.identityKey, exact.identityKey)
+        XCTAssertEqual(model.cachedRecord(forSelectedVersionOf: item)?.identityKey, authoritative?.identityKey)
+    }
+
+    func testFallbackCandidatesExcludeUnrelatedDownloadsAndFollowSnapshotRepairs() {
+        let index = PlozziOSDownloadRecordIndex()
+        var downloads = (0..<200).map { record(id: "source-\($0)") }
+        downloads[0].snapshot.sourceItemID = "old-id"
+        index.update(downloads)
+        XCTAssertTrue(index.fallbackKeys(forSourceID: "not-downloaded").isEmpty)
+        XCTAssertEqual(index.fallbackKeys(forSourceID: "source-0"), [downloads[0].identityKey])
+        XCTAssertEqual(index.fallbackKeys(forSourceID: "old-id"), [downloads[0].identityKey])
+        downloads[0].snapshot.sourceItemID = "new-id"
+        index.update(downloads)
+        XCTAssertTrue(index.fallbackKeys(forSourceID: "old-id").isEmpty)
+        XCTAssertEqual(index.fallbackKeys(forSourceID: "new-id"), [downloads[0].identityKey])
+        index.update(Array(downloads.dropFirst()))
+        XCTAssertTrue(index.fallbackKeys(forSourceID: "source-0").isEmpty)
+        XCTAssertTrue(index.fallbackKeys(forSourceID: "new-id").isEmpty)
+    }
+
     func testCachedVersionAndIdentityLookupsObserveCompletionAndRemoval() async throws {
         for version in [nil, "file-1080p"] as [String?] {
             var item = MediaItem(
