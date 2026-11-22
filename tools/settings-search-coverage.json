@@ -4127,12 +4127,32 @@
       "reason": "Enrollment or revocation is bound to this device, profile, tracker connection and eligible media shares; there is no global sync switch.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|controls|Button|librarySummary": {
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerSyncLibraryChooser|body|Button|\"Cancel\"": {
+      "count": 2,
+      "reason": "Dismisses the current connection's library chooser without enrolling.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerSyncLibraryChooser|body|Button|if selected == eligible { Text(\"Deselect all\") } else { Text(\"Select all\") }": {
+      "count": 1,
+      "reason": "Changes the draft selection inside the library chooser only.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerSyncLibraryChooser|body|Button|HStack { label Spacer() SettingsCheckmark(isChecked: checked) }": {
+      "count": 1,
+      "reason": "Chooses an eligible library in a profile- and account-specific enrollment.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerSyncLibraryChooser|startButton|Button|\"Start sync\"": {
+      "count": 1,
+      "reason": "Confirms only the libraries reviewed for this connection.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|activeLibraries|Button|librarySummary": {
       "count": 1,
       "reason": "Expands the active connection's eligible library selection.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|controls|Toggle|<dynamic>": {
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|activeLibraries|Toggle|<dynamic>": {
       "count": 1,
       "reason": "Selects one eligible media share in this connection's grant; a share or user name cannot be a global result.",
       "covered_by": []

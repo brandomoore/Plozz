@@ -82,7 +82,8 @@ private struct TrackerTwoWaySyncRows: View {
     let session: TrackerHistoryImportSession
     let sync: TrackerHistorySyncController
     var reviewedPlan: TrackerHistoryImportPlan? = nil
-    @State private var selectedBeforeEnrollment: Set<String>?
+    @State private var choosingLibraries = false
+    @State private var confirmedLibraries: Set<String>?
     @State private var editingLibraries = false
     @State private var offeredGrant: UUID?
     @State private var showHistoryChoice = false
@@ -96,8 +97,7 @@ private struct TrackerTwoWaySyncRows: View {
         session.destinations.filter { sync.eligibleAccountIDs.contains($0.id) }
     }
     private var selected: Set<String> {
-        if sync.isEnabled, let grant = sync.grant { return Set(grant.scope.accounts.map(\.accountID)) }
-        return selectedBeforeEnrollment?.intersection(sync.eligibleAccountIDs) ?? sync.eligibleAccountIDs
+        Set(sync.grant?.scope.accounts.map(\.accountID) ?? [])
     }
     private func name(_ share: TrackerHistoryImportSession.Destination) -> String {
         shares.contains { $0.id != share.id && $0.serverName == share.serverName } ? share.historyDisplayName : share.serverName
@@ -138,7 +138,13 @@ private struct TrackerTwoWaySyncRows: View {
     @ViewBuilder private var controls: some View {
         Toggle("2-way sync", isOn: Binding(get: { sync.isEnabled }, set: setEnabled))
             .accessibilityIdentifier("tracker-history.sync-enabled")
-            .disabled(!sync.isEnabled && (sync.isBusy || selected.isEmpty))
+            .disabled(!sync.isEnabled && sync.isBusy)
+            .sheet(isPresented: $choosingLibraries, onDismiss: finishLibraryChoice) {
+                TrackerSyncLibraryChooser(shares: shares, name: name) { accounts in
+                    confirmedLibraries = accounts
+                    choosingLibraries = false
+                }
+            }
             .alert("Sync existing watch history from \(trackerName)?", isPresented: $showHistoryChoice) {
                 Button("Sync history") {
                     guard let id = offeredGrant, sync.isEnabled, sync.grant?.id == id else { return }
@@ -152,6 +158,24 @@ private struct TrackerTwoWaySyncRows: View {
             } message: {
                 Text("Mark matching titles as watched in \(destinations). New activity syncs either way.")
             }
+        if sync.isEnabled { activeLibraries }
+        if sync.isBusy {
+            ProgressView("Syncing…")
+        } else if let error = sync.error {
+            if !sync.isEnabled, error as? TrackerHistoryError == .incompleteSnapshot {
+                Text("Sync is off. Plozz couldn’t verify your full \(trackerName) history. Try again later.")
+            } else { TrackerHistoryImportFailure(error: error) }
+        } else if sync.isEnabled {
+            syncResult
+        }
+        if sync.isEnabled {
+            Button("Sync now") { operation = Task { await sync.synchronize() } }
+                .settingsActionRow().disabled(sync.isBusy)
+                .accessibilityIdentifier("tracker-history.sync-now")
+        }
+    }
+
+    @ViewBuilder private var activeLibraries: some View {
         if shares.count > 1 {
             Button { editingLibraries.toggle() } label: { librarySummary }
             .settingsActionRow()
@@ -171,20 +195,6 @@ private struct TrackerTwoWaySyncRows: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("tracker-history.library.\(share.id)")
-        }
-        if sync.isBusy {
-            ProgressView("Syncing…")
-        } else if let error = sync.error {
-            if !sync.isEnabled, error as? TrackerHistoryError == .incompleteSnapshot {
-                Text("Sync is off. Plozz couldn’t verify your full \(trackerName) history. Try again later.")
-            } else { TrackerHistoryImportFailure(error: error) }
-        } else if sync.isEnabled {
-            syncResult
-        }
-        if sync.isEnabled {
-            Button("Sync now") { operation = Task { await sync.synchronize() } }
-                .settingsActionRow().disabled(sync.isBusy)
-                .accessibilityIdentifier("tracker-history.sync-now")
         }
     }
 
@@ -207,13 +217,20 @@ private struct TrackerTwoWaySyncRows: View {
     private func setEnabled(_ enabled: Bool) {
         offeredGrant = nil
         showHistoryChoice = false
-        if !enabled {
-            selectedBeforeEnrollment = selected
+        editingLibraries = false
+        confirmedLibraries = nil
+        if enabled {
+            choosingLibraries = true
+        } else {
             operation?.cancel()
             sync.disable()
-            return
         }
-        let accounts = selected
+    }
+
+    private func finishLibraryChoice() {
+        guard let accounts = confirmedLibraries else { return }
+        confirmedLibraries = nil
+        guard !sync.isEnabled, !sync.isBusy else { return }
         operation = Task {
             if let plan = reviewedPlan {
                 await sync.enable(afterReview: plan, accountIDs: accounts, categories: sync.supportedCategories)
@@ -229,17 +246,88 @@ private struct TrackerTwoWaySyncRows: View {
     }
 
     private func select(_ id: String, _ on: Bool) {
+        guard sync.isEnabled, let grant = sync.grant else { return }
         let ids = on ? selected.union([id]) : selected.subtracting([id])
-        if sync.isEnabled, let grant = sync.grant {
-            if ids.isEmpty {
-                setEnabled(false)
-                selectedBeforeEnrollment = []
-            } else {
-                operation = Task { await sync.updateSelection(accountIDs: ids, categories: grant.categories) }
-            }
-        } else { selectedBeforeEnrollment = ids }
+        if ids.isEmpty {
+            setEnabled(false)
+        } else {
+            operation = Task { await sync.updateSelection(accountIDs: ids, categories: grant.categories) }
+        }
     }
 }
+
+private struct TrackerSyncLibraryChooser: View {
+    let shares: [TrackerHistoryImportSession.Destination]
+    let name: (TrackerHistoryImportSession.Destination) -> String
+    let confirm: (Set<String>) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.themePalette) private var palette
+    @State private var selection: Set<String> = []
+
+    private var eligible: Set<String> { Set(shares.map(\.id)) }
+    private var selected: Set<String> { shares.count == 1 ? eligible : selection.intersection(eligible) }
+
+    var body: some View {
+        NavigationStack {
+            GroupedSettingsPage(title: "Libraries to sync") {
+                #if os(tvOS)
+                SettingsSectionGroup {
+                    startButton.settingsActionRow()
+                    Button("Cancel", role: .cancel) { dismiss() }.settingsActionRow()
+                }
+                #endif
+                SettingsSectionGroup {
+                    if shares.count > 1 {
+                        Button {
+                            selection = selected == eligible ? [] : eligible
+                        } label: {
+                            if selected == eligible { Text("Deselect all") } else { Text("Select all") }
+                        }
+                        .settingsActionRow()
+                        .accessibilityIdentifier("tracker-history.choose-all")
+                    }
+                    ForEach(shares) { share in
+                        let label = TrackerLibraryLabel(name: name(share), transport: share.transportKind)
+                        if shares.count == 1 {
+                            label
+                        } else {
+                            let checked = selected.contains(share.id)
+                            Button {
+                                if checked { selection.remove(share.id) } else { selection.insert(share.id) }
+                            } label: {
+                                HStack {
+                                    label
+                                    Spacer()
+                                    SettingsCheckmark(isChecked: checked)
+                                }
+                            }
+                            .settingsActionRow()
+                            .accessibilityAddTraits(checked ? .isSelected : [])
+                            .accessibilityIdentifier("tracker-history.choose.\(share.id)")
+                        }
+                    }
+                }
+            }
+            #if os(iOS)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel", role: .cancel) { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { startButton }
+            }
+            #elseif os(tvOS)
+            .environment(\.settingsInWorkspace, false)
+            .onExitCommand { dismiss() }
+            #endif
+        }
+        .tint(palette.primaryText)
+    }
+
+    private var startButton: some View {
+        Button("Start sync") { confirm(selected) }
+            .disabled(selected.isEmpty)
+            .accessibilityIdentifier("tracker-history.start-sync")
+    }
+}
+
 private struct TrackerLibraryLabel: View {
     let name: String
     let transport: MediaShareTransportKind?

@@ -120,7 +120,16 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         let master = element("tracker-history.sync-enabled")
         XCTAssertTrue(master.waitForExistence(timeout: 5))
         waitForReport(";reads=0")
+        XCTAssertFalse(element("tracker-history.libraries").exists)
         activate(master)
+        activate(element("tracker-history.choose.cedar"))
+        activate(app.buttons["Cancel"].firstMatch)
+        waitForReport(";reads=0")
+        waitForReport(";sync=false;")
+        assertReport(jellyfin: 0, plex: 0, cedar: 0, mariner: 0)
+        XCTAssertFalse(element("tracker-history.libraries").exists)
+        activate(master)
+        confirmAllLibraries()
         activate(app.buttons["Skip"].firstMatch)
         waitForReport(";sync=true;destinations=cedar,mariner;categories=resume,watched;")
         assertReport(jellyfin: 0, plex: 0, cedar: 0, mariner: 0)
@@ -130,10 +139,11 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         app.launchArguments = ["--tracker-history-import-fixture", "--history-ongoing-sync", "--history-direct-sync"]
         app.launch()
         activate(app.buttons["fixture.history.open"])
-        activate(element("tracker-history.libraries"))
-        activate(element("tracker-history.sync-server.mariner"))
         activate(element("tracker-history.sync-enabled"))
+        activate(element("tracker-history.choose.cedar"))
+        activate(element("tracker-history.start-sync"))
         activate(app.buttons["Sync history"].firstMatch)
+        waitForReport(";sync=true;destinations=cedar;")
         waitForReport("cedar=1,played=true")
         assertReport(jellyfin: 0, plex: 0, cedar: 1, mariner: 0)
         activate(app.buttons["tracker-history.sync-now"])
@@ -150,6 +160,7 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         XCTAssertTrue(master.waitForExistence(timeout: 5))
         XCTAssertEqual(master.label, "2-way sync")
         activate(master)
+        confirmAllLibraries()
         XCTAssertTrue(app.staticTexts["Sync is off. Plozz couldn’t verify your full Trakt history. Try again later."]
             .waitForExistence(timeout: 5))
         XCTAssertEqual(master.value as? String, "0")
@@ -355,11 +366,14 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
             #if os(iOS)
             XCTAssertEqual(master.value as? String, "0")
             #endif
-            for option in [watched, resume, syncNow] { XCTAssertFalse(option.exists) }
+            for option in [watched, resume, syncNow, cedar, mariner, element("tracker-history.libraries")] {
+                XCTAssertFalse(option.exists)
+            }
         }
         XCTAssertTrue(master.waitForExistence(timeout: 5), app.debugDescription)
         assertOff()
         activate(master)
+        confirmAllLibraries()
         activate(app.buttons["Skip"].firstMatch)
         waitForReport(";sync=true;destinations=cedar,mariner;categories=\(defaults);")
         activate(element("tracker-history.libraries"))
@@ -381,8 +395,10 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
             activate(master)
             assertOff()
             activate(master)
+            confirmAllLibraries()
             activate(app.buttons["Skip"].firstMatch)
             waitForReport(";sync=true;destinations=cedar,mariner;categories=\(defaults);")
+            activate(element("tracker-history.libraries"))
         }
         activate(mariner)
         waitForReport(";sync=true;destinations=cedar;categories=\(defaults);")
@@ -403,6 +419,14 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         let updated = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", text),
                                                 object: app.staticTexts["fixture.history.report"])
         XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 10), .completed, app.debugDescription)
+    }
+
+    private func confirmAllLibraries() {
+        let start = app.buttons["tracker-history.start-sync"].firstMatch
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        XCTAssertFalse(start.isEnabled)
+        activate(element("tracker-history.choose-all"))
+        activate(start)
     }
 
     private func launch(_ arguments: [String] = []) {

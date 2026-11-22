@@ -310,7 +310,19 @@ final class DiscReviewScreenshotTests: XCTestCase {
         #if os(iOS)
         if !e.isHittable { app.swipeUp() }; if e.elementType == .switch && e.switches.firstMatch.exists { e.switches.firstMatch.tap() } else { e.tap() }
         #else
-        for _ in 0..<8 where !e.hasFocus { XCUIRemote.shared.press(.down) }; if !e.hasFocus { for _ in 0..<8 where !e.hasFocus { XCUIRemote.shared.press(.up) } }; XCTAssertTrue(e.hasFocus,app.debugDescription); XCUIRemote.shared.press(.select)
+        for _ in 0..<24 {
+            if e.hasFocus { break }
+            let current = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "hasFocus == true")).firstMatch
+            let direction: XCUIRemote.Button
+            if !current.exists { direction = .down }
+            else if e.frame.minX > current.frame.maxX { direction = .right }
+            else if e.frame.maxX < current.frame.minX { direction = .left }
+            else { direction = e.frame.midY < current.frame.midY ? .up : .down }
+            XCUIRemote.shared.press(direction)
+        }
+        XCTAssertTrue(e.hasFocus, app.debugDescription)
+        XCUIRemote.shared.press(.select)
         #endif
     }
     func testComparison() {
@@ -320,22 +332,24 @@ final class DiscReviewScreenshotTests: XCTestCase {
     }
     func testSync() {
         start("sync",["--history-ongoing-sync"]); let enabled=el("tracker-history.sync-enabled"); XCTAssertTrue(enabled.waitForExistence(timeout:6)); shot("ongoing-sync-off"); go(enabled)
+        confirmLibraries()
         let skip = app.buttons["Skip"].firstMatch
         XCTAssertTrue(skip.waitForExistence(timeout: 5)); shot("existing-history-choice"); chooseSkip(skip)
         XCTAssertTrue(el("tracker-history.sync-now").waitForExistence(timeout:8)); shot("ongoing-sync-on"); app.terminate()
     }
 
     private func chooseSkip(_ skip: XCUIElement) {
-        #if os(tvOS)
-        // The native alert lays its two actions side by side.
-        if !skip.hasFocus { XCUIRemote.shared.press(.left) }
-        guard skip.wait(for: \.hasFocus, toEqual: true, timeout: 3) else {
-            XCTFail("Skip did not receive focus"); return
-        }
-        XCUIRemote.shared.press(.select)
-        #else
         go(skip)
-        #endif
+    }
+
+    private func confirmLibraries(single: Bool = false) {
+        let start = app.buttons["tracker-history.start-sync"].firstMatch
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        if !single {
+            XCTAssertFalse(start.isEnabled)
+            go(el("tracker-history.choose-all"))
+        }
+        go(start)
     }
 }
 
@@ -424,6 +438,7 @@ extension AtlasUI {
 
         XCTAssertEqual(sync.value as? String, "0", "Reporting must not enroll the profile in sync.")
         go(sync)
+        confirmLibraries()
         let skip = app.buttons["Skip"].firstMatch
         XCTAssertTrue(skip.waitForExistence(timeout: 5))
         chooseSkip(skip)
@@ -441,6 +456,11 @@ extension AtlasUI {
     func testLibraryBadgesIdentifySyncDestinations() {
         openConnectedAccount(singleShare: true)
         let single = el("tracker-history.library.cedar")
+        XCTAssertFalse(single.exists)
+        go(el("tracker-history.sync-enabled"))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Cedar Loft")).firstMatch.exists)
+        confirmLibraries(single: true)
+        chooseSkip(app.buttons["Skip"].firstMatch)
         XCTAssertTrue(single.waitForExistence(timeout: 5))
         XCTAssertTrue([single.label, single.value as? String ?? ""].joined().contains("Cedar Loft, SMB"), single.debugDescription)
         XCTAssertFalse(el("tracker-history.libraries").exists)
@@ -450,6 +470,10 @@ extension AtlasUI {
         openConnectedAccount()
         defer { app.terminate() }
         let libraries = el("tracker-history.libraries")
+        XCTAssertFalse(libraries.exists)
+        go(el("tracker-history.sync-enabled"))
+        confirmLibraries()
+        chooseSkip(app.buttons["Skip"].firstMatch)
         go(libraries)
         XCTAssertTrue(el("tracker-history.sync-server.cedar").label.contains("Cedar Loft, SMB"))
         XCTAssertTrue(el("tracker-history.sync-server.mariner").label.contains("Mariner Archive, WebDAV"))
@@ -466,6 +490,11 @@ extension AtlasUI {
             XCTAssertTrue(text.contains("\(count) of 10 selected"), text)
             XCTAssertFalse(text.contains("Cedar Loft") || text.contains("Mariner Archive"), text)
         }
+        XCTAssertFalse(libraries.exists || cedar.exists)
+        go(el("tracker-history.sync-enabled"))
+        shot("ten-libraries-chooser")
+        confirmLibraries()
+        chooseSkip(app.buttons["Skip"].firstMatch)
         assertSummary(10)
         XCTAssertFalse(cedar.exists)
         shot("ten-libraries-collapsed")
