@@ -1374,7 +1374,7 @@
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "covered_by": []
     },
-    "Sources/AppShelliOS/PlozziOSDiagnosticsSettingsView.swift|PlozziOSDiagnosticsSettingsView|body|TextField|<dynamic>": {
+    "Sources/FeatureSettings/SendDiagnosticsCard.swift|MobileDiagnosticsSubmissionSection|body|TextField|<dynamic>": {
       "count": 1,
       "reason": "Optional diagnostic submission text, not a saved preference.",
       "covered_by": []
