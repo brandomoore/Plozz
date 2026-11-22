@@ -157,6 +157,16 @@ struct SettingsFormGroup<Content: View>: View {
     }
 }
 
+extension SettingsSplitRow {
+    @ViewBuilder var detailWithInlineDescription: some View {
+        if let description {
+            SettingsDescribedControl(control: detail) { description }
+        } else {
+            detail()
+        }
+    }
+}
+
 struct SettingsControlGroup<Content: View>: View {
     var illustrated = false
     var dividerLeadingInset: CGFloat? = nil

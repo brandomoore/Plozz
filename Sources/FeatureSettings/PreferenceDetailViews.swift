@@ -644,14 +644,7 @@ struct PlaybackDetailView: View {
             return [
                 SettingsSplitRow(id: "audio", title: "Audio") {
                     SettingsConnectedControlGroups {
-                        ForEach(audioRows) { row in
-                            VStack(alignment: .leading, spacing: SettingsFormMetrics.relatedControlSpacing) {
-                                row.detail()
-                                if let description = row.description {
-                                    description.settingsHelperText().fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                        }
+                        ForEach(audioRows) { $0.detailWithInlineDescription }
                     }
                 }.groupedContent(),
                 SettingsSplitRow(id: "autoplay-up-next", title: "Autoplay & Up Next") {
@@ -668,14 +661,7 @@ struct PlaybackDetailView: View {
                 SettingsSplitRow(id: "seeking", title: "Seeking") {
                     SettingsControlRows {
                         ForEach(skipIntervalRows) { $0.detail() }
-                        ForEach(scrubbingRows) { row in
-                            VStack(alignment: .leading, spacing: SettingsFormMetrics.relatedControlSpacing) {
-                                row.detail()
-                                if let description = row.description {
-                                    description.settingsHelperText().fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                        }
+                        ForEach(scrubbingRows) { $0.detailWithInlineDescription }
                     }
                 }
             ] + controlsAutoHideRows + discRows + advancedRows
