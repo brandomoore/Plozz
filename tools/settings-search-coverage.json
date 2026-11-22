@@ -4072,11 +4072,6 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/PublicMetaDBAccountView.swift|PublicMetaDBAccountView|body|Button|\"Done\"": {
-      "count": 1,
-      "reason": "Dismisses the account sheet without editing a preference.",
-      "covered_by": []
-    },
     "Sources/FeatureSettings/PublicMetaDBPlaybackSettingsView.swift|PublicMetaDBPlaybackSettingsView|body|Button|\"Cancel\"": {
       "count": 1,
       "reason": "Confirmation of device-local reporting for this connection; search must never grant consent.",
@@ -4128,7 +4123,7 @@
       "reason": "Deferred watchlist controls have no v1 destination or search entry.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncNavigationRow|body|NavigationLink|SettingsDisclosureLabel { Text(\"Ongoing sync (Beta)\") }": {
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncNavigationRow|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Ongoing sync (Beta)\") }": {
       "count": 1,
       "reason": "Ongoing sync is a destination for one connected tracker with eligible shares or an existing grant. Global search has no account selection.",
       "covered_by": []

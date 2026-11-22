@@ -220,9 +220,9 @@ class RepositoryCoverageTests(unittest.TestCase):
         self.assertEqual(GUARD.check(self.inventory, self.policy), [])
 
     def test_tracker_preferences_require_account_row_anchors(self):
-        account = next(item for item in self.inventory if item["name"] == "PublicMetaDBAccountView")
+        account = next(item for item in self.inventory if item["name"] == "PublicMetaDBTrackingRows")
         # A match on the connection prerequisite alone cannot cover the controls
-        # the user should reach after explicitly opening the account sheet.
+        # available directly on a connected account.
         catalog = component("SettingsSearchCatalog", "Sources/CoreModels/SettingsSearch.swift")
         catalog["registrations"] = [
             registration for item in self.inventory for registration in item["registrations"]

@@ -263,7 +263,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try tapVisible(app.buttons["settings-category-trackers"])
         try tapVisible(app.buttons["publicmetadb.pair"], tapping: false)
         XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Connect PublicMetaDB")
-        XCTAssertFalse(app.buttons["publicmetadb.browse"].exists)
+        XCTAssertFalse(app.buttons["publicmetadb.playback"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["publicmetadb.playback.disable"].firstMatch.exists)
     }
 
@@ -973,7 +973,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try tapVisible(app.buttons["publicmetadb.connect"])
         XCTAssertTrue(app.staticTexts["Your session has expired. Please sign in again."]
             .waitForExistence(timeout: 50))
-        XCTAssertFalse(app.buttons["publicmetadb.browse"].exists)
+        XCTAssertFalse(app.buttons["publicmetadb.playback"].exists)
         XCTAssertTrue(field.exists)
     }
 
@@ -1079,7 +1079,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     private func assertSavedConnection() throws {
         XCTAssertTrue(app.secureTextFields["publicmetadb.key"].waitForNonExistence(timeout: 45))
-        XCTAssertTrue(app.buttons["publicmetadb.browse"].waitForExistence(timeout: 45))
+        XCTAssertTrue(app.buttons["publicmetadb.playback"].waitForExistence(timeout: 45))
         XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Replace API key")
         XCTAssertTrue(app.staticTexts["Connected"].exists)
     }
@@ -1089,7 +1089,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try tapVisible(enter, tapping: false)
         XCTAssertEqual(enter.label, "Connect PublicMetaDB")
         XCTAssertTrue(enter.isEnabled)
-        XCTAssertFalse(app.buttons["publicmetadb.browse"].exists)
+        XCTAssertFalse(app.buttons["publicmetadb.playback"].exists)
         XCTAssertFalse(app.secureTextFields["publicmetadb.key"].exists)
     }
 
@@ -1124,7 +1124,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         let enter = app.buttons["publicmetadb.pair"]
         try tapVisible(enter, tapping: false)
         XCTAssertEqual(enter.label, "Replace API key")
-        XCTAssertTrue(app.buttons["publicmetadb.browse"].waitForExistence(timeout: 45))
+        XCTAssertTrue(app.buttons["publicmetadb.playback"].waitForExistence(timeout: 45))
         enter.tap()
         XCTAssertTrue(app.popovers.buttons["Replace API key"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.secureTextFields["publicmetadb.key"].exists)
@@ -3540,19 +3540,25 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testTrackingOnlyAccountRoutes() throws {
         try openPublicMetaDBAccount()
-        try tapVisible(app.buttons["publicmetadb.playback"], tapping: false)
-        for id in ["publicmetadb.watchlist", "publicmetadb.ratings", "publicmetadb.history",
+        for id in ["publicmetadb.browse", "publicmetadb.watchlist", "publicmetadb.ratings", "publicmetadb.history",
                    "publicmetadb.history.bulk", "publicmetadb.compare-history", "publicmetadb.export-history"] {
             XCTAssertFalse(app.descendants(matching: .any)[id].firstMatch.exists, id)
         }
+        try tapVisible(app.buttons["publicmetadb.playback"])
+        let reporting = app.navigationBars["Playback reporting"]
+        XCTAssertTrue(reporting.waitForExistence(timeout: 10))
+        try tapVisible(reporting.buttons.firstMatch)
+        XCTAssertTrue(app.navigationBars["Trackers"].waitForExistence(timeout: 10))
         try tapVisible(app.buttons["tracker-history.ongoing-sync"])
         XCTAssertTrue(ongoingMaster.waitForExistence(timeout: 10))
+        try tapVisible(app.navigationBars["Ongoing sync (Beta)"].buttons.firstMatch)
+        XCTAssertTrue(app.navigationBars["Trackers"].waitForExistence(timeout: 10))
     }
 
     private func openPublicMetaDBAccount(relaunch: Bool = true) throws {
         try openSettings(relaunch: relaunch)
         try tapVisible(app.buttons["settings-category-trackers"])
-        try tapVisible(app.buttons["publicmetadb.browse"])
+        try tapVisible(app.buttons["publicmetadb.playback"], tapping: false)
     }
 
     private func openSettings(relaunch: Bool = true) throws {

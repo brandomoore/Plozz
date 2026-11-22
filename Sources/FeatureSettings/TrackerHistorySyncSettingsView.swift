@@ -36,13 +36,16 @@ public struct TrackerHistorySyncLink: View {
     @State private var entry: Entry
     @State private var showingSync = false
     private let accountTrackerID: String?
+    private let isCurrent: @MainActor () -> Bool
 
     public init(makeSession: @escaping @MainActor () -> TrackerHistoryImportSession) {
-        self.init(makeSession: makeSession, accountTrackerID: nil)
+        self.init(makeSession: makeSession, isCurrent: { true })
     }
 
-    fileprivate init(makeSession: @escaping @MainActor () -> TrackerHistoryImportSession, accountTrackerID: String?) {
+    init(makeSession: @escaping @MainActor () -> TrackerHistoryImportSession,
+         accountTrackerID: String? = nil, isCurrent: @escaping @MainActor () -> Bool = { true }) {
         self.accountTrackerID = accountTrackerID
+        self.isCurrent = isCurrent
         _entry = State(initialValue: Entry(makeSession))
     }
 
@@ -70,7 +73,7 @@ public struct TrackerHistorySyncLink: View {
                     #endif
                 }
             } else {
-                TrackerHistorySyncNavigationRow(session: entry.session, sync: sync)
+                TrackerHistorySyncNavigationRow(session: entry.session, sync: sync, isCurrent: isCurrent)
             }
         }
     }
@@ -85,15 +88,33 @@ extension TrackerHistorySyncController {
 struct TrackerHistorySyncNavigationRow: View {
     let session: TrackerHistoryImportSession
     let sync: TrackerHistorySyncController
+    var isCurrent: @MainActor () -> Bool = { true }
 
     var body: some View {
-        NavigationLink {
-            TrackerHistorySyncSettingsView(session: session, sync: sync)
+        SettingsPageLink {
+            TrackerConnectionPage(isCurrent: isCurrent) {
+                TrackerHistorySyncSettingsView(session: session, sync: sync)
+            }
         } label: {
             SettingsDisclosureLabel { Text("Ongoing sync (Beta)") }
         }
         .settingsActionRow()
         .accessibilityIdentifier("tracker-history.ongoing-sync")
+    }
+}
+
+/// The TV workspace retains a pushed page even if the originating account row disappears.
+struct TrackerConnectionPage<Content: View>: View {
+    let isCurrent: @MainActor () -> Bool
+    @ViewBuilder let content: () -> Content
+    @SettingsPageDismiss private var dismiss
+
+    var body: some View {
+        if isCurrent() {
+            content()
+        } else {
+            Color.clear.onAppear { dismiss() }
+        }
     }
 }
 

@@ -284,7 +284,19 @@ private struct AtlasRoot: View {
             case "trakt-export": if exportReady { TraktHistoryExportView(service:data.trakt) }
             case "simkl-export": if exportReady { SimklHistoryExportView(service:data.simkl) }
             case "wetrakr-export": if exportReady { WetrakrHistoryExportView(service:data.wetrakr) }
-            case "anilist-export","mal-export","trackers","onboarding": AtlasExtra(mode:mode,data:data)
+            #if os(iOS)
+            case "trackers":
+                SettingsPageList {
+                    NavigationLink("Trackers") {
+                        AtlasPublic(mode: "connected", data: data)
+                            .navigationTitle("Trackers")
+                    }
+                }
+                .navigationTitle("Settings")
+            #else
+            case "trackers": AtlasExtra(mode: mode, data: data)
+            #endif
+            case "anilist-export","mal-export","onboarding": AtlasExtra(mode:mode,data:data)
             default: AtlasPublic(mode:mode,data:data)
             }
         }.preferredColorScheme(.dark).environment(\.themePalette,.dark).task {
@@ -379,7 +391,7 @@ private struct AtlasHTTP: HTTPClient {
     }
     @ViewBuilder var page: some View {
         switch mode {
-        case "connected","disconnected": PublicMetaDBPage {
+        case "connected","disconnected","account": PublicMetaDBPage {
             #if os(iOS)
             PublicMetaDBSettingsContent(service:service,makeHistoryImport:data.makeSession)
             #else
@@ -403,7 +415,7 @@ private struct AtlasHTTP: HTTPClient {
         case "lookup": PublicMetaDBMappingLookupView(service:service)
         case "public-export": PublicMetaDBHistoryExportView(service:service)
         case "lastfm": LastFmListeningHistoryView(service:last)
-        default: PublicMetaDBAccountView(service:service,makeHistoryImport:data.makeSession)
+        default: EmptyView()
         }
     }
 }
@@ -433,7 +445,10 @@ private struct AtlasAnimeHTTP: HTTPClient {
     @State var mal=MALService(config:.init(clientID:"local"),http:AtlasAnimeHTTP(),tokenStore:InMemoryMALTokenStore(tokens:.init(accessToken:"local",refreshToken:"local",expiresAt:.distantFuture)),namespace:"fixture-profile")
     @State var playback=PlaybackSettingsModel(store:PlaybackSettingsStore(defaults:UserDefaults(suiteName:"local-only.tracker-atlas")!))
     @State var last=LastFmService(config:.init(apiKey:"not-networked",sharedSecret:"not-networked"),http:AtlasHTTP(),tokenStore:InMemoryLastFmTokenStore(tokens:.init(sessionKey:"not-networked",username:"Mara")))
-    @State var pub=PublicMetaDBService(credentials:AtlasCreds(),http:AtlasHTTP(),defaults:UserDefaults(suiteName:"local-only.tracker-atlas")!)
+    @State var pub=PublicMetaDBService(accountToolsEnabled:false,credentials:AtlasCreds(),http:AtlasHTTP(),defaults:UserDefaults(suiteName:"local-only.tracker-atlas")!)
+    #if os(tvOS)
+    @State private var trackerNavigation = SettingsPageNavigation<Int>()
+    #endif
     @State var ready=false
     @ViewBuilder var body:some View {
         Group {
@@ -458,7 +473,21 @@ private struct AtlasAnimeHTTP: HTTPClient {
     #if os(tvOS)
     @ViewBuilder var elseViewTV:some View {
         if ready && mode=="onboarding" { AddAccountView(deviceID:"local",canReturnToApp:false,onMediaBrowserServerSelected:{_ in},onPlexAuthenticated:{_ in},onCancel:{},onSetUpFromAnotherDevice:{}) }
-        if ready && mode=="trackers" { IntegrationsDetailView(trakt:data.trakt,simkl:data.simkl,wetrakr:data.wetrakr,publicMetaDB:pub,makePublicMetaDBHistoryImport:data.makeSession,makeTraktHistoryImport:data.makeSession,makeSimklHistoryImport:data.makeSession,makeWetrakrHistoryImport:data.makeSession,makeAniListHistoryImport:data.makeSession,makeMALHistoryImport:data.makeSession,anilist:ani,mal:mal,lastfm:last,playback:playback,serverCount:2).environment(\.settingsInWorkspace,true) }
+        if ready && mode == "trackers" {
+            SettingsPageStack(navigation: trackerNavigation, pageWidth: SettingsFormMetrics.pageWidth, onRootBack: nil) {
+                IntegrationsDetailView(
+                    trakt: data.trakt, simkl: data.simkl, wetrakr: data.wetrakr, publicMetaDB: pub,
+                    makePublicMetaDBHistoryImport: data.makeSession, makeTraktHistoryImport: data.makeSession,
+                    makeSimklHistoryImport: data.makeSession, makeWetrakrHistoryImport: data.makeSession,
+                    makeAniListHistoryImport: data.makeSession, makeMALHistoryImport: data.makeSession,
+                    anilist: ani, mal: mal, lastfm: last, playback: playback, serverCount: 2
+                )
+            } destination: { _ in EmptyView() }
+            .safeAreaPadding(.top, 36)
+            .ignoresSafeArea(.container, edges: .vertical)
+            .environment(\.settingsInWorkspace, true)
+            .background(ThemePalette.dark.settingsBackground)
+        }
     }
     #endif
 }

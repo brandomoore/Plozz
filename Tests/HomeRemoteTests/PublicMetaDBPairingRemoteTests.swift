@@ -89,8 +89,9 @@ final class PublicMetaDBPairingRemoteTests: XCTestCase {
         press(.down, expecting: app.buttons["publicmetadb.pair.cancel"])
         press(.left, expecting: app.buttons["publicmetadb.connect"])
         XCUIRemote.shared.press(.select)
-        XCTAssertTrue(app.buttons["publicmetadb.browse"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["publicmetadb.playback"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(app.staticTexts["publicmetadb.status"].label.contains("Connected"))
+        XCTAssertFalse(app.buttons["Tracking settings"].exists || app.buttons["Done"].exists)
         XCTAssertFalse(keyField.exists)
         capture("pairing-connected")
     }

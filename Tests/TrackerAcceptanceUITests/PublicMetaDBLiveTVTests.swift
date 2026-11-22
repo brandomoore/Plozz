@@ -316,7 +316,7 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
     func testOpenPublicMetaDBSettings() throws {
         try PublicMetaDBLiveNavigation.openSettings(in: app)
         XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Connect PublicMetaDB")
-        XCTAssertFalse(app.buttons["publicmetadb.browse"].exists)
+        XCTAssertFalse(app.buttons["publicmetadb.playback"].exists)
     }
 
     func testConnectWithRealBrowserQR() throws {
@@ -686,7 +686,6 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
         try PublicMetaDBLiveNavigation.openSettings(in: app)
         try assertConnected()
         try PublicMetaDBLiveNavigation.focus(app.buttons["settings-workspace-back"], moving: .up)
-        try PublicMetaDBLiveNavigation.select(app.buttons["publicmetadb.browse"], moving: .down)
         XCTAssertTrue(app.buttons["publicmetadb.playback"].waitForExistence(timeout: 10))
         try PublicMetaDBLiveNavigation.select(app.buttons["publicmetadb.playback"], moving: .down)
         XCTAssertTrue(app.staticTexts["Playback reporting"].waitForExistence(timeout: 10))
@@ -732,7 +731,7 @@ final class PublicMetaDBLiveTVTests: XCTestCase {
     }
 
     private func assertConnected() throws {
-        XCTAssertTrue(app.buttons["publicmetadb.browse"].waitForExistence(timeout: 120))
+        XCTAssertTrue(app.buttons["publicmetadb.playback"].waitForExistence(timeout: 120))
         XCTAssertEqual(app.buttons["publicmetadb.pair"].label, "Replace API key")
         XCTAssertTrue(app.staticTexts["Connected"].exists)
     }

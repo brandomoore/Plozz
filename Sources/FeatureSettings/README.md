@@ -1,7 +1,8 @@
 # FeatureSettings
 
-**Tracker v1 exposure:** The connected PublicMetaDB account opens **Tracking settings**:
-playback reporting and, for eligible media shares or an existing permission, **Ongoing sync (Beta)**.
+**Tracker v1 exposure:** The connected PublicMetaDB account shows **Playback reporting** and,
+for eligible media shares or an existing permission, **Ongoing sync (Beta)** directly below
+its connection status. Each row opens a settings page; Back returns to the account.
 The other supporting trackers also open ongoing sync directly, without a comparison.
 One-time imports and exports, PublicMetaDB watchlists, history management, ratings, contributions,
 discovery, external-ID tools, and the Last.fm listening-history browser are not v1 destinations.
@@ -324,7 +325,7 @@ Results use the current platform's destination and retain their query on Back.
 Protected destinations retain their normal profile/PIN checks; search never
 selects a server, library or user, enables a prerequisite, or submits an editor.
 Unavailable controls lead to their existing prerequisite or availability message.
-PublicMetaDB results lead to the current profile's Connect, Retry, or **Tracking settings** action.
+PublicMetaDB results lead to the current profile's Connect, Retry, or **Playback reporting** row.
 **Playback reporting** is the only indexed PublicMetaDB preference. Search never
 starts pairing or grants device-local consent. **Ongoing sync (Beta)** stays in the selected tracker:
 its grant, eligible media shares, and supported categories depend on that connection.

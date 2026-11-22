@@ -4,35 +4,25 @@
     import PublicMetaDBService
     import SwiftUI
 
-    struct PublicMetaDBAccountView: View {
+    struct PublicMetaDBTrackingRows: View {
         let service: PublicMetaDBService
-        var makeHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
-        @Environment(\.dismiss) private var dismiss
+        let connectionID: UUID
+        let makeHistoryImport: (@MainActor () -> TrackerHistoryImportSession)?
 
         var body: some View {
-            GroupedSettingsPage(title: "PublicMetaDB", backIdentifier: "publicmetadb.back") {
-                if service.phase == .connected {
-                    SettingsSectionGroup("Tracking") {
-                        NavigationLink {
-                            PublicMetaDBPlaybackSettingsView(service: service)
-                        } label: {
-                            SettingsDisclosureLabel { Text("Playback reporting") }
-                        }
-                        .settingsActionRow()
-                        .accessibilityIdentifier("publicmetadb.playback")
-                        .settingsSearchAnchor("publicmetadb-playback")
-                    }
-                    if let makeHistoryImport {
-                        SettingsSectionGroup {
-                            TrackerHistorySyncLink(makeSession: makeHistoryImport)
-                        }
-                    }
-                } else {
-                    PublicMetaDBConnectionStatus(phase: service.phase)
+            let isCurrent = { service.connectionID == connectionID && service.phase == .connected }
+            SettingsPageLink {
+                TrackerConnectionPage(isCurrent: isCurrent) {
+                    PublicMetaDBPlaybackSettingsView(service: service)
                 }
-                SettingsSectionGroup {
-                    Button("Done") { dismiss() }.settingsActionRow()
-                }
+            } label: {
+                SettingsDisclosureLabel { Text("Playback reporting") }
+            }
+            .settingsActionRow()
+            .accessibilityIdentifier("publicmetadb.playback")
+            .settingsSearchAnchor("publicmetadb-playback", fallbackFor: ["publicmetadb-account"])
+            if let makeHistoryImport {
+                TrackerHistorySyncLink(makeSession: makeHistoryImport, isCurrent: isCurrent)
             }
         }
     }

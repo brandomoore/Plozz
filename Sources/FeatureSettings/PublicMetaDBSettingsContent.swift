@@ -7,9 +7,7 @@ import SwiftUI
 public struct PublicMetaDBSettingsContent: View {
     private let service: PublicMetaDBService
     private let makeHistoryImport: (@MainActor () -> TrackerHistoryImportSession)?
-    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
     @State private var key = ""
-    @State private var showingAccount = false
     @State private var confirmingDisconnect = false
     @State private var confirmingReplacement = false
     @State private var operation: Task<Void, Never>?
@@ -28,11 +26,9 @@ public struct PublicMetaDBSettingsContent: View {
             if !showingEntry && (service.phase != .disconnected || service.hasSavedKey) {
                 PublicMetaDBConnectionStatus(phase: service.phase)
             }
-            if service.phase == .connected {
-                Button("Tracking settings") { showingAccount = true }
-                    .settingsActionRow()
-                    .accessibilityIdentifier("publicmetadb.browse")
-                    .settingsSearchAnchor("publicmetadb-account", fallbackFor: Self.searchTargets)
+            if service.phase == .connected, let connectionID = service.connectionID {
+                PublicMetaDBTrackingRows(service: service, connectionID: connectionID, makeHistoryImport: makeHistoryImport)
+                    .id(connectionID)
             }
             if showingEntry {
                 PublicMetaDBKeyEntryView(
@@ -87,20 +83,8 @@ public struct PublicMetaDBSettingsContent: View {
         } message: {
             if let storageError { Text(storageError.userMessage) }
         }
-        .sheet(isPresented: $showingAccount) {
-            NavigationStack {
-                // A search identifies the setting, not a grant to open private account data.
-                // Reveal the row only after the user opens tracking settings.
-                if let target = searchRequest?.targetID, target != "publicmetadb-account", Self.searchTargets.contains(target) {
-                    SettingsSearchLanding(targetID: target) { accountPage }
-                } else {
-                    accountPage
-                }
-            }
-        }
         .onChange(of: service.connectionID) { _, _ in
             key = ""
-            showingAccount = false
             confirmingReplacement = false
             confirmingDisconnect = false
         }
@@ -112,17 +96,12 @@ public struct PublicMetaDBSettingsContent: View {
         }
         .onChange(of: service.profileNamespace) { _, _ in
             cancelEntry()
-            showingAccount = false
             confirmingReplacement = false
             confirmingDisconnect = false
         }
         .onDisappear {
             cancelEntry()
         }
-    }
-
-    private var accountPage: some View {
-        PublicMetaDBAccountView(service: service, makeHistoryImport: makeHistoryImport)
     }
 
     private static let searchTargets = SettingsSearchCatalog.targets(on: .publicMetaDB)
