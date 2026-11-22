@@ -269,9 +269,11 @@ let package = Package(
         // Native media-selection IPC uses bounded off-main readers during media-service stalls.
         // Selective P7 conversion requires positive MEL/FEL evidence; unknown P7 keeps HDR10.
         // Buffered direct-rendering PCM supports audio-only sync correction without seeking.
+        // 7.72.1 adds threaded VC-1/WMV3 decoding through FFmpegBuild 3.18.0,
+        // retaining Plozz's playback contracts across upstream refactors.
         localASSEngine.map { .package(path: $0, traits: ["DolbyVisionFelCurves"]) } ?? .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "d98f93de1bc05635279ab5ce7831910327452e3f",
+            revision: "5d8bd5bddf09c7bfe4155dc62bb04ece62b63c03",
             traits: ["DolbyVisionFelCurves"]
         ),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x media libraries) and LibDovi (Dolby Vision

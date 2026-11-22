@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 export GIT_CONFIG_PARAMETERS="'safe.bareRepository=all'"
 dest=.build/normal-ass/AetherEngine
 patch="$PWD/Vendor/Patches/aether-frame-ass.patch"
-pin=d98f93de1bc05635279ab5ce7831910327452e3f
+pin=5d8bd5bddf09c7bfe4155dc62bb04ece62b63c03
 verify() {
     local extra
     extra="$(git -C "$dest" ls-files --others --exclude-standard -- Sources Package.swift Plugins)" || return 1

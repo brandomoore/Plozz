@@ -11,7 +11,7 @@ final class PlozzigenSessionCacheTests: XCTestCase {
             defer { try? FileManager.default.removeItem(at: root) }
             let store: any SoftwarePacketStore = memory
                 ? SoftwarePacketMemoryFIFO(historyCapBytes: 4096)
-                : try SoftwarePacketDiskFIFO(chunkTargetBytes: 4096, retainConsumed: true, parentDirectory: root)
+                : try SoftwarePacketDiskFIFO(chunkTargetBytes: 4096, parentDirectory: root)
             let source = SoftwarePacketReadAhead(
                 video: .init(index: 0, numerator: 1, denominator: 1000), audio: nil,
                 byteBudget: 256, forwardSeconds: 300, initialSourceClock: 0, fifo: store
