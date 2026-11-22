@@ -2,6 +2,93 @@ import XCTest
 
 @MainActor
 final class NativeSidebarHandoffTests: XCTestCase {
+    func testSettingsOpensDirectlyFromPushedTitleDetail() throws {
+        try selectFromPushedDetail("Settings", afterEntry: returnFromPlaybackToHome) { app in
+            let playback = app.buttons["settings-section-playback"].firstMatch
+            XCTAssertTrue(playback.waitForExistence(timeout: 3), app.debugDescription)
+            XCTAssertTrue(playback.isHittable, app.debugDescription)
+            XCUIRemote.shared.press(.select)
+            XCTAssertTrue(app.buttons["settings-category-back"].waitForExistence(timeout: 3),
+                          "Select must open the category without Back or another handoff. \(app.debugDescription)")
+        }
+    }
+
+    func testSearchOpensDirectlyFromPushedTitleDetail() throws {
+        try selectFromPushedDetail("Search") { app in
+            XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 3), app.debugDescription)
+        }
+    }
+
+    private func returnFromPlaybackToHome(_ app: XCUIApplication, capture: (String) -> Void) {
+        XCUIRemote.shared.press(.menu)
+        let playback = app.buttons["settings-section-playback"].firstMatch
+        XCTAssertTrue(playback.waitForExistence(timeout: 5) && playback.isHittable, app.debugDescription)
+        XCTAssertFalse(app.buttons["settings-category-back"].exists)
+        capture("Back from Playback")
+        XCUIRemote.shared.press(.left)
+        assertFocused(app.buttons["Settings"].firstMatch, app: app)
+        let home = app.buttons["Home"].firstMatch
+        for _ in 0..<10 where !hasFocus(home, app: app) { XCUIRemote.shared.press(.up) }
+        assertFocused(home, app: app)
+        XCUIRemote.shared.press(.select)
+        let play = app.buttons["detail-hero-play"].firstMatch
+        let card = app.buttons["Fixture movie 0"].firstMatch
+        // Returning to the prior tab must restore usable Home content; whether
+        // the system retains the pushed detail isn't part of Settings entry.
+        let homeContent = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            self.hasFocus(card, app: app)
+                || (self.hasFocus(play, app: app) && app.staticTexts["Fixture movie 0"].exists)
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [homeContent], timeout: 5), .completed, app.debugDescription)
+        XCTAssertFalse(playback.isHittable)
+        capture(hasFocus(card, app: app) ? "returned to Home card" : "returned to Home detail")
+    }
+
+    private func selectFromPushedDetail(
+        _ destination: String, afterEntry: (XCUIApplication, (String) -> Void) -> Void = { _, _ in },
+        check: (XCUIApplication) -> Void
+    ) throws {
+        #if targetEnvironment(simulator)
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--native-sidebar-detail-fixture", "-com.plozz.syncSetup.enabled", "NO",
+                               "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        defer { app.terminate() }
+        func capture(_ step: String) {
+            let image = XCTAttachment(screenshot: app.screenshot())
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            for (kind, attachment) in [("screen", image), ("hierarchy", hierarchy)] {
+                attachment.name = "\(destination) - \(step) - \(kind)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+        let card = app.buttons["Fixture movie 0"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 30), app.debugDescription)
+        if hasFocus(app.buttons["Home"].firstMatch, app: app) { XCUIRemote.shared.press(.right) }
+        assertFocused(card, app: app)
+        XCUIRemote.shared.press(.select)
+        let play = app.buttons["detail-hero-play"].firstMatch
+        assertFocused(play, app: app)
+        capture("pushed detail")
+        XCUIRemote.shared.press(.left)
+        assertFocused(app.buttons["Home"].firstMatch, app: app)
+        let tab = app.buttons[destination].firstMatch
+        for _ in 0..<10 where !hasFocus(tab, app: app) { XCUIRemote.shared.press(.down) }
+        assertFocused(tab, app: app)
+        capture("sidebar")
+        XCUIRemote.shared.press(.select)
+        capture("after selection")
+        check(app)
+        XCTAssertFalse(play.isHittable, "The pushed title must not cover \(destination).")
+        capture("destination")
+        afterEntry(app, capture)
+        #else
+        throw XCTSkip("Requires an owned simulator and its FocusHost fixture.")
+        #endif
+    }
+
     func testBackReturnsShowcaseToTopBeforeOpeningTheNativeSidebar() throws {
         try exerciseBackToTop(showsHero: true)
     }

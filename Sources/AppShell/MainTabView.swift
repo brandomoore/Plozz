@@ -1439,7 +1439,9 @@ struct MainTabView: View {
         case .music:
             return AnyView(musicTabContent)
         case .settings:
-            return AnyView(settingsTabContent)
+            // Give this native tab its own navigation root, independent of a
+            // detail pushed in the previous tab. Settings still owns its subpages.
+            return AnyView(NavigationStack { settingsTabContent })
         case .allLibraries, .library:
             guard let libraryEntry else {
                 return AnyView(homeTabContent(isActive: isActive))
