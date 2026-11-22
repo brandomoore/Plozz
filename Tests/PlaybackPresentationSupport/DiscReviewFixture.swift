@@ -625,10 +625,10 @@ private final class AtlasModel {
             AtlasSourceProvider(kind: .plex, id: "plex", name: "Northbank Cinema", user: "Theo")
         ]
         if arguments.contains("--history-ongoing-sync"), !arguments.contains("--history-servers-only") {
-            sources += [
-                .init(kind: .mediaShare, id: "cedar", name: "Cedar Loft", user: "Mara"),
-                .init(kind: .mediaShare, id: "mariner", name: "Mariner Archive", user: "Theo")
-            ]
+            sources.append(.init(kind: .mediaShare, id: "cedar", name: "Cedar Loft", user: "Mara"))
+            if !arguments.contains("--history-single-share") {
+                sources.append(.init(kind: .mediaShare, id: "mariner", name: "Mariner Archive", user: "Theo"))
+            }
         }
         providers = sources
         scope = WatchMutationServerScope(
@@ -663,7 +663,7 @@ private final class AtlasModel {
     func makeExportSource() -> TrackerServerHistorySource {
         TrackerServerHistorySource(
             scope: scope, accounts: providers.map {
-                .init(id: $0.account.id, serverName: $0.account.server.name, userName: $0.account.userName)
+                .init(account: $0.account)
             },
             resolveProvider: {
                 guard let provider = self.provider($0) else { throw TrackerHistoryError.scopeChanged }
@@ -915,7 +915,7 @@ private final class AtlasModel {
         return TrackerHistoryImportSession(
             scope: scope,
             destinations: providers.map {
-                .init(id: $0.account.id, serverName: $0.account.server.name, userName: $0.account.userName)
+                .init(account: $0.account)
             },
             reconciler: makeReconciler(),
             readSnapshot: { try self.snapshot() },
@@ -991,7 +991,7 @@ private final class AtlasSourceProvider: MediaProvider, WatchStateProviding {
         self.kind = kind
         let server = MediaServer(
             id: id, name: name,
-            baseURL: URL(string: kind == .mediaShare ? "smb://\(id).example.test/media" : "https://\(id).example.test")!, provider: kind
+            baseURL: URL(string: kind == .mediaShare && id == "cedar" ? "smb://\(id).example.test/media" : "https://\(id).example.test")!, provider: kind
         )
         account = Account(
             id: id, server: server, userID: "\(id)-viewer", userName: user, deviceID: "fixture-device"

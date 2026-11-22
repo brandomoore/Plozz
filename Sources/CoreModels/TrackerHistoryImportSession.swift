@@ -36,10 +36,20 @@ public final class TrackerHistoryImportSession {
         public let id: String
         public let serverName: String
         public let userName: String
-        public init(id: String, serverName: String, userName: String) {
+        public let transportKind: MediaShareTransportKind?
+        public init(id: String, serverName: String, userName: String, transportKind: MediaShareTransportKind? = nil) {
             self.id = id
             self.serverName = serverName
             self.userName = userName
+            self.transportKind = transportKind
+        }
+
+        public init(account: Account, userName: String? = nil) {
+            self.init(
+                id: account.id, serverName: account.server.name, userName: userName ?? account.userName,
+                transportKind: account.server.provider == .mediaShare
+                    ? MediaShareTransportKind(mediaShareScheme: account.server.baseURL.scheme) : nil
+            )
         }
     }
     public enum Outcome: Equatable, Sendable { case queued, confirmed, unconfirmed }

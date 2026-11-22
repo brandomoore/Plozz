@@ -102,8 +102,23 @@ private struct TrackerTwoWaySyncRows: View {
     private func name(_ share: TrackerHistoryImportSession.Destination) -> String {
         shares.contains { $0.id != share.id && $0.serverName == share.serverName } ? share.historyDisplayName : share.serverName
     }
-    private var destinations: String {
-        shares.filter { selected.contains($0.id) }.map(name).formatted(.list(type: .and))
+    private var selectedShares: [TrackerHistoryImportSession.Destination] {
+        shares.filter { selected.contains($0.id) }
+    }
+    private var destinations: String { selectedShares.map(name).formatted(.list(type: .and)) }
+    private var librarySummary: some View {
+        LabeledContent("Libraries") {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(selectedShares.prefix(3)) { share in
+                    TrackerLibraryLabel(name: name(share), transport: share.transportKind)
+                }
+                if selectedShares.count > 3 {
+                    Text("+\(selectedShares.count - 3)")
+                } else if selectedShares.isEmpty {
+                    Text("None")
+                }
+            }
+        }
     }
     var body: some View {
         if sync.grant?.enabled == true && !sync.isEnabled {
@@ -141,23 +156,24 @@ private struct TrackerTwoWaySyncRows: View {
                 Text("Mark matching titles as watched in \(destinations). New activity syncs either way.")
             }
         if shares.count > 1 {
-            Button { editingLibraries.toggle() } label: {
-                LabeledContent("Libraries", value: destinations)
-            }
+            Button { editingLibraries.toggle() } label: { librarySummary }
             .settingsActionRow()
             .accessibilityIdentifier("tracker-history.libraries")
             if editingLibraries {
                 ForEach(shares) { share in
                     Toggle(isOn: Binding(get: { selected.contains(share.id) }, set: { select(share.id, $0) })) {
-                        Text(verbatim: name(share))
+                        TrackerLibraryLabel(name: name(share), transport: share.transportKind)
                     }
                     .disabled(sync.isBusy)
                     .accessibilityIdentifier("tracker-history.sync-server.\(share.id)")
                 }
             }
         } else if let share = shares.first {
-            LabeledContent("Library", value: name(share))
-                .accessibilityIdentifier("tracker-history.library.\(share.id)")
+            LabeledContent("Library") {
+                TrackerLibraryLabel(name: name(share), transport: share.transportKind)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("tracker-history.library.\(share.id)")
         }
         if sync.isBusy {
             ProgressView("Syncing…")
@@ -225,6 +241,25 @@ private struct TrackerTwoWaySyncRows: View {
                 operation = Task { await sync.updateSelection(accountIDs: ids, categories: grant.categories) }
             }
         } else { selectedBeforeEnrollment = ids }
+    }
+}
+private struct TrackerLibraryLabel: View {
+    let name: String
+    let transport: MediaShareTransportKind?
+    #if os(tvOS)
+    private let markSize: CGFloat = 40
+    #else
+    @ScaledMetric(relativeTo: .body) private var markSize: CGFloat = 28
+    #endif
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ProviderBrandMark(provider: .mediaShare, size: markSize, mediaShareTransport: transport)
+                .accessibilityHidden(true)
+            Text(verbatim: name)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: [name, transport?.badgeLabel].compactMap { $0 }.joined(separator: ", ")))
     }
 }
 #endif

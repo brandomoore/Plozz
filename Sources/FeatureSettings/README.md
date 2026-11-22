@@ -3,7 +3,8 @@
 **Tracker v1 exposure:** Connecting a tracker starts its supported tracking activity.
 The first switch is named for the service (for example, **Use Trakt**). Turning it off
 pauses tracking without disconnecting. **Watch history** groups 2-way sync, its libraries
-and the last result. **Account** groups connection status and account actions.
+and the last result. Library names use the same circular transport badge as My Libraries.
+**Account** groups connection status and account actions.
 **2-way sync** brings supported
 tracker activity into matching Plozz libraries. On first enrollment, **Sync history**
 includes existing watches; **Skip** leaves them alone. Neither choice writes to Plex,

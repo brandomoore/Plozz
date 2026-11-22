@@ -358,7 +358,7 @@ public final class AccountsProvidersModel {
         let destinations = scope.accounts.compactMap { identity -> TrackerHistoryImportSession.Destination? in
             guard let account = accounts.first(where: { $0.id == identity.accountID }) else { return nil }
             let homeName = profilesModel.activeProfile.homeUserBinding(forPlexAccount: account.id)?.name
-            return .init(id: account.id, serverName: account.server.name, userName: homeName ?? account.userName)
+            return .init(account: account, userName: homeName)
         }
         let current: @MainActor @Sendable () -> Bool = { [weak self] in
             guard let self, isAuthorized(), self.watchMutationServerScope == contextScope else { return false }

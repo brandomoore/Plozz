@@ -276,7 +276,7 @@ private final class HistoryImportFixtureModel {
     private func makeExportSource() -> TrackerServerHistorySource {
         TrackerServerHistorySource(
             scope: scope, accounts: providers.map {
-                .init(id: $0.account.id, serverName: $0.account.server.name, userName: $0.account.userName)
+                .init(account: $0.account)
             },
             resolveProvider: {
                 guard let provider = self.provider($0) else { throw TrackerHistoryError.scopeChanged }
@@ -528,7 +528,7 @@ private final class HistoryImportFixtureModel {
         return TrackerHistoryImportSession(
             scope: scope,
             destinations: providers.map {
-                .init(id: $0.account.id, serverName: $0.account.server.name, userName: $0.account.userName)
+                .init(account: $0.account)
             },
             reconciler: makeReconciler(),
             readSnapshot: { try self.snapshot() },

@@ -4127,7 +4127,7 @@
       "reason": "Enrollment or revocation is bound to this device, profile, tracker connection and eligible media shares; there is no global sync switch.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|controls|Button|LabeledContent(\"Libraries\", value: destinations)": {
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|controls|Button|librarySummary": {
       "count": 1,
       "reason": "Expands the active connection's eligible library selection.",
       "covered_by": []

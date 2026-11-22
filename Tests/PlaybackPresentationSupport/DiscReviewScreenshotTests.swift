@@ -362,8 +362,9 @@ extension AtlasUI {
         }
         app.terminate()
     }
-    private func openConnectedAccount(serversOnly: Bool = false) {
-        start("trackers", ["--history-ongoing-sync"] + (serversOnly ? ["--history-servers-only"] : []))
+    private func openConnectedAccount(serversOnly: Bool = false, singleShare: Bool = false) {
+        start("trackers", ["--history-ongoing-sync"] + (serversOnly ? ["--history-servers-only"] : [])
+              + (singleShare ? ["--history-single-share"] : []))
         #if os(tvOS)
         go(el("settings-page-publicmetadb"))
         #else
@@ -435,6 +436,24 @@ extension AtlasUI {
         defer { app.terminate() }
         XCTAssertFalse(el("tracker-history.sync-enabled").exists)
         XCTAssertTrue(el("publicmetadb.enabled").isHittable)
+    }
+
+    func testLibraryBadgesIdentifySyncDestinations() {
+        openConnectedAccount(singleShare: true)
+        let single = el("tracker-history.library.cedar")
+        XCTAssertTrue(single.waitForExistence(timeout: 5))
+        XCTAssertTrue([single.label, single.value as? String ?? ""].joined().contains("Cedar Loft, SMB"), single.debugDescription)
+        XCTAssertFalse(el("tracker-history.libraries").exists)
+        shot("single-library-badge")
+        app.terminate()
+
+        openConnectedAccount()
+        defer { app.terminate() }
+        let libraries = el("tracker-history.libraries")
+        go(libraries)
+        XCTAssertTrue(el("tracker-history.sync-server.cedar").label.contains("Cedar Loft, SMB"))
+        XCTAssertTrue(el("tracker-history.sync-server.mariner").label.contains("Mariner Archive, WebDAV"))
+        shot("library-badge-picker")
     }
     func testDisconnect() { scenario("connected",[("","account-connected","@publicmetadb.enabled"),("Disconnect","account-disconnect-confirm","Disconnect PublicMetaDB?")]) }
     func testReplace() { scenario("connected",[("Replace API key","account-replace-confirm","Replace this profile")]) }
