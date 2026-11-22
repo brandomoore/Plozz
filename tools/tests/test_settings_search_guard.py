@@ -241,7 +241,7 @@ class RepositoryCoverageTests(unittest.TestCase):
         changed = copy.deepcopy(account)
         row, = [c for c in changed["controls"] if c["kind"] == "Toggle"]
         row["anchors"] = []
-        self.assertTrue(any("unregistered" in error and "Enable tracker" in error
+        self.assertTrue(any(f"unregistered TrackerActivationRow.{row['context']} Toggle" in error
                             for error in GUARD.check([changed, catalog], policy)))
 
     def guide_update_coverage_fixture(self):

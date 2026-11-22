@@ -67,22 +67,30 @@ struct PlozziOSTrackerAccountPage: View {
                 service: appModel.publicMetaDBService, makeHistoryImport: appModel.makePublicMetaDBHistoryImport
             )
         } else {
-            SettingsSectionGroup {
-                switch page {
-                case .trakt:
-                    TraktSettingsContent(service: appModel.traktService, makeHistoryImport: appModel.makeTraktHistoryImport)
-                case .simkl:
-                    SimklSettingsContent(service: appModel.simklService, makeHistoryImport: appModel.makeSimklHistoryImport)
-                case .wetrakr:
-                    WetrakrSettingsContent(service: appModel.wetrakrService, makeHistoryImport: appModel.makeWetrakrHistoryImport)
-                case .anilist:
-                    AniListSettingsContent(service: appModel.anilistService, makeHistoryImport: appModel.makeAniListHistoryImport)
-                case .myanimelist:
-                    MALSettingsContent(service: appModel.malService, makeHistoryImport: appModel.makeMALHistoryImport)
-                default: EmptyView()
-                }
+            switch page {
+            case .trakt:
+                account(appModel.traktService, appModel.makeTraktHistoryImport) { TraktSettingsContent(service: appModel.traktService) }
+            case .simkl:
+                account(appModel.simklService, appModel.makeSimklHistoryImport) { SimklSettingsContent(service: appModel.simklService) }
+            case .wetrakr:
+                account(appModel.wetrakrService, appModel.makeWetrakrHistoryImport) { WetrakrSettingsContent(service: appModel.wetrakrService) }
+            case .anilist:
+                account(appModel.anilistService, appModel.makeAniListHistoryImport) { AniListSettingsContent(service: appModel.anilistService) }
+            case .myanimelist:
+                account(appModel.malService, appModel.makeMALHistoryImport) { MALSettingsContent(service: appModel.malService) }
+            default: EmptyView()
             }
         }
+    }
+
+    @ViewBuilder private func account<Content: View>(
+        _ tracker: any TrackerHistorySyncReading, _ makeSession: @escaping @MainActor () -> TrackerHistoryImportSession,
+        @ViewBuilder credentials: () -> Content
+    ) -> some View {
+        if let connection = tracker.historyConnectionID {
+            TrackerAccountSettingsRows(tracker: tracker, makeSession: makeSession).id(connection)
+        }
+        SettingsSectionGroup("Account", content: credentials)
     }
 
     private func refreshStatus() async {
@@ -106,7 +114,6 @@ struct PlozziOSTrackerAccountPage: View {
 
 private struct TraktSettingsContent: View {
     let service: TraktService
-    let makeHistoryImport: @MainActor () -> TrackerHistoryImportSession
     @Environment(\.openURL) private var openURL
     @State private var browser = TrackerBrowserAuthorization()
     @State private var confirmingReconnect = false
@@ -159,7 +166,6 @@ private struct TraktSettingsContent: View {
             .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
-            TrackerAccountSettingsRows(tracker: service, makeSession: makeHistoryImport)
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }
@@ -201,7 +207,6 @@ private struct TraktSettingsContent: View {
 
 private struct WetrakrSettingsContent: View {
     let service: WetrakrService
-    let makeHistoryImport: @MainActor () -> TrackerHistoryImportSession
     @Environment(\.openURL) private var openURL
     @State private var browser = TrackerBrowserAuthorization()
     @State private var confirmingReconnect = false
@@ -247,7 +252,6 @@ private struct WetrakrSettingsContent: View {
                 .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
-            TrackerAccountSettingsRows(tracker: service, makeSession: makeHistoryImport)
             Button("Disconnect", role: .destructive) { Task { await service.disconnect() } }
                 .settingsActionRow()
         case let .error(message):
@@ -278,7 +282,6 @@ private struct WetrakrSettingsContent: View {
 
 private struct SimklSettingsContent: View {
     let service: SimklService
-    let makeHistoryImport: @MainActor () -> TrackerHistoryImportSession
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -307,7 +310,6 @@ private struct SimklSettingsContent: View {
             .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
-            TrackerAccountSettingsRows(tracker: service, makeSession: makeHistoryImport)
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }
@@ -329,7 +331,6 @@ private struct SimklSettingsContent: View {
 
 private struct AniListSettingsContent: View {
     let service: AniListService
-    let makeHistoryImport: @MainActor () -> TrackerHistoryImportSession
     @Environment(\.openURL) private var openURL
     @State private var code = ""
 
@@ -351,7 +352,6 @@ private struct AniListSettingsContent: View {
             }
         case let .connected(username):
             connectedStatus(username: username)
-            TrackerAccountSettingsRows(tracker: service, makeSession: makeHistoryImport)
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }
@@ -401,7 +401,6 @@ private struct AniListSettingsContent: View {
 
 private struct MALSettingsContent: View {
     let service: MALService
-    let makeHistoryImport: @MainActor () -> TrackerHistoryImportSession
     @Environment(\.openURL) private var openURL
     @State private var code = ""
 
@@ -436,7 +435,6 @@ private struct MALSettingsContent: View {
             .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
-            TrackerAccountSettingsRows(tracker: service, makeSession: makeHistoryImport)
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }

@@ -22,17 +22,17 @@ public struct PublicMetaDBSettingsContent: View {
     }
 
     public var body: some View {
-        connectionSection {
+        if !showingEntry, service.phase == .connected, let connectionID = service.connectionID {
+            PublicMetaDBTrackingRows(service: service, connectionID: connectionID, makeHistoryImport: makeHistoryImport)
+                .id(connectionID)
+        }
+        SettingsSectionGroup("Account") {
             if !service.hasSavedKey, service.phase == .disconnected, !showingEntry {
                 Text("Connect to send movie and episode playback to PublicMetaDB.")
                     .plozzForeground(.secondary)
             }
             if !showingEntry && (service.phase != .disconnected || service.hasSavedKey) {
                 PublicMetaDBConnectionStatus(phase: service.phase)
-            }
-            if service.phase == .connected, let connectionID = service.connectionID {
-                PublicMetaDBTrackingRows(service: service, connectionID: connectionID, makeHistoryImport: makeHistoryImport)
-                    .id(connectionID)
             }
             if showingEntry {
                 PublicMetaDBKeyEntryView(
@@ -109,14 +109,6 @@ public struct PublicMetaDBSettingsContent: View {
     }
 
     private static let searchTargets = SettingsSearchCatalog.targets(on: .publicMetaDB)
-
-    @ViewBuilder private func connectionSection<Rows: View>(@ViewBuilder rows: () -> Rows) -> some View {
-        #if os(iOS)
-        SettingsSectionGroup(verbatim: "PublicMetaDB", content: rows)
-        #else
-        rows()
-        #endif
-    }
 
     private func beginEntry() {
         key = ""

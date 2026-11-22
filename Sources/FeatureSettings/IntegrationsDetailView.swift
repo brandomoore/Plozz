@@ -245,7 +245,9 @@ struct IntegrationsDetailView: View {
         if inWorkspace {
             let phases = [traktRowPhase, simklRowPhase, wetrakrRowPhase, anilistRowPhase, malRowPhase, lastfmRowPhase]
             trackers = zip(trackers, phases).map { row, phase in
-                row.page(summary: statusLabel(phase))
+                let page = row.page(summary: statusLabel(phase))
+                if case .connected = phase { return page.groupedContent() }
+                return page
             }
         }
         #endif
@@ -258,7 +260,7 @@ struct IntegrationsDetailView: View {
             }
             #if os(tvOS)
             if inWorkspace {
-                row = row.page(summary: PublicMetaDBConnectionStatus(phase: publicMetaDB.phase).text)
+                row = row.page(summary: PublicMetaDBConnectionStatus(phase: publicMetaDB.phase).text).groupedContent()
             }
             #endif
             trackers.append(row)
@@ -310,10 +312,12 @@ struct IntegrationsDetailView: View {
                 Text("Cancel")
             }
         case let .connected(username):
-            TrackerConnectedStatus(username: username)
             settings()
-            Button(role: .destructive, action: onDisconnect) {
-                Label("Disconnect", systemImage: "xmark.circle")
+            SettingsSectionGroup("Account") {
+                TrackerConnectedStatus(username: username)
+                Button(role: .destructive, action: onDisconnect) {
+                    Label("Disconnect", systemImage: "xmark.circle")
+                }
             }
         case .error(let message):
             VStack(alignment: .leading, spacing: 18) {

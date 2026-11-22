@@ -73,7 +73,7 @@ struct TrackerHistorySyncSettingsView: View {
 
     var body: some View {
         GroupedSettingsPage(title: "2-way sync", backIdentifier: "tracker-history.sync-back") {
-            SettingsSectionGroup { TrackerTwoWaySyncRows(session: session, sync: sync, reviewedPlan: reviewedPlan) }
+            TrackerTwoWaySyncRows(session: session, sync: sync, reviewedPlan: reviewedPlan)
         }
     }
 }
@@ -107,63 +107,71 @@ private struct TrackerTwoWaySyncRows: View {
     }
     var body: some View {
         if sync.grant?.enabled == true && !sync.isEnabled {
-            Text("Your previous sync permission no longer applies.")
-            Button("Remove previous permission", role: .destructive) { sync.disable() }.settingsActionRow()
+            SettingsSectionGroup("Watch history") {
+                Text("Your previous sync permission no longer applies.")
+                Button("Remove previous permission", role: .destructive) { sync.disable() }.settingsActionRow()
+            }
         } else if !shares.isEmpty {
-            Toggle("Enable 2-way sync", isOn: Binding(get: { sync.isEnabled }, set: setEnabled))
-                .accessibilityIdentifier("tracker-history.sync-enabled")
-                .disabled(!sync.isEnabled && (sync.isBusy || selected.isEmpty))
-                .alert("Sync existing watch history from \(trackerName)?", isPresented: $showHistoryChoice) {
-                    Button("Sync history") {
-                        guard let id = offeredGrant, sync.isEnabled, sync.grant?.id == id else { return }
-                        offeredGrant = nil
-                        operation = Task { await sync.syncExistingHistory(for: id) }
-                    }
-                    Button("Skip", role: .cancel) {
-                        if let offeredGrant { sync.skipExistingHistory(for: offeredGrant) }
-                        offeredGrant = nil
-                    }
-                } message: {
-                    Text("Mark matching titles as watched in \(destinations). New activity syncs either way.")
-                }
-            if shares.count > 1 {
-                Button { editingLibraries.toggle() } label: {
-                    LabeledContent("Libraries", value: destinations)
-                }
-                .settingsActionRow()
-                .accessibilityIdentifier("tracker-history.libraries")
-                if editingLibraries {
-                    ForEach(shares) { share in
-                        Toggle(isOn: Binding(get: { selected.contains(share.id) }, set: { select(share.id, $0) })) {
-                            Text(verbatim: name(share))
-                        }
-                        .disabled(sync.isBusy)
-                        .accessibilityIdentifier("tracker-history.sync-server.\(share.id)")
-                    }
-                }
-            } else if let share = shares.first {
-                LabeledContent("Library", value: name(share))
-                    .accessibilityIdentifier("tracker-history.library.\(share.id)")
-            }
-            Text("Beta: \(trackerName) can update watch history in Plozz for the selected library sources, not on your media servers.")
-                .font(.footnote).plozzForeground(.secondary)
-            if sync.isBusy {
-                ProgressView("Syncing…")
-            } else if let error = sync.error {
-                if !sync.isEnabled, error as? TrackerHistoryError == .incompleteSnapshot {
-                    Text("Sync is off. Plozz couldn’t verify your full \(trackerName) history. Try again later.")
-                } else { TrackerHistoryImportFailure(error: error) }
-            } else if sync.isEnabled {
-                syncResult
-            }
-            if sync.isEnabled {
-                Button("Sync now") { operation = Task { await sync.synchronize() } }
-                    .settingsActionRow().disabled(sync.isBusy)
-                    .accessibilityIdentifier("tracker-history.sync-now")
-                if !sync.identity.allowsForegroundChecks {
+            SettingsSectionGroup("Watch history") {
+                controls
+            } footer: {
+                Text("Beta: Changes from \(trackerName) update matching titles in Plozz, not on Plex, Jellyfin, or Emby.")
+                if sync.isEnabled && !sync.identity.allowsForegroundChecks {
                     Text("Use Sync now to check for later changes.").font(.footnote).plozzForeground(.secondary)
                 }
             }
+        }
+    }
+
+    @ViewBuilder private var controls: some View {
+        Toggle("2-way sync", isOn: Binding(get: { sync.isEnabled }, set: setEnabled))
+            .accessibilityIdentifier("tracker-history.sync-enabled")
+            .disabled(!sync.isEnabled && (sync.isBusy || selected.isEmpty))
+            .alert("Sync existing watch history from \(trackerName)?", isPresented: $showHistoryChoice) {
+                Button("Sync history") {
+                    guard let id = offeredGrant, sync.isEnabled, sync.grant?.id == id else { return }
+                    offeredGrant = nil
+                    operation = Task { await sync.syncExistingHistory(for: id) }
+                }
+                Button("Skip", role: .cancel) {
+                    if let offeredGrant { sync.skipExistingHistory(for: offeredGrant) }
+                    offeredGrant = nil
+                }
+            } message: {
+                Text("Mark matching titles as watched in \(destinations). New activity syncs either way.")
+            }
+        if shares.count > 1 {
+            Button { editingLibraries.toggle() } label: {
+                LabeledContent("Libraries", value: destinations)
+            }
+            .settingsActionRow()
+            .accessibilityIdentifier("tracker-history.libraries")
+            if editingLibraries {
+                ForEach(shares) { share in
+                    Toggle(isOn: Binding(get: { selected.contains(share.id) }, set: { select(share.id, $0) })) {
+                        Text(verbatim: name(share))
+                    }
+                    .disabled(sync.isBusy)
+                    .accessibilityIdentifier("tracker-history.sync-server.\(share.id)")
+                }
+            }
+        } else if let share = shares.first {
+            LabeledContent("Library", value: name(share))
+                .accessibilityIdentifier("tracker-history.library.\(share.id)")
+        }
+        if sync.isBusy {
+            ProgressView("Syncing…")
+        } else if let error = sync.error {
+            if !sync.isEnabled, error as? TrackerHistoryError == .incompleteSnapshot {
+                Text("Sync is off. Plozz couldn’t verify your full \(trackerName) history. Try again later.")
+            } else { TrackerHistoryImportFailure(error: error) }
+        } else if sync.isEnabled {
+            syncResult
+        }
+        if sync.isEnabled {
+            Button("Sync now") { operation = Task { await sync.synchronize() } }
+                .settingsActionRow().disabled(sync.isBusy)
+                .accessibilityIdentifier("tracker-history.sync-now")
         }
     }
 

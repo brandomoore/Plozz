@@ -16,7 +16,7 @@ earlier builds.
 Connecting a new PublicMetaDB tracking account enables playback reporting. The
 account's tracker switch can pause it without disconnecting. Refreshing a saved
 key preserves the previous reporting choice; it never opts an existing user in.
-**Enable 2-way sync** is separate from normal reporting. Enabling it checks for
+**2-way sync** is separate from normal reporting. Enabling it checks for
 new activity and offers **Sync history / Skip** for existing watches. Neither
 choice changes managed-server watch state. Earlier builds did not offer historical
 sync. The live provider results below predate the history choice; they do not

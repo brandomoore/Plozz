@@ -3526,7 +3526,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
                    "publicmetadb.history.bulk", "publicmetadb.compare-history", "publicmetadb.export-history"] {
             XCTAssertFalse(app.descendants(matching: .any)[id].firstMatch.exists, id)
         }
-        XCTAssertEqual(activation.label, "Enable tracker")
+        XCTAssertEqual(activation.label, "Use PublicMetaDB")
         try require(activation.value as? String == "1",
                     "This read-only route check needs an already active tracker and an eligible media share.")
         try tapVisible(ongoingMaster, tapping: false)

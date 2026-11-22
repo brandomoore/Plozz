@@ -321,8 +321,21 @@ final class DiscReviewScreenshotTests: XCTestCase {
     func testSync() {
         start("sync",["--history-ongoing-sync"]); let enabled=el("tracker-history.sync-enabled"); XCTAssertTrue(enabled.waitForExistence(timeout:6)); shot("ongoing-sync-off"); go(enabled)
         let skip = app.buttons["Skip"].firstMatch
-        XCTAssertTrue(skip.waitForExistence(timeout: 5)); shot("existing-history-choice"); go(skip)
+        XCTAssertTrue(skip.waitForExistence(timeout: 5)); shot("existing-history-choice"); chooseSkip(skip)
         XCTAssertTrue(el("tracker-history.sync-now").waitForExistence(timeout:8)); shot("ongoing-sync-on"); app.terminate()
+    }
+
+    private func chooseSkip(_ skip: XCUIElement) {
+        #if os(tvOS)
+        // The native alert lays its two actions side by side.
+        if !skip.hasFocus { XCUIRemote.shared.press(.left) }
+        guard skip.wait(for: \.hasFocus, toEqual: true, timeout: 3) else {
+            XCTFail("Skip did not receive focus"); return
+        }
+        XCUIRemote.shared.press(.select)
+        #else
+        go(skip)
+        #endif
     }
 }
 
@@ -354,13 +367,13 @@ extension AtlasUI {
         #if os(tvOS)
         go(el("settings-page-publicmetadb"))
         #else
-        go(app.buttons["Trackers"])
-        XCTAssertTrue(app.navigationBars["Trackers"].waitForExistence(timeout: 5))
+        go(app.buttons["PublicMetaDB"])
+        XCTAssertTrue(app.navigationBars["PublicMetaDB"].waitForExistence(timeout: 5))
         #endif
         let status = app.staticTexts["publicmetadb.status"]
         XCTAssertTrue(status.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(status.label, "Connected")
-        XCTAssertEqual(el("publicmetadb.enabled").label, "Enable tracker")
+        XCTAssertEqual(el("publicmetadb.enabled").label, "Use PublicMetaDB")
         XCTAssertFalse(app.buttons["Tracking settings"].exists)
         XCTAssertFalse(app.buttons["Done"].exists)
     }
@@ -375,7 +388,7 @@ extension AtlasUI {
         let page = app.navigationBars[title]
         XCTAssertTrue(page.waitForExistence(timeout: 5))
         go(page.buttons["BackButton"])
-        XCTAssertTrue(app.navigationBars["Trackers"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["PublicMetaDB"].waitForExistence(timeout: 5))
         #endif
         XCTAssertTrue(row.isHittable && el("publicmetadb.status").exists, app.debugDescription)
     }
@@ -384,7 +397,9 @@ extension AtlasUI {
         openConnectedAccount()
         defer { app.terminate() }
         let activation = el("publicmetadb.enabled"), sync = el("tracker-history.sync-enabled")
-        XCTAssertEqual(sync.label, "Enable 2-way sync")
+        XCTAssertEqual(sync.label, "2-way sync")
+        XCTAssertLessThan(activation.frame.midY, sync.frame.midY, "The tracker switch comes first.")
+        XCTAssertLessThan(sync.frame.midY, el("publicmetadb.status").frame.midY, "Account management follows watch history.")
         XCTAssertEqual(activation.value as? String, "1", "Connecting enables basic tracking.")
         XCTAssertTrue(activation.isHittable && sync.isHittable)
         for id in ["publicmetadb.ratings", "publicmetadb.watchlist", "publicmetadb.compare-history",
@@ -394,7 +409,7 @@ extension AtlasUI {
         for label in ["Lists", "Picks", "Choose a list", "Create a list", "Look up an external ID", "Dropped titles"] {
             XCTAssertFalse(app.buttons[label].exists, label)
         }
-        shot("flat-connected")
+        shot("tracker-account-sections")
 
         go(activation)
         XCTAssertEqual(activation.value as? String, "0")
@@ -410,7 +425,7 @@ extension AtlasUI {
         go(sync)
         let skip = app.buttons["Skip"].firstMatch
         XCTAssertTrue(skip.waitForExistence(timeout: 5))
-        go(skip)
+        chooseSkip(skip)
         XCTAssertTrue(el("tracker-history.sync-now").waitForExistence(timeout: 5))
         XCTAssertTrue(activation.exists, "Both controls belong to the same account page.")
     }
@@ -531,7 +546,9 @@ extension AtlasUI {
         XCTAssertFalse(el("lastfm.history").exists)
         let provider = id == "mal" ? "myanimelist" : id
         let sync = el("tracker-history.sync-enabled"), activation = el("\(provider).enabled")
-        XCTAssertEqual(activation.label, "Enable tracker")
+        let names = ["trakt": "Trakt", "simkl": "Simkl", "wetrakr": "WeTrakr",
+                     "anilist": "AniList", "mal": "MyAnimeList", "lastfm": "Last.fm"]
+        XCTAssertEqual(activation.label, names[id].map { "Use \($0)" })
         XCTAssertEqual(activation.value as? String, "1")
         go(activation)
         XCTAssertEqual(activation.value as? String, "0")
@@ -542,7 +559,7 @@ extension AtlasUI {
         if supportsSync && !serversOnly {
             XCTAssertTrue(sync.waitForExistence(timeout: 5))
             shot("tracker-\(id)")
-            XCTAssertEqual(sync.label, "Enable 2-way sync")
+            XCTAssertEqual(sync.label, "2-way sync")
         } else {
             XCTAssertFalse(sync.exists)
             shot("tracker-\(id)" + (serversOnly ? "-servers-only" : ""))

@@ -231,7 +231,7 @@ final class PublicMetaDBLiveConnectionTests: XCTestCase {
     private var activation: XCUIElement { PublicMetaDBLiveNavigation.activation(in: app) }
 
     private func assertInactiveAccount() {
-        XCTAssertEqual(activation.label, "Enable tracker")
+        XCTAssertEqual(activation.label, "Use PublicMetaDB")
         XCTAssertEqual(activation.value as? String, "0")
         XCTAssertEqual(enter.label, "Replace API key")
         XCTAssertFalse(app.buttons["tracker-history.ongoing-sync"].exists)

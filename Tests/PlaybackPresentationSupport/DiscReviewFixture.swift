@@ -287,9 +287,9 @@ private struct AtlasRoot: View {
             #if os(iOS)
             case "trackers":
                 SettingsPageList {
-                    NavigationLink("Trackers") {
+                    NavigationLink("PublicMetaDB") {
                         AtlasPublic(mode: "connected", data: data)
-                            .navigationTitle("Trackers")
+                            .navigationTitle("PublicMetaDB")
                     }
                 }
                 .navigationTitle("Settings")
@@ -392,11 +392,7 @@ private struct AtlasHTTP: HTTPClient {
     @ViewBuilder var page: some View {
         switch mode {
         case "connected","disconnected","account": PublicMetaDBPage {
-            #if os(iOS)
             PublicMetaDBSettingsContent(service:service,makeHistoryImport:data.makeSession)
-            #else
-            SettingsSectionGroup(verbatim:"PublicMetaDB") { PublicMetaDBSettingsContent(service:service,makeHistoryImport:data.makeSession) }
-            #endif
         }
         case "watchlist","watchlist-on": PublicMetaDBWatchlistSettingsView(service:service)
         case "create-list": PublicMetaDBCreateListView(service:service)

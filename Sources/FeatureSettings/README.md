@@ -1,8 +1,10 @@
 # FeatureSettings
 
 **Tracker v1 exposure:** Connecting a tracker starts its supported tracking activity.
-The connected account exposes the tracker switch directly; turning it off pauses
-tracking without removing the account. **Enable 2-way sync** also brings supported
+The first switch is named for the service (for example, **Use Trakt**). Turning it off
+pauses tracking without disconnecting. **Watch history** groups 2-way sync, its libraries
+and the last result. **Account** groups connection status and account actions.
+**2-way sync** brings supported
 tracker activity into matching Plozz libraries. On first enrollment, **Sync history**
 includes existing watches; **Skip** leaves them alone. Neither choice writes to Plex,
 Jellyfin, or Emby.
@@ -89,7 +91,7 @@ competing changes to one destination item cannot be selected together. See
 [PublicMetaDBService](../PublicMetaDBService/README.md) for current
 coverage, history fidelity, and remaining integration work.
 
-**Enable 2-way sync** is off until the user enables it on the tracker account page.
+**2-way sync** is off until the user enables it on the tracker account page.
 Only Plozz-managed watch state for this profile's selected network libraries can change.
 Enrollment checks for new activity immediately. The separate **Sync history / Skip**
 decision concerns only existing watches, never old playback positions or outgoing history.
@@ -323,8 +325,8 @@ Results use the current platform's destination and retain their query on Back.
 Protected destinations retain their normal profile/PIN checks; search never
 selects a server, library or user, enables a prerequisite, or submits an editor.
 Unavailable controls lead to their existing prerequisite or availability message.
-PublicMetaDB results lead to the current profile's Connect, Retry, or **Enable tracker** row.
-Search never starts pairing or grants device-local consent. **Enable 2-way sync** stays in the selected tracker:
+PublicMetaDB results lead to the current profile's Connect, Retry, or **Use PublicMetaDB** row.
+Search never starts pairing or grants device-local consent. **2-way sync** stays in the selected tracker:
 its grant, eligible media shares, and supported categories depend on that connection.
 Individual histories, transfers, contributions, and list contents are not indexed.
 On mobile, custom quality keeps its normal modal editor: Cancel discards the draft, Apply

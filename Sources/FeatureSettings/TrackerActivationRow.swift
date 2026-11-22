@@ -16,15 +16,21 @@ public struct TrackerActivationRow: View {
     }
 
     public var body: some View {
-        Toggle("Enable tracker", isOn: Binding(
-            get: { tracker.trackerEnabled },
-            set: { enabled in
-                do { try tracker.setTrackerEnabled(enabled) }
-                catch { changeFailed = true }
-            }
-        ))
-        .accessibilityIdentifier("\(trackerID).enabled")
-        .settingsSearchAnchor("tracker-enabled-\(trackerID)", fallbackFor: fallbackTargets)
+        let page = trackerID == "publicmetadb" ? SettingsSearchPage.publicMetaDB : SettingsSearchPage(rawValue: trackerID)
+        let name = page?.trackerAccount?.name ?? trackerID
+        SettingsSectionGroup {
+            Toggle("Use \(name)", isOn: Binding(
+                get: { tracker.trackerEnabled },
+                set: { enabled in
+                    do { try tracker.setTrackerEnabled(enabled) }
+                    catch { changeFailed = true }
+                }
+            ))
+            .accessibilityIdentifier("\(trackerID).enabled")
+            .settingsSearchAnchor("tracker-enabled-\(trackerID)", fallbackFor: fallbackTargets)
+        } footer: {
+            Text("Turn off to pause tracking without disconnecting.")
+        }
         .alert("Couldn’t change the tracker setting. Try again.", isPresented: $changeFailed) {}
     }
 }
