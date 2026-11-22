@@ -1839,14 +1839,10 @@ final class TrackerHistoryImportTests: XCTestCase {
         evidence.snapshot = try snapshot(observations)
         await sync.synchronize()
         XCTAssertNil(sync.error)
-        XCTAssertTrue(sync.hasMoreChanges)
-        XCTAssertEqual(sync.confirmedCount, 0)
-        XCTAssertEqual(sync.grant?.reviewCount, 25)
-        XCTAssertEqual(sync.grant?.lastCompletedResult?.libraries?.first?.counts, [.noMatch: 24, .trackerConflict: 1, .leftToCheck: 1])
-        await sync.synchronize()
         XCTAssertFalse(sync.hasMoreChanges)
+        XCTAssertEqual(sync.confirmedCount, 0)
         XCTAssertEqual(sync.grant?.reviewCount, 26)
-        XCTAssertEqual(sync.grant?.lastCompletedResult?.libraries?.first?.counts, [.trackerConflict: 1])
+        XCTAssertEqual(sync.grant?.lastCompletedResult?.libraries?.first?.counts, [.noMatch: 24, .trackerConflict: 2])
         let writes = await provider.writes
         XCTAssertEqual(writes, 0, "The batch boundary cannot hide competing new tracker evidence")
     }
@@ -2000,13 +1996,25 @@ final class TrackerHistoryImportTests: XCTestCase {
     }
 
     @MainActor
-    func testOngoingSyncBoundsNewRecordsWithoutDroppingTheRemainder() async throws {
+    func testOneCheckProcessesLargeHistoryAcrossBothLibrariesWithoutReplayingWrites() async throws {
         let evidence = ImportEvidence(try snapshot([]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
-        let provider = ImportProvider(.mediaShare, item: item())
-        let sync = syncController(provider: provider, evidence: evidence, store: store)
-        await enable(sync, evidence: evidence)
-        evidence.snapshot = try snapshot((0..<26).map {
+        let accounts = [account(.mediaShare), account(.mediaShare, id: "second")]
+        let scope = WatchMutationServerScope(profile: .init(id: "profile", name: "Test"), accounts: accounts)
+        let items = (0..<30).map { MediaItem(id: "item-\($0)", title: "Movie \($0)", kind: .movie,
+                                            providerIDs: ["Tmdb": String(1_000 + $0)]) }
+        let index = IdentityIndexSnapshot(byIdentity: Dictionary(uniqueKeysWithValues: items.enumerated().map { offset, item in
+            (.external(source: "tmdb", value: String(1_000 + offset)), accounts.map {
+                .init(accountID: $0.id, itemID: item.id, providerKind: .mediaShare, kind: .movie)
+            })
+        }))
+        let first = ImportProvider(.mediaShare, item: items[0], relatedItems: Array(items.dropFirst()))
+        let second = ImportProvider(.mediaShare, item: items[0], relatedItems: Array(items.dropFirst()))
+        let sync = syncController(provider: first, evidence: evidence, store: store, serverScope: scope, indexSnapshot: index,
+                                  otherProviders: ["second": second])
+        await sync.enable(afterReview: .init(snapshot: evidence.snapshot, serverScope: scope, candidates: []),
+                          accountIDs: Set(accounts.map(\.id)), categories: [.watched])
+        evidence.snapshot = try snapshot((0..<3_245).map {
             try TrackerHistoryObservation(
                 recordID: String(format: "record-%02d", $0), kind: .movie,
                 identities: [.external(source: "tmdb", value: String($0 + 1_000))], fact: .watched(at: nil)
@@ -2014,13 +2022,22 @@ final class TrackerHistoryImportTests: XCTestCase {
         })
         await sync.synchronize()
         XCTAssertNil(sync.error)
-        XCTAssertTrue(sync.hasMoreChanges)
-        XCTAssertEqual(sync.grant?.reviewCount, 25)
-        await sync.synchronize()
         XCTAssertFalse(sync.hasMoreChanges)
-        XCTAssertEqual(sync.grant?.reviewCount, 26)
-        let writes = await provider.writes
-        XCTAssertEqual(writes, 0)
+        XCTAssertEqual(sync.confirmedCount, 60)
+        let results = try XCTUnwrap(sync.grant?.lastCompletedResult?.libraries)
+        XCTAssertEqual(Set(results.map(\.accountID)), Set(accounts.map(\.id)))
+        for result in results { XCTAssertEqual(result.counts, [.updated: 30, .noMatch: 3_215]) }
+        await sync.synchronize()
+        XCTAssertNil(sync.error)
+        XCTAssertEqual(sync.confirmedCount, 0)
+        for provider in [first, second] {
+            let writes = await provider.writes
+            XCTAssertEqual(writes, 30)
+            for item in items {
+                let actual = try await provider.item(id: item.id)
+                XCTAssertTrue(actual.isPlayed)
+            }
+        }
     }
 
     @MainActor

@@ -111,6 +111,13 @@ public final class TrackerHistoryImportSession {
     public func compare(
         selectingRecords: (@MainActor (TrackerHistorySnapshot) throws -> Set<String>)? = nil
     ) async {
+        await compare(snapshot: nil, selectingRecords: selectingRecords)
+    }
+
+    func compare(
+        snapshot initial: TrackerHistorySnapshot?,
+        selectingRecords: (@MainActor (TrackerHistorySnapshot) throws -> Set<String>)?
+    ) async {
         guard purpose == .transfer else { error = TrackerHistoryError.invalidSelection; return }
         guard !isBusy else { return }
         generation = UUID()
@@ -124,7 +131,8 @@ public final class TrackerHistoryImportSession {
         defer { if generation == current { isBusy = false } }
         do {
             try requireCurrent(current)
-            let snapshot = try await readSnapshot()
+            let snapshot: TrackerHistorySnapshot
+            if let initial { snapshot = initial } else { snapshot = try await readSnapshot() }
             try requireCurrent(current)
             let selectedRecords = try selectingRecords?(snapshot)
             let candidates = try await candidates(for: snapshot, recordIDs: selectedRecords, generation: current)
@@ -161,8 +169,18 @@ public final class TrackerHistoryImportSession {
     public func apply(
         rowIDs: Set<UUID>, overridingConflicts: Set<UUID>, confirmsDestructiveChanges: Bool
     ) async {
+        await apply(rowIDs: rowIDs, overridingConflicts: overridingConflicts,
+                    confirmsDestructiveChanges: confirmsDestructiveChanges, continuingCheck: false)
+    }
+
+    func apply(
+        rowIDs: Set<UUID>, overridingConflicts: Set<UUID>, confirmsDestructiveChanges: Bool, continuingCheck: Bool
+    ) async {
         guard purpose == .transfer else { error = TrackerHistoryError.invalidSelection; return }
         guard !isBusy else { return }
+        // A queued, unconfirmed mutation from the preceding batch must never
+        // become authorized again while delivering a different batch.
+        generation = UUID()
         let current = generation
         let sync = ongoingSync
         let syncGrantID = sync?.isEnabled == true ? sync?.grant?.id : nil
@@ -177,14 +195,19 @@ public final class TrackerHistoryImportSession {
         }
         do {
             try requireCurrent(current)
-            guard let plan, outcomes.isEmpty else { throw TrackerHistoryError.stalePreview }
+            guard let plan, outcomes.isEmpty || (continuingCheck && rowIDs.isDisjoint(with: outcomes.keys))
+            else { throw TrackerHistoryError.stalePreview }
             let approval = try plan.approve(
                 rowIDs: rowIDs, overridingConflicts: overridingConflicts,
                 confirmsDestructiveChanges: confirmsDestructiveChanges
             )
-            let latest = try await readSnapshot()
+            let revisionIsCurrent = continuingCheck ? try await plan.snapshot.isStillCurrent?() : nil
+            if revisionIsCurrent != true {
+                let latest = try await readSnapshot()
+                try requireCurrent(current)
+                try Self.validateTrackerEvidence(plan: plan, selected: approval.rows, latest: latest)
+            }
             try requireCurrent(current)
-            try Self.validateTrackerEvidence(plan: plan, selected: approval.rows, latest: latest)
             approvedGeneration = current
             let mutations = try approval.mutations(
                 currentScope: scope, currentTrackerID: plan.snapshot.trackerID,
@@ -276,8 +299,9 @@ public final class TrackerHistoryImportSession {
         guard permitted.isSubset(of: snapshotIndex.indexedAccountIDs) else { throw TrackerHistoryError.incompleteSnapshot }
         var targets: Set<WatchMutationTarget> = []
         var walkedSeries: Set<WatchMutationTarget> = []
-        for observation in snapshot.observations where recordIDs.map({ $0.contains(observation.recordID) }) ?? true {
-            try requireCurrent(generation)
+        for (offset, observation) in snapshot.observations.enumerated() {
+            if offset.isMultiple(of: 128) { await Task.yield(); try requireCurrent(generation) }
+            guard recordIDs?.contains(observation.recordID) != false else { continue }
             for source in snapshotIndex.sources(forIdentities: observation.identities, kind: observation.kind)
             where permitted.contains(source.accountID) {
                 targets.insert(source.target)

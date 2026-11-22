@@ -104,6 +104,8 @@ public final class TrackerHistorySyncController {
     }
     public private(set) var stage: Stage = .reading
     public private(set) var readDetail: TrackerHistoryReadDetail?
+    public private(set) var checkedEntries: Int?
+    public private(set) var totalEntries = 0
     public private(set) var retryDate: Date?
     public let identity: TrackerHistorySyncIdentity
     public let contextScope: WatchMutationServerScope
@@ -129,6 +131,7 @@ public final class TrackerHistorySyncController {
     private static let bucketCount = 64
     private static let maximumObservations = 100_000
     private static let batchSize = 25
+    @ObservationIgnored private var lastProgress = ContinuousClock.now
 
     private func trackRead<T>(_ current: UUID, _ body: @MainActor () async throws -> T) async rethrows -> T {
         readDetail = nil
@@ -136,6 +139,7 @@ public final class TrackerHistorySyncController {
         return try await TrackerHistoryReadDetail.$report.withValue({ [weak self] detail in
             guard let self, self.generation == current else { return }
             self.readDetail = detail
+            self.lastProgress = .now
         }, operation: body)
     }
 
@@ -497,16 +501,22 @@ public final class TrackerHistorySyncController {
         #endif
         isWorking = true
         generation = current
+        checkedEntries = nil
+        lastProgress = .now
         let work = Task { [admitted] in
-            await perform(admitted, generation: current, drainBatches: admittingExistingHistory)
+            await perform(admitted, generation: current)
             activeSession?.cancel()
             activeSession = nil
             operation = nil
             isWorking = false
+            checkedEntries = nil
         }
         operation = work
         let deadline = Task { [admitted] in
-            do { try await Task.sleep(for: .seconds(60)) } catch { return }
+            repeat {
+                do { try await Task.sleep(until: lastProgress.advanced(by: .seconds(60)), clock: .continuous) }
+                catch { return }
+            } while lastProgress.duration(to: .now) < .seconds(60)
             guard generation == current, operation != nil else { return }
             markCheckFailed(admitted, current)
             stop()
@@ -530,31 +540,19 @@ public final class TrackerHistorySyncController {
         } catch { report(error) }
     }
 
-    private func perform(_ initial: TrackerHistorySyncGrant, generation current: UUID, drainBatches: Bool) async {
+    private func perform(_ initial: TrackerHistorySyncGrant, generation current: UUID) async {
         do {
             try requireCheck(initial, current)
             var libraries: [TrackerHistorySyncResult.Library] = []
             var buckets = try loadBuckets(initial)
+            var snapshot: TrackerHistorySnapshot?
+            var hashes: [String: String] = [:]
             for (offset, account) in initial.scope.accounts.enumerated() {
                 let scope = try initial.scope.selectingAccounts([account.accountID])
-                var remaining: Set<String>?
-                var library = TrackerHistorySyncResult.Library(accountID: account.accountID)
-                var playing: Set<String> = []
-                var later: Set<String> = []
-                repeat {
-                    let batch = try await processBatch(
-                        scope: scope, accountID: account.accountID, grant: initial, generation: current,
-                        remaining: remaining, buckets: &buckets, libraryNumber: offset + 1
-                    )
-                    library.counts.merge(batch.counts, uniquingKeysWith: +)
-                    playing.formUnion(batch.playing)
-                    later = batch.outsideBatch
-                    remaining = batch.remaining
-                } while drainBatches && remaining?.isEmpty == false
-                later.formUnion(remaining ?? [])
-                later.subtract(playing)
-                if !playing.isEmpty { library.counts[.playing] = playing.count }
-                if !later.isEmpty { library.counts[.leftToCheck] = later.count }
+                let library = try await processLibrary(
+                    scope: scope, accountID: account.accountID, grant: initial, generation: current,
+                    snapshot: &snapshot, hashes: &hashes, buckets: &buckets, libraryNumber: offset + 1
+                )
                 libraries.append(library)
             }
             var persisted = try requireCheck(initial, current)
@@ -579,22 +577,17 @@ public final class TrackerHistorySyncController {
         }
     }
 
-    private struct Batch {
-        var counts: [TrackerHistorySyncResult.Outcome: Int] = [:]
-        var playing: Set<String> = []
-        var outsideBatch: Set<String> = []
-        var remaining: Set<String> = []
-    }
-
-    private func processBatch(
+    private func processLibrary(
         scope: WatchMutationServerScope, accountID: String, grant initial: TrackerHistorySyncGrant, generation current: UUID,
-        remaining: Set<String>?, buckets: inout [Bucket], libraryNumber: Int
-    ) async throws -> Batch {
+        snapshot: inout TrackerHistorySnapshot?, hashes: inout [String: String],
+        buckets: inout [Bucket], libraryNumber: Int
+    ) async throws -> TrackerHistorySyncResult.Library {
         try requireCheck(initial, current)
         let session = try makeSession(scope) { [weak self] in
             guard let self else { return false }
             do {
                 try self.requireCheck(initial, current)
+                self.lastProgress = .now
                 return true
             } catch {
                 if self.generation == current { self.report(error) }
@@ -603,42 +596,63 @@ public final class TrackerHistorySyncController {
         }
         activeSession = session
         defer { session.cancel(); activeSession = nil }
-        var batch = Batch()
-        var considered: Set<String> = []
-        var hashes: [String: String] = [:]
-        // Every batch compares fresh, complete evidence. Only consider each
-        // first-snapshot candidate once: active playback or a moving tracker
-        // cannot cause an unbounded loop or starve later records.
+        var library = TrackerHistorySyncResult.Library(accountID: accountID)
         stage = .comparing(library: libraryNumber, total: initial.scope.accounts.count)
-        let selectRecords: @MainActor (TrackerHistorySnapshot) throws -> Set<String> = { [buckets] snapshot in
-            try self.requireCheck(initial, current)
-            guard snapshot.trackerID == initial.identity.trackerID else { throw TrackerHistoryError.scopeChanged }
-            guard snapshot.observations.count <= Self.maximumObservations else { throw TrackerHistorySyncError.historyTooLarge }
-            var newRecords: [String] = []
-            for observation in snapshot.observations {
-                let hash = try Self.fingerprint(observation)
-                hashes[observation.recordID] = hash
-                guard initial.categories.contains(where: { $0.includes(observation.fact) }),
-                      !Self.isEnrolled(hash, accountID, initial, buckets, watched: Self.isWatched(observation)) else { continue }
-                let receipt = Self.receiptKey(accountID, hash, initial)
-                guard buckets[Self.bucket(receipt)].receipts[receipt] == nil else { continue }
-                if remaining?.contains(observation.recordID) == false { batch.outsideBatch.insert(observation.recordID) }
-                else { newRecords.append(observation.recordID) }
+        checkedEntries = nil
+        if snapshot == nil {
+            let source = try await trackRead(current) { try await session.enrollmentSnapshot() }
+            try requireCheck(initial, current)
+            guard source.trackerID == initial.identity.trackerID else { throw TrackerHistoryError.scopeChanged }
+            guard source.observations.count <= Self.maximumObservations else { throw TrackerHistorySyncError.historyTooLarge }
+            for (index, observation) in source.observations.enumerated() {
+                if index.isMultiple(of: 128) { await Task.yield(); try requireCheck(initial, current); lastProgress = .now }
+                hashes[observation.recordID] = try Self.fingerprint(observation)
             }
-            considered = Set(newRecords.sorted().prefix(Self.batchSize))
-            batch.remaining = Set(newRecords).subtracting(considered)
-            return considered
+            snapshot = source
         }
-        await trackRead(current) { await session.compare(selectingRecords: selectRecords) }
+        guard let source = snapshot else { throw TrackerHistoryError.incompleteSnapshot }
+        var eligible: Set<String> = []
+        for (index, observation) in source.observations.enumerated() {
+            if index.isMultiple(of: 128) { await Task.yield(); try requireCheck(initial, current); lastProgress = .now }
+            guard let hash = hashes[observation.recordID],
+                  initial.categories.contains(where: { $0.includes(observation.fact) }),
+                  !Self.isEnrolled(hash, accountID, initial, buckets, watched: Self.isWatched(observation)) else { continue }
+            let receipt = Self.receiptKey(accountID, hash, initial)
+            if buckets[Self.bucket(receipt)].receipts[receipt] == nil { eligible.insert(observation.recordID) }
+        }
+        guard !eligible.isEmpty else { return library }
+        let considered = eligible
+        await session.compare(snapshot: source, selectingRecords: { _ in considered })
         try requireCheck(initial, current)
         if let error = session.error { throw error }
         guard let plan = session.plan else { throw TrackerHistoryError.incompleteSnapshot }
         let rows = plan.rows.filter { !considered.isDisjoint(with: $0.recordIDs) }
+        totalEntries = rows.count
+        checkedEntries = 0
+        for offset in stride(from: 0, to: rows.count, by: Self.batchSize) {
+            await Task.yield()
+            try requireCheck(initial, current)
+            let slice = rows[offset..<min(offset + Self.batchSize, rows.count)]
+            try await processRows(slice, in: plan, session: session, library: &library, considered: considered,
+                                  hashes: hashes, grant: initial, generation: current, buckets: &buckets, libraryNumber: libraryNumber)
+            checkedEntries = slice.endIndex
+            lastProgress = .now
+        }
+        return library
+    }
+
+    private func processRows(
+        _ rows: ArraySlice<TrackerHistoryImportPlan.Row>, in plan: TrackerHistoryImportPlan,
+        session: TrackerHistoryImportSession, library: inout TrackerHistorySyncResult.Library, considered: Set<String>,
+        hashes: [String: String], grant initial: TrackerHistorySyncGrant, generation current: UUID,
+        buckets: inout [Bucket], libraryNumber: Int
+    ) async throws {
+        let accountID = library.accountID
         var selected: Set<UUID> = []
         var continuations: Set<UUID> = []
         for row in rows {
             if row.comparison == .playing {
-                batch.playing.formUnion(considered.intersection(row.recordIDs))
+                library.counts[.playing, default: 0] += row.recordIDs.filter(considered.contains).count
                 continue
             }
             let receipt: Receipt
@@ -652,7 +666,7 @@ public final class TrackerHistorySyncController {
                 if continues { continuations.insert(row.id) }
             } else if row.comparison == .alreadyMatches {
                 receipt = .matched
-                batch.counts[.alreadyMatched, default: 0] += 1
+                library.counts[.alreadyMatched, default: 0] += 1
             } else {
                 receipt = .review
                 let reason: TrackerHistorySyncResult.Outcome
@@ -666,12 +680,9 @@ public final class TrackerHistorySyncController {
                 case .incompatibleRuntime: reason = .incompatibleRuntime
                 default: reason = .unsupported
                 }
-                batch.counts[reason, default: 0] += 1
+                library.counts[reason, default: 0] += 1
             }
             try record(receipt, row: row, hashes: hashes, accountID: accountID, grant: initial, buckets: &buckets)
-            // A coalesced watch earns receipts for its aliases in later batches too.
-            batch.remaining.subtract(row.recordIDs)
-            batch.outsideBatch.subtract(row.recordIDs)
         }
         if !selected.isEmpty {
             var persisted = try requireCheck(initial, current)
@@ -680,7 +691,8 @@ public final class TrackerHistorySyncController {
             grant = persisted
             stage = .applying(library: libraryNumber, total: initial.scope.accounts.count)
             await trackRead(current) {
-                await session.apply(rowIDs: selected, overridingConflicts: continuations, confirmsDestructiveChanges: false)
+                await session.apply(rowIDs: selected, overridingConflicts: continuations, confirmsDestructiveChanges: false,
+                                    continuingCheck: true)
             }
             try requireCheck(initial, current)
             for row in rows where session.outcomes[row.id] == .confirmed {
@@ -688,13 +700,12 @@ public final class TrackerHistorySyncController {
                     .confirmed, row: row, hashes: hashes, accountID: accountID,
                     grant: initial, buckets: &buckets, confirmedBaseline: session.confirmedBaselines[row.id]
                 )
-                batch.counts[.updated, default: 0] += 1
+                library.counts[.updated, default: 0] += 1
             }
             if let error = session.error { throw error }
-            let unconfirmed = selected.count - (batch.counts[.updated] ?? 0)
-            if unconfirmed > 0 { batch.counts[.unconfirmed] = unconfirmed }
+            let unconfirmed = selected.filter { session.outcomes[$0] != .confirmed }.count
+            if unconfirmed > 0 { library.counts[.unconfirmed, default: 0] += unconfirmed }
         }
-        return batch
     }
 
     private func record(

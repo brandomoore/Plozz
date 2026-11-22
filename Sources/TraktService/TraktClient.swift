@@ -306,7 +306,10 @@ struct TraktClient: Sendable {
             trackerID: "trakt", connectionID: connectionID,
             observations: watches.map { try $0.observation(playback: false) }
                 + resumes.map { try $0.observation(playback: true) },
-            expectedCount: watches.count + resumes.count
+            completeness: .apiCount(watches.count + resumes.count),
+            isStillCurrent: {
+                try await self.historyActivity(accessToken: accessToken, validateScope: validateScope) == after
+            }
         )
     }
 

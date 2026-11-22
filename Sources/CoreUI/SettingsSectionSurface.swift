@@ -58,6 +58,9 @@ private struct SettingsRowSeparator: View {
                 .frame(height: 1 / displayScale)
                 .padding(.leading, max(MobileSettingsMetrics.rowInset, inset))
                 .frame(maxHeight: .infinity, alignment: .bottom)
+                // Keep the hairline inside the row at fractional layout boundaries.
+                .offset(y: (floor(geometry.frame(in: .global).maxY * displayScale) / displayScale)
+                    - geometry.frame(in: .global).maxY)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)

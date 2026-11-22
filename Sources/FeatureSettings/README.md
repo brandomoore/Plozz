@@ -103,10 +103,12 @@ Only Plozz-managed watch state for this profile's selected network libraries can
 Enrollment checks for new activity immediately. The separate **Sync history / Skip**
 decision concerns only existing watches, never old playback positions or outgoing history.
 Later checks use the provider's supported categories and foreground policy. **Sync now**
-also runs a check. Disabling 2-way sync leaves reporting on and does not undo updates.
+checks all eligible activity present at the start across every selected library in one action.
+Writes are batched internally and checked against current tracker and destination state.
+Disabling 2-way sync leaves reporting on and does not undo updates.
 **Last sync** shows confirmed updates from that check. Expand it for counts by
 library: matching history, skipped comparisons and their reasons, and deferred
-entries. Only work another check can pick up prompts a later sync. An unverified
+entries. Titles in active playback are deferred until playback ends. An unverified
 update instead names the library to check and is not automatically repeated.
 Older saved results have no per-library breakdown. Opening the result never reads or writes history.
 Pre-beta permissions cannot authorize sync. Opening settings reads no tracker history. The comparison

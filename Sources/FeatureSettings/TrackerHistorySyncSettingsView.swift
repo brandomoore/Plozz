@@ -201,6 +201,10 @@ private struct TrackerTwoWaySyncRows: View {
                 case let .comparing(index, total): Text("Checking library \(index) of \(total)…")
                 case let .applying(index, total): Text("Updating library \(index) of \(total)…")
                 }
+                if let checked = sync.checkedEntries {
+                    Text("\(checked) of \(sync.totalEntries) entries checked")
+                        .font(.footnote).plozzForeground(.secondary)
+                }
                 if let detail = sync.readDetail {
                     Group {
                         switch detail {
@@ -344,11 +348,6 @@ private struct TrackerLastSyncRows: View {
                     .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            let remaining = libraries.reduce(0) { $0 + ($1.counts[.leftToCheck] ?? 0) }
-            if remaining > 0 {
-                Text("Library entries left for the next sync: \(remaining). Use Sync now to continue.")
-                    .fixedSize(horizontal: false, vertical: true)
-            }
             if libraries.contains(where: { $0.counts[.playing] != nil }) {
                 Text("Plozz skips titles during playback. To update their history, sync after playback ends.")
                     .fixedSize(horizontal: false, vertical: true)
@@ -364,10 +363,6 @@ private struct TrackerLastSyncRows: View {
         } else {
             summary
                 .accessibilityIdentifier("tracker-history.last-sync")
-            if result.hasMoreChanges {
-                // Older versions saved only the continuation flag.
-                Text("Use Sync now to check the rest of your history.")
-            }
         }
     }
 }
@@ -387,7 +382,7 @@ private extension TrackerHistorySyncResult.Outcome {
         case .unconfirmed: "Update not verified"
         case .previousUnconfirmed: "Skipped — previous update not verified"
         case .playing: "Deferred during playback"
-        case .leftToCheck: "Left for the next sync"
+        case .leftToCheck: "Not checked in that sync"
         }
     }
 }

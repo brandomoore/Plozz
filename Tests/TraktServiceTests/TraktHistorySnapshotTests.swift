@@ -1,4 +1,4 @@
-import CoreModels
+@testable import CoreModels
 import CoreNetworking
 import Foundation
 import XCTest
@@ -53,6 +53,19 @@ final class TraktHistorySnapshotTests: XCTestCase {
             percent: 32.5, updatedAt: TraktClient.parseTimestamp(date)
         ))
         XCTAssertEqual(http.sentPaths, ["/sync/last_activities", "/users/me/history", "/sync/playback", "/sync/last_activities"])
+    }
+
+    func testWriteBatchRevalidatesCompleteReadWithCurrentAccountActivity() async throws {
+        let http = http(history: "[\(watch())]", historyCount: 1)
+        let source = try await snapshot(http)
+        let verify = try XCTUnwrap(source.isStillCurrent)
+        let unchanged = try await verify()
+        XCTAssertTrue(unchanged)
+        http.stub(pathSuffix: "/sync/last_activities", json: activity("2026-10-24T12:00:01.000Z"))
+        _ = try await verify() // Consume the retained first response in the recording transport.
+        let changed = try await verify()
+        XCTAssertFalse(changed)
+        XCTAssertEqual(http.sentPaths.filter { $0 == "/users/me/history" }.count, 1)
     }
 
     func testAllHistoryPagesAreRequired() async throws {

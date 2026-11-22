@@ -1221,6 +1221,30 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertFalse(app.buttons["Micro"].exists)
     }
 
+    func testConfiguredTrackersShowEveryInteriorDivider() throws {
+        app.launchEnvironment["WETRAKR_CLIENT_ID"] = "fixture"
+        openSettingsPage("Trackers", verifyTitleLayout: false)
+        let ids = ["trakt", "simkl", "wetrakr", "anilist", "mal", "publicmetadb"]
+        let rows = ids.map { app.buttons["settings-page-\($0)"] }
+        for row in rows { XCTAssertTrue(row.waitForExistence(timeout: 3), row.identifier) }
+        let screenshot = app.screenshot()
+        capture("configured-tracker-list")
+        let scale = CGFloat(try XCTUnwrap(screenshot.image.cgImage).width) / app.frame.width
+        for (upper, lower) in zip(rows, rows.dropFirst()) {
+            let middle = (upper.frame.maxY + lower.frame.minY) / 2
+            let x = upper.frame.midX
+            func sample(_ y: CGFloat) throws -> [UInt8] {
+                try backgroundColor(screenshot, in: CGRect(x: x, y: y, width: 12, height: 1 / scale))
+            }
+            let fill = try sample(middle - 5)
+            let contrasts = try (-6...6).map { offset in
+                let color = try sample(((middle * scale).rounded() + CGFloat(offset)) / scale)
+                return zip(color, fill).map { abs(Int($0) - Int($1)) }.max() ?? 0
+            }
+            XCTAssertGreaterThan(contrasts.max() ?? 0, 5, "Missing divider between \(upper.label) and \(lower.label)")
+        }
+    }
+
     func testTrackersOpenNamedAccountPagesAndReturnToOneList() {
         openSettingsPage("Trackers")
         XCTAssertFalse(app.buttons["settings-page-wetrakr"].exists)

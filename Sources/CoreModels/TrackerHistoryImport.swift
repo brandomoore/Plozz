@@ -170,6 +170,8 @@ public struct TrackerHistorySnapshot: Sendable {
     public let trackerID: String
     public let connectionID: String
     public let observations: [TrackerHistoryObservation]
+    /// A provider revision can prove a complete read is still current without downloading it again.
+    let isStillCurrent: (@Sendable () async throws -> Bool)?
 
     /// The adapter calls this only after all required pages/categories finish.
     /// Expected counts are API counts, never the number of successfully decoded rows.
@@ -183,7 +185,8 @@ public struct TrackerHistorySnapshot: Sendable {
     }
 
     public init(
-        trackerID: String, connectionID: String, observations: [TrackerHistoryObservation], completeness: Completeness
+        trackerID: String, connectionID: String, observations: [TrackerHistoryObservation], completeness: Completeness,
+        isStillCurrent: (@Sendable () async throws -> Bool)? = nil
     ) throws {
         if case .apiCount(let count) = completeness, count != observations.count {
             throw TrackerHistoryError.incompleteSnapshot
@@ -195,6 +198,7 @@ public struct TrackerHistorySnapshot: Sendable {
         self.trackerID = trackerID
         self.connectionID = connectionID
         self.observations = observations
+        self.isStillCurrent = isStillCurrent
     }
 }
 
