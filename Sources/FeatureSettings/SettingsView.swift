@@ -885,6 +885,7 @@ public struct SettingsView: View {
                 searchPageID: page == .theme ? "theme" : "cards"
             )
         case .playback: authorizedDestination(for: .playback)
+        case .playerTabs: PlayerTabSettingsView(model: playback)
         case .playbackAdvanced: PlaybackAdvancedSettingsView()
         case .externalPlayer: ExternalPlayerSettingsView(custom: entry.id == "external-template")
         case .skipMarkers:

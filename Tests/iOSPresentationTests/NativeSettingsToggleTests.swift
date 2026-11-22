@@ -393,10 +393,7 @@ final class NativeSettingsToggleTests: XCTestCase {
             window.frame = CGRect(x: 0, y: 0, width: width, height: 844)
             window.rootViewController = UIHostingController(rootView:
                 NavigationStack {
-                    SettingsPageList {
-                        PlayerTabSettingsControls(model: model)
-                    }
-                    .navigationTitle("Playback")
+                    PlayerTabSettingsView(model: model)
                 }
                 .environment(\.themePalette, .dark)
                 .environment(\.colorScheme, .dark)

@@ -1425,6 +1425,7 @@ private struct PlozziOSSettingsSearchDestination: View {
     @ViewBuilder private var destination: some View {
         switch entry.destinationPage(on: UIDevice.current.userInterfaceIdiom == .phone ? .phone : .tablet) {
         case .playback: profilePage(.playback)
+        case .playerTabs: PlayerTabSettingsView(model: appModel.settings.playback)
         case .playbackAdvanced:
             PlaybackAdvancedSettingsView()
         case .streamingAdvanced:
@@ -2469,6 +2470,7 @@ struct PlozziOSPlaybackSettingsView: View {
     let streamingSupport: StreamingQualitySupport
     @State private var showsAdvancedStreaming = false
     @State private var showsAdvancedPlayback = false
+    @State private var showsPlayerTabs = false
     @State private var showsSkipMarkerSettings = false
 
     private static let policyCategories: [ContentCategory] = [.movie, .tvShow, .anime]
@@ -2485,6 +2487,9 @@ struct PlozziOSPlaybackSettingsView: View {
         }
         .settingsPageSurface()
         .navigationTitle("Playback")
+        .navigationDestination(isPresented: $showsPlayerTabs) {
+            PlayerTabSettingsView(model: model)
+        }
         .navigationDestination(isPresented: $showsSkipMarkerSettings) {
             SkipMarkerSettingsView(model: model)
         }
@@ -2521,12 +2526,15 @@ struct PlozziOSPlaybackSettingsView: View {
                     Text("Swipe up or down on the left for brightness, or on the right for system volume.")
                 }
                 .settingsSearchAnchor("volume-brightness")
+                Button { showsPlayerTabs = true } label: {
+                    SettingsDisclosureLabel { Text("Player tabs") }
+                }
+                .settingsActionRow()
+                .accessibilityIdentifier("playback-player-tabs")
             }
             .settingsSearchGroup([
                 "default-video-zoom", "custom-video-zoom", "player-orientation", "auto-hide-controls", "volume-brightness"
             ])
-        case .playerTabs:
-            PlayerTabSettingsControls(model: model)
         case .versions:
             SettingsSectionGroup(section.title) {
                 SettingsDescribedControl {

@@ -1437,17 +1437,17 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         }
         try focus(section("playback", in: app), in: app)
         XCUIRemote.shared.press(.select)
-        XCTAssertTrue(app.staticTexts["Player"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Autoplay & Up Next"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(app.buttons["settings-page-subtitles"].exists)
         XCTAssertFalse(app.staticTexts["Show subtitles"].exists)
         capture("19-playback-entered", in: app)
-        let playerKeyline = app.staticTexts["Player"].frame.minX
+        let headingKeyline = app.staticTexts["Autoplay & Up Next"].frame.minX
         for label in [
-            "Default player zoom", "Auto-hide controls", "Player tabs"
+            "Autoplay next episode", "Autoplay next playlist item", "Show Up Next card"
         ] {
             let text = app.staticTexts[label].firstMatch
             XCTAssertTrue(text.exists, label)
-            XCTAssertEqual(text.frame.minX, playerKeyline, accuracy: 1,
+            XCTAssertEqual(text.frame.minX, headingKeyline, accuracy: 1,
                            "\(label) must share the section-heading keyline.")
         }
         let helper = app.staticTexts.matching(

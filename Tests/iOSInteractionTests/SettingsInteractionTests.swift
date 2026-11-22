@@ -616,6 +616,7 @@ final class SettingsInteractionTests: XCTestCase {
 
     func testSettingsSearchOpensRelocatedPlaybackPreferences() {
         for (label, id, title) in [
+            ("Chapters", "player-tab-chapters", "Player tabs"),
             ("Remember subtitles per series", "subtitle-remember", "Subtitles"),
             ("Sync watch state across servers", "cross-server-watch-sync", "Trackers")
         ] {
@@ -2151,17 +2152,33 @@ final class SettingsInteractionTests: XCTestCase {
 
     func testPlaybackGroupsPlayerSeekingAndAudioControlsByTopic() {
         launchPlayback("--custom-zoom-fixture")
+        XCTAssertTrue(app.switches["Autoplay next episode"].isHittable)
+        capturePlaybackScreen("Playback-first-screen")
+        let seek = app.switches["Seek without pausing"].firstMatch
+        reveal(seek, fullyVisible: true)
+        let seeking = app.cells.containing(.switch, identifier: "Seek without pausing").firstMatch
+        XCTAssertTrue(seeking.staticTexts["Skip backward"].exists)
+        XCTAssertTrue(seeking.staticTexts["Skip forward"].exists)
+
+        let tabs = app.buttons["playback-player-tabs"]
+        reveal(tabs, fullyVisible: true)
         let player = app.cells.containing(.button, identifier: "default-video-zoom").firstMatch
         XCTAssertTrue(player.sliders["custom-video-zoom"].waitForExistence(timeout: 5))
         XCTAssertTrue(player.staticTexts["Auto-hide controls"].exists)
         XCTAssertTrue(player.switches["playback-volume-brightness-gestures"].exists)
         XCTAssertEqual(player.buttons["playback-orientation"].exists, UIDevice.current.userInterfaceIdiom == .phone)
 
-        let seek = app.switches["Seek without pausing"].firstMatch
-        reveal(seek, fullyVisible: true)
-        let seeking = app.cells.containing(.switch, identifier: "Seek without pausing").firstMatch
-        XCTAssertTrue(seeking.staticTexts["Skip backward"].exists)
-        XCTAssertTrue(seeking.staticTexts["Skip forward"].exists)
+        XCTAssertTrue(player.buttons["playback-player-tabs"].exists)
+        XCTAssertFalse(app.switches["Chapters"].exists)
+        tabs.tap()
+        let child = app.navigationBars["Player tabs"]
+        XCTAssertTrue(child.waitForExistence(timeout: 5))
+        for title in ["Chapters", "Cast", "Episodes", "Playlist", "Continue Watching"] {
+            XCTAssertTrue(app.switches[title].isHittable, title)
+        }
+        capturePlaybackScreen("Playback-player-tabs")
+        child.buttons.firstMatch.tap()
+        XCTAssertTrue(tabs.wait(for: \.isHittable, toEqual: true, timeout: 5))
 
         let background = app.switches["Background Audio"].firstMatch
         reveal(background, fullyVisible: true)
@@ -2170,6 +2187,13 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(audio.switches["lossless-surround-toggle"].exists)
         XCTAssertTrue(audio.switches["Identify songs"].exists)
         XCTAssertFalse(audio.switches["Remember subtitles per series"].exists)
+    }
+
+    private func capturePlaybackScreen(_ name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     func testPlayerOrientationChoicesStayInPlaybackSettingsOnIPhone() {

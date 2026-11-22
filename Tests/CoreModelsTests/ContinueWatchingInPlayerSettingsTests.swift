@@ -90,7 +90,8 @@ final class ContinueWatchingInPlayerSettingsTests: XCTestCase {
             )
             let results = index.results(for: "player tabs")
             for id in expected {
-                XCTAssertTrue(results.contains { $0.id == id }, "\(platform): \(id)")
+                XCTAssertEqual(results.first { $0.id == id }?.destinationPage(on: platform), .playerTabs,
+                               "\(platform): \(id)")
             }
         }
     }

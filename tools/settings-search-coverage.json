@@ -74,6 +74,7 @@
     "NightShiftScheduleControl",
     "PlaybackAdvancedSettingsView",
     "PlaybackDetailView",
+    "PlayerTabSettingsView",
     "PlexLinkedUserDetailView",
     "PlozziOSAdvancedStreamingSettings",
     "PlozziOSAllScreensSettingsView",
@@ -1279,6 +1280,16 @@
       "count": 1,
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "covered_by": []
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|sectionView|Button|SettingsDisclosureLabel { Text(\"Player tabs\") }": {
+      "count": 1,
+      "reason": "Navigation to independently searchable tab visibility switches.",
+      "covered_by": ["player-tab-chapters", "player-tab-cast", "player-tab-episodes", "player-tab-playlist", "continue-watching-in-player"]
+    },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|playerTabsLink|SettingsPageLink|SettingsDisclosureLabel { Text(\"Player tabs\") }": {
+      "count": 1,
+      "reason": "Navigation to independently searchable tab visibility switches.",
+      "covered_by": ["player-tab-chapters", "player-tab-cast", "player-tab-episodes", "player-tab-playlist", "continue-watching-in-player"]
     },
     "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSProfilesView|body|Button|HStack { PlozziOSProfileAvatar( profile: profile, size: 34 ) Text(profile.name) Spacer() // Glance the access state so the list answers // \"who's locked?\" without opening each one. if profile.isKids { Image(systemName: \"figure.and.child.holdinghands\") .plozzForeground(.secondary) } if profile.isLocked { Image(systemName: \"lock.fill\") .plozzForeground(.secondary) } if isEditingProfiles { Image(systemName: \"chevron.right\") .font(.caption.weight(.semibold)) .plozzForeground(.tertiary) } } .frame(maxWidth: .infinity, alignment: .leading) .contentShape(Rectangle())": {
       "count": 1,

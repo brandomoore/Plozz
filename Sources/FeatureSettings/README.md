@@ -18,10 +18,10 @@ or paused** also clears the paused picture after four idle seconds without
 resuming playback. **Never** leaves dismissal to the viewer. VoiceOver and
 Switch Control suspend automatic dismissal regardless of the profile setting.
 
-Playback uses the same section order on Apple TV, iPhone and iPad. **Player** groups
-zoom and auto-hide with the controls specific to the device. **Player tabs** and
-**Versions** follow. Manual **Seeking** is separate from **Intros, credits & more**.
-Streaming quality is a separate mobile section; External player stays under **Advanced**.
+Playback starts with **Autoplay & Up Next**, **Intros, credits & more**, and
+**Resuming playback** on Apple TV, iPhone and iPad. **Streaming quality** follows on
+mobile only. The remaining order is **Seeking**, **Player**, **Audio**, **Video**,
+**Versions**, **Discs**, **Advanced**. External player stays under **Advanced**.
 
 Playback's **Video** section groups Video upscaling and beta-only Dolby Vision
 conversion in one card, followed by a card for Video buffer
@@ -117,8 +117,9 @@ under Manage Plozz. The shared section has no scope footer; device and sync
 details belong inside the relevant settings. The profile card has no repeated
 scope footer.
 
-Playback groups its five optional **Player tabs** in one shared control surface
-on TV and mobile. Labels match the player tabs, Info stays always available, and
+The last row in **Player** opens **Player tabs**. All five switches are on that
+child page on TV and mobile; Settings search opens the requested switch directly.
+Labels match the player tabs, Info stays always available, and
 visibility preferences are independent of autoplay and Up Next behavior.
 
 Playback's **Video upscaling** control is shared by TV and mobile and is

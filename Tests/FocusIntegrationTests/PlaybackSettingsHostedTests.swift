@@ -34,9 +34,12 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         )
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
-        let player = try XCTUnwrap(page.playbackFormRows.first)
+        let player = try XCTUnwrap(page.playbackFormRows.first { $0.id == "player" })
+        let navigation = SettingsPageNavigation<Int>()
         let host = PlayerSupportFocusController(rootView:
-            SettingsFormLayout(title: Text("Playback"), rows: [player])
+            SettingsPageStack(navigation: navigation, pageWidth: SettingsFormMetrics.pageWidth, onRootBack: {}) {
+                SettingsFormLayout(title: Text("Playback"), rows: [player])
+            } destination: { _ in EmptyView() }
                 .environment(\.themePalette, .dark)
                 .environment(\.locale, Locale(identifier: "en_US"))
                 .frame(width: SettingsFormMetrics.pageWidth)
@@ -57,7 +60,9 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         XCTAssertEqual(playback.settings.videoZoom.television.mode, .fit)
         XCTAssertTrue(initial.contains("Normal"), initial)
         XCTAssertTrue(initial.contains("Auto-hide controls"), initial)
-        XCTAssertEqual(nativeFocusItems(in: window).count, 2)
+        XCTAssertTrue(initial.contains("Player tabs"), initial)
+        XCTAssertFalse(initial.contains("Chapters"), initial)
+        XCTAssertEqual(nativeFocusItems(in: window).count, 3)
         playback.settings.videoZoom.television = .init(mode: .custom, customPercent: 117)
         try await Task.sleep(for: .milliseconds(350))
         let custom = try visibleText(in: window, attachment: nil)
@@ -312,11 +317,14 @@ final class PlaybackSettingsHostedTests: XCTestCase {
             subtitlePolicy: SubtitlePolicyModel(store: SubtitlePolicyStore(defaults: defaults)),
             audioPolicy: AudioPolicyModel(store: AudioPolicyStore(defaults: defaults))
         )
-        XCTAssertEqual(page.playerTabRows.map(\.id), ["player-tabs"])
+        XCTAssertEqual(page.playbackFormRows.map(\.id), [
+            "autoplay-up-next", "skip-intros-mode", "resuming-playback", "seeking", "player",
+            "audio", "video", "versions", "disc-playback", "playback-advanced"
+        ])
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
         window.rootViewController = UIHostingController(rootView:
-            SettingsFormLayout(title: Text("Playback"), rows: page.playerTabRows)
+            PlayerTabSettingsView(model: playback)
                 .environment(\.themePalette, .dark)
                 .environment(\.locale, Locale(identifier: "en_US"))
                 .frame(width: SettingsFormMetrics.pageWidth)
@@ -336,7 +344,7 @@ final class PlaybackSettingsHostedTests: XCTestCase {
             XCTAssertTrue(text.contains(label), text)
         }
         XCTAssertFalse(text.contains("Info"), text)
-        XCTAssertEqual(profileFocusFrames(in: window).count, 5)
+        XCTAssertEqual(profileFocusFrames(in: window).count, 6, "Five switches and Back")
         XCTAssertNotNil(UIFocusSystem.focusSystem(for: window)?.focusedItem)
     }
 

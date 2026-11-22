@@ -657,15 +657,19 @@ struct PlaybackDetailView: View {
             + scrubbingRows
             + controlsAutoHideRows
             + upNextRows
-            + playerTabRows
+            + [SettingsSplitRow(id: "player-tabs", title: "Player tabs") { playerTabsLink }.labeledControl()]
             + discRows
             + advancedRows
     }
 
-    var playerTabRows: [SettingsSplitRow] {
-        [SettingsSplitRow(id: "player-tabs", title: "Player tabs") {
-            PlayerTabSettingsControls(model: playback)
-        }]
+    private var playerTabsLink: some View {
+        SettingsPageLink {
+            PlayerTabSettingsView(model: playback)
+        } label: {
+            SettingsDisclosureLabel { Text("Player tabs") }
+        }
+        .buttonStyle(SettingsFormButtonStyle())
+        .accessibilityIdentifier("playback-player-tabs")
     }
 
     private var controlsAutoHideRows: [SettingsSplitRow] {
@@ -688,9 +692,9 @@ struct PlaybackDetailView: View {
                     SettingsControlRows {
                         zoomRow.detail()
                         ForEach(controlsAutoHideRows) { $0.detail() }
+                        playerTabsLink
                     }
                 }]
-            case .playerTabs: playerTabRows
             case .versions:
                 [SettingsSplitRow(id: "versions", title: section.title) {
                     SettingsControlRows {
