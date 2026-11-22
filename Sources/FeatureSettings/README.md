@@ -18,8 +18,13 @@ or paused** also clears the paused picture after four idle seconds without
 resuming playback. **Never** leaves dismissal to the viewer. VoiceOver and
 Switch Control suspend automatic dismissal regardless of the profile setting.
 
-Playback's **Video** section groups Default player zoom, Video upscaling, and
-beta-only Dolby Vision conversion in one card, followed by a card for Video buffer
+Playback uses the same section order on Apple TV, iPhone and iPad. **Player** groups
+zoom and auto-hide with the controls specific to the device. **Player tabs** and
+**Versions** follow. Manual **Seeking** is separate from **Intros, credits & more**.
+Streaming quality is a separate mobile section; External player stays under **Advanced**.
+
+Playback's **Video** section groups Video upscaling and beta-only Dolby Vision
+conversion in one card, followed by a card for Video buffer
 and Live TV buffer. Apple TV adds a third card for the two display fades. Each
 switch has its own note about the corresponding Apple TV Match Content setting;
 neither switch changes the display format. Dividers separate controls within a

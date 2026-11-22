@@ -34,9 +34,9 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         )
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
-        let zoom = try XCTUnwrap(page.pictureRows.first { $0.id == "default-video-zoom" })
+        let player = try XCTUnwrap(page.playbackFormRows.first)
         let host = PlayerSupportFocusController(rootView:
-            SettingsFormLayout(title: Text("Playback"), rows: [zoom])
+            SettingsFormLayout(title: Text("Playback"), rows: [player])
                 .environment(\.themePalette, .dark)
                 .environment(\.locale, Locale(identifier: "en_US"))
                 .frame(width: SettingsFormMetrics.pageWidth)
@@ -56,7 +56,8 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         XCTAssertTrue(initial.contains("Default player zoom"), initial)
         XCTAssertEqual(playback.settings.videoZoom.television.mode, .fit)
         XCTAssertTrue(initial.contains("Normal"), initial)
-        XCTAssertEqual(nativeFocusItems(in: window).count, 1)
+        XCTAssertTrue(initial.contains("Auto-hide controls"), initial)
+        XCTAssertEqual(nativeFocusItems(in: window).count, 2)
         playback.settings.videoZoom.television = .init(mode: .custom, customPercent: 117)
         try await Task.sleep(for: .milliseconds(350))
         let custom = try visibleText(in: window, attachment: nil)
@@ -67,7 +68,7 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         }
         XCTAssertGreaterThan(targets.count, 1)
         let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
-        let target = try XCTUnwrap(targets.last)
+        let target = try XCTUnwrap(targets.dropFirst().first)
         host.target = target
         system.requestFocusUpdate(to: host)
         system.updateFocusIfNeeded()
@@ -421,7 +422,7 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         )
         XCTAssertEqual(page.audioRows.map(\.id), ["audio-defaults", "lossless-surround"])
         XCTAssertTrue(page.videoGroup.hasGroupedContent)
-        XCTAssertEqual(page.pictureRows.map(\.id), ["default-video-zoom", "video-upscaling"]
+        XCTAssertEqual(page.pictureRows.map(\.id), ["video-upscaling"]
             + (AppReleaseChannel.current.isBeta ? ["dolby-vision-fel"] : []))
         XCTAssertEqual(page.bufferRows.map(\.id), ["read-ahead", "live-buffer"])
         let outputRow = try XCTUnwrap(page.audioRows.first { $0.id == "lossless-surround" })
@@ -737,6 +738,7 @@ final class PlaybackSettingsHostedTests: XCTestCase {
             let top = -scroll.adjustedContentInset.top
             let bottom = max(top, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
             var visible = ""
+            var visibleLabels = Set<String>()
             var skipLabelX: CGFloat?
             var customizeLabelX: CGFloat?
             for offset in stride(from: top, through: bottom + 540, by: 540) {
@@ -753,6 +755,7 @@ final class PlaybackSettingsHostedTests: XCTestCase {
                 let observations = request.results ?? []
                 for observation in observations {
                     guard let label = observation.topCandidates(1).first?.string else { continue }
+                    visibleLabels.insert(label)
                     let x = observation.boundingBox.minX * window.bounds.width
                     if label.hasPrefix("Skip intros, credits") { skipLabelX = x }
                     if label == "Customize" { customizeLabelX = x }
@@ -806,15 +809,13 @@ final class PlaybackSettingsHostedTests: XCTestCase {
             XCTAssertFalse(visible.contains("Skip markers"), visible)
             for label in ["Set each marker separately", "Use community markers", "Show skip button",
                           "Skip after", "Intros", "Credits", "Recaps", "Previews", "Commercials"] {
-                XCTAssertFalse(visible.contains(label), "Customization belongs on the child page: \(visible)")
+                XCTAssertFalse(visibleLabels.contains(label), "Customization belongs on the child page: \(label)")
             }
         }
         playback.settings.autoPlayNextEpisode = false
         for showCard in [false, true] {
             playback.settings.showUpNextCard = showCard
-            scroll.setContentOffset(CGPoint(x: 0, y: 540 - scroll.adjustedContentInset.top), animated: false)
-            try await Task.sleep(for: .milliseconds(300))
-            let text = try visibleText(in: window, attachment: "Playback-Up-Next-card-\(showCard)-autoplay-off")
+            let text = try await allPageText(in: window, attachment: "Playback-Up-Next-card-\(showCard)-autoplay-off")
             XCTAssertTrue(text.contains("Autoplay next episode"), text)
             XCTAssertTrue(text.contains("Show Up Next card"), text)
             XCTAssertEqual(text.contains("Time before the end"), showCard, text)

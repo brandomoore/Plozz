@@ -1265,24 +1265,17 @@
       "reason": "preview_action: Does not configure schedule.",
       "covered_by": []
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Toggle|\"Volume and brightness gestures\"": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|sectionView|Toggle|\"Volume and brightness gestures\"": {
       "count": 1,
-      "reason": "Reviewed setting; behavior is covered by its owning component tests.",
-      "covered_by": []
+      "reason": "The described row owns the gesture anchor.",
+      "covered_by": ["volume-brightness"]
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Toggle|\"Identify songs\"": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|sectionView|Toggle|\"Identify songs\"": {
       "count": 1,
-      "reason": "Reviewed setting; behavior is covered by its owning component tests.",
-      "covered_by": []
+      "reason": "The described row owns the song identification anchor.",
+      "covered_by": ["identify-songs"]
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Picker|\"Disc playback\"": {
-      "count": 1,
-      "reason": "The containing stack owns the disc-playback anchor, keeping its compatibility notice with the picker.",
-      "covered_by": [
-        "disc-playback"
-      ]
-    },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Button|SettingsDisclosureLabel { Text(\"Advanced\") }": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|sectionView|Button|SettingsDisclosureLabel { Text(\"Advanced\") }": {
       "count": 1,
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "covered_by": []
@@ -1480,11 +1473,6 @@
     "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSubtitleSettingsView|body|Button|SettingsDisclosureLabel { Text(\"Customize subtitle style\") }": {
       "count": 1,
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
-      "covered_by": []
-    },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSubtitleSettingsView|body|Toggle|\"Use a separate style for Live TV\"": {
-      "count": 1,
-      "reason": "Reviewed setting; behavior is covered by its owning component tests.",
       "covered_by": []
     },
     "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSubtitleSettingsView|body|Button|SettingsDisclosureLabel { Text(\"Customize Live TV subtitles\") }": {
@@ -2480,7 +2468,7 @@
         "episode-count-style"
       ]
     },
-    "Sources/FeatureSettings/CardAppearanceControls.swift|CardCaptionSettingsLink|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Customize labels\") } .settingsFormRowLayout()": {
+    "Sources/FeatureSettings/CardAppearanceControls.swift|CardCaptionSettingsLink|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Customize labels\") }": {
       "count": 1,
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "covered_by": []
@@ -3628,7 +3616,7 @@
       "reason": "Reviewed setting; behavior is covered by its owning component tests.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsControl|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Customize\") } .settingsFormRowLayout()": {
+    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsControl|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Customize\") }": {
       "count": 1,
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "covered_by": []
@@ -3643,7 +3631,7 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsView|rows|SettingsPageLink|SettingsDisclosureLabel { Text(kind.settingsTitle) } .settingsFormRowLayout()": {
+    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsView|rows|SettingsPageLink|SettingsDisclosureLabel { Text(kind.settingsTitle) }": {
       "count": 1,
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "covered_by": []

@@ -525,8 +525,8 @@ struct PlaybackDetailView: View {
         _ preference: AudioLanguagePreference
     ) -> Text {
         switch preference {
-        case .original: return Text("Original")
-        case .device: return Text("Device")
+        case .original: return Text("Original language")
+        case .device: return Text("Device language")
         case .language(let code):
             return Text(
                 verbatim: SubtitleLanguageCatalog.displayName(
@@ -641,35 +641,13 @@ struct PlaybackDetailView: View {
         #if os(tvOS)
         if inWorkspace {
             if section == .subtitles { return subtitleRows }
-            return [
-                SettingsSplitRow(id: "audio", title: "Audio") {
-                    SettingsConnectedControlGroups {
-                        ForEach(audioRows) { $0.detailWithInlineDescription }
-                    }
-                }.groupedContent(),
-                SettingsSplitRow(id: "autoplay-up-next", title: "Autoplay & Up Next") {
-                    SettingsConnectedControlGroups {
-                        ForEach(upNextRows) { $0.detail() }
-                    }
-                }.groupedContent(),
-                SettingsSplitRow(id: "resuming-playback", title: "Resuming playback") {
-                    SettingsControlRows {
-                        ForEach(resumeRows) { $0.detail() }
-                    }
-                }
-            ] + playerTabRows + versionSelectionRows + [videoGroup] + skipIntroRows + [
-                SettingsSplitRow(id: "seeking", title: "Seeking") {
-                    SettingsControlRows {
-                        ForEach(skipIntervalRows) { $0.detail() }
-                        ForEach(scrubbingRows) { $0.detailWithInlineDescription }
-                    }
-                }
-            ] + controlsAutoHideRows + discRows + advancedRows
+            return playbackFormRows
         }
         #endif
         return subtitleRows
             + audioRows
             + versionSelectionRows
+            + [zoomRow]
             + pictureRows
             + bufferRows
             + [displayFadeGroup]
@@ -702,6 +680,54 @@ struct PlaybackDetailView: View {
     }
 
     #if os(tvOS)
+    var playbackFormRows: [SettingsSplitRow] {
+        PlaybackFormSection.allCases.flatMap { section -> [SettingsSplitRow] in
+            switch section {
+            case .player:
+                [SettingsSplitRow(id: "player", title: section.title) {
+                    SettingsControlRows {
+                        zoomRow.detail()
+                        ForEach(controlsAutoHideRows) { $0.detail() }
+                    }
+                }]
+            case .playerTabs: playerTabRows
+            case .versions:
+                [SettingsSplitRow(id: "versions", title: section.title) {
+                    SettingsControlRows {
+                        ForEach(versionSelectionRows) { $0.detailWithInlineDescription }
+                    }
+                }]
+            case .resuming:
+                [SettingsSplitRow(id: "resuming-playback", title: section.title) {
+                    SettingsControlRows { ForEach(resumeRows) { $0.detail() } }
+                }]
+            case .seeking:
+                [SettingsSplitRow(id: "seeking", title: section.title) {
+                    SettingsControlRows {
+                        ForEach(skipIntervalRows) { $0.detail() }
+                        ForEach(scrubbingRows) { $0.detail() }
+                    }
+                }]
+            case .skipMarkers:
+                [SettingsSplitRow(id: "skip-intros-mode", title: section.title) {
+                    SkipMarkerSettingsControl(model: playback)
+                }]
+            case .autoplay:
+                [SettingsSplitRow(id: "autoplay-up-next", title: section.title) {
+                    SettingsConnectedControlGroups { ForEach(upNextRows) { $0.detail() } }
+                }.groupedContent()]
+            case .video: [videoGroup]
+            case .streaming: [] // Network-specific quality preferences are mobile-only.
+            case .audio:
+                [SettingsSplitRow(id: "audio", title: section.title) {
+                    SettingsConnectedControlGroups { ForEach(audioRows) { $0.detailWithInlineDescription } }
+                }.groupedContent()]
+            case .discs: discRows
+            case .advanced: advancedRows
+            }
+        }
+    }
+
     var videoGroup: SettingsSplitRow {
         SettingsSplitRow(id: "video", title: "Video") {
             SettingsConnectedControlGroups {
@@ -717,10 +743,14 @@ struct PlaybackDetailView: View {
     }
     #endif
 
-    var pictureRows: [SettingsSplitRow] {
-        [SettingsSplitRow(id: "default-video-zoom", title: "Default player zoom") {
+    var zoomRow: SettingsSplitRow {
+        SettingsSplitRow(id: "default-video-zoom", title: "Default player zoom") {
             DefaultVideoZoomControl(model: playback)
-        }.labeledControl(), SettingsSplitRow(id: "video-upscaling", title: "Video upscaling") {
+        }.labeledControl()
+    }
+
+    var pictureRows: [SettingsSplitRow] {
+        [SettingsSplitRow(id: "video-upscaling", title: "Video upscaling") {
             VideoUpscalingControl(selection: $playback.settings.videoUpscaling)
                 .settingsSearchAnchor("video-upscaling")
         }.labeledControl()] + (AppReleaseChannel.current.isBeta ? [
@@ -955,14 +985,14 @@ struct PlaybackDetailView: View {
                     SettingsStepper(
                         options: SkipInterval.allCases,
                         selection: $playback.settings.skipBackwardInterval,
-                        label: "Backward",
+                        label: "Skip backward",
                         verbatimTitle: { $0.title(locale: locale) }
                     )
                     .settingsSearchAnchor("skip-backward")
                     SettingsStepper(
                         options: SkipInterval.allCases,
                         selection: $playback.settings.skipForwardInterval,
-                        label: "Forward",
+                        label: "Skip forward",
                         verbatimTitle: { $0.title(locale: locale) }
                     )
                     .settingsSearchAnchor("skip-forward")

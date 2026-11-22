@@ -160,7 +160,13 @@ struct SettingsFormGroup<Content: View>: View {
 extension SettingsSplitRow {
     @ViewBuilder var detailWithInlineDescription: some View {
         if let description {
-            SettingsDescribedControl(control: detail) { description }
+            SettingsDescribedControl(control: detail) {
+                if let descriptionAccessory {
+                    SettingsRowDescription(text: description, accessory: descriptionAccessory)
+                } else {
+                    description
+                }
+            }
         } else {
             detail()
         }

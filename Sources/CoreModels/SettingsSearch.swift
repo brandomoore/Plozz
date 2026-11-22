@@ -249,10 +249,7 @@ public struct SettingsSearchEntry: Identifiable, Hashable, Sendable {
     }
 
     public func destinationPage(on platform: Platform) -> SettingsSearchPage {
-        if (id == "subtitle-remember" || id == "cross-server-watch-sync") && platform != .television {
-            return .playback
-        }
-        return page
+        page
     }
 
     public var cardCaptionView: CardCaptionView? {

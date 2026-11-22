@@ -33,7 +33,7 @@ public struct SkipMarkerSettingsControl: View {
             }
         }
         #else
-        SettingsSectionGroup {
+        SettingsSectionGroup(PlaybackFormSection.skipMarkers.title) {
             SkipMarkerEnableControl(model: model)
             if model.settings.skipMarkersEnabled {
                 Button(action: onOpenSettings) {

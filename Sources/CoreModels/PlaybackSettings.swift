@@ -1,5 +1,28 @@
 import Foundation
 
+/// The order of the Playback form is shared; each platform supplies its native controls.
+public enum PlaybackFormSection: CaseIterable, Hashable, Sendable {
+    case player, playerTabs, versions, resuming, seeking, skipMarkers
+    case autoplay, video, streaming, audio, discs, advanced
+
+    public var title: LocalizedStringResource {
+        switch self {
+        case .player: "Player"
+        case .playerTabs: "Player tabs"
+        case .versions: "Versions"
+        case .resuming: "Resuming playback"
+        case .seeking: "Seeking"
+        case .skipMarkers: "Intros, credits & more"
+        case .autoplay: "Autoplay & Up Next"
+        case .video: "Video"
+        case .streaming: "Streaming quality"
+        case .audio: "Audio"
+        case .discs: "Discs"
+        case .advanced: "Advanced"
+        }
+    }
+}
+
 public enum PlaybackControlsAutoHide: String, Codable, CaseIterable, Sendable {
     case whilePlaying, whilePlayingOrPaused, never
 

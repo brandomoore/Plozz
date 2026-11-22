@@ -11,6 +11,7 @@ struct PlozziOSTrackerSettingsView: View {
     let appModel: PlozziOSAppModel
 
     var body: some View {
+        @Bindable var playback = appModel.settings.playback
         List {
             Text(
                 """
@@ -23,6 +24,12 @@ struct PlozziOSTrackerSettingsView: View {
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
+
+            SettingsSectionGroup {
+                Toggle("Sync watch state across servers", isOn: $playback.settings.syncWatchAcrossServers)
+                    .settingsSearchAnchor("cross-server-watch-sync")
+            }
+            .settingsSearchGroup(["cross-server-watch-sync"])
 
             SettingsSectionGroup(verbatim: "Trakt") {
                 TraktSettingsContent(service: appModel.traktService)
