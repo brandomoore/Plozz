@@ -684,7 +684,8 @@ struct PlaybackDetailView: View {
         return subtitleRows
             + audioRows
             + versionSelectionRows
-            + videoRows
+            + pictureRows
+            + bufferRows
             + skipIntroRows
             + skipIntervalRows
             + resumeRows
@@ -718,15 +719,18 @@ struct PlaybackDetailView: View {
     var videoGroup: SettingsSplitRow {
         SettingsSplitRow(id: "video", title: "Video") {
             SettingsConnectedControlGroups {
-                ForEach(videoRows) { row in
-                    row.detail().accessibilityIdentifier("settings-group-\(row.id)")
+                SettingsControlRows {
+                    ForEach(pictureRows) { $0.detail() }
+                }
+                SettingsControlRows {
+                    ForEach(bufferRows) { $0.detail() }
                 }
             }
         }.groupedContent()
     }
     #endif
 
-    var videoRows: [SettingsSplitRow] {
+    var pictureRows: [SettingsSplitRow] {
         [SettingsSplitRow(id: "default-video-zoom", title: "Default player zoom") {
             DefaultVideoZoomControl(model: playback)
         }.labeledControl(), SettingsSplitRow(id: "video-upscaling", title: "Video upscaling") {
@@ -736,7 +740,7 @@ struct PlaybackDetailView: View {
             SettingsSplitRow(id: "dolby-vision-fel", title: "P7 FEL → P8.1 conversion") {
                 DolbyVisionFELConversionControl(isOn: $playback.settings.dolbyVisionFELConversion)
             }.labeledControl()
-        ] : []) + readAheadRows
+        ] : [])
     }
 
     private var advancedRows: [SettingsSplitRow] {
@@ -745,7 +749,7 @@ struct PlaybackDetailView: View {
         }]
     }
 
-    private var readAheadRows: [SettingsSplitRow] {
+    var bufferRows: [SettingsSplitRow] {
         [
             SettingsSplitRow(id: "read-ahead", title: "Video buffer") {
                 PlaybackReadAheadControl()

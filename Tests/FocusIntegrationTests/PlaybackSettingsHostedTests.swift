@@ -34,7 +34,7 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         )
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
-        let zoom = try XCTUnwrap(page.videoRows.first { $0.id == "default-video-zoom" })
+        let zoom = try XCTUnwrap(page.pictureRows.first { $0.id == "default-video-zoom" })
         let host = PlayerSupportFocusController(rootView:
             SettingsFormLayout(title: Text("Playback"), rows: [zoom])
                 .environment(\.themePalette, .dark)
@@ -93,7 +93,7 @@ final class PlaybackSettingsHostedTests: XCTestCase {
             subtitlePolicy: SubtitlePolicyModel(store: SubtitlePolicyStore(defaults: defaults)),
             audioPolicy: AudioPolicyModel(store: AudioPolicyStore(defaults: defaults))
         )
-        let upscaling = try XCTUnwrap(page.videoRows.first { $0.id == "video-upscaling" })
+        let upscaling = try XCTUnwrap(page.pictureRows.first { $0.id == "video-upscaling" })
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
         window.rootViewController = UIHostingController(rootView:
@@ -375,8 +375,9 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         )
         XCTAssertEqual(page.audioRows.map(\.id), ["audio-defaults", "lossless-surround"])
         XCTAssertTrue(page.videoGroup.hasGroupedContent)
-        XCTAssertEqual(page.videoRows.map(\.id), ["default-video-zoom", "video-upscaling"]
-            + (AppReleaseChannel.current.isBeta ? ["dolby-vision-fel"] : []) + ["read-ahead", "live-buffer"])
+        XCTAssertEqual(page.pictureRows.map(\.id), ["default-video-zoom", "video-upscaling"]
+            + (AppReleaseChannel.current.isBeta ? ["dolby-vision-fel"] : []))
+        XCTAssertEqual(page.bufferRows.map(\.id), ["read-ahead", "live-buffer"])
         let outputRow = try XCTUnwrap(page.audioRows.first { $0.id == "lossless-surround" })
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)

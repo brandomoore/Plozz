@@ -58,7 +58,7 @@ final class NativeSettingsToggleTests: XCTestCase {
                             set: { model.settings.videoUpscaling = $0 }
                         ))
                     }
-                    .connectedRows()
+                    .connectedCard(first: true, last: false)
                 }
                 .settingsPageSurface()
                 .environment(\.themePalette, .dark)
@@ -1530,7 +1530,7 @@ final class NativeSettingsToggleTests: XCTestCase {
                         PlaybackReadAheadControl(defaults: defaults)
                         LivePlaybackBufferControl(defaults: defaults)
                     }
-                    .connectedRows()
+                    .connectedCard(first: false, last: true)
                 }
                 .environment(\.themePalette, .dark)
                 .environment(\.locale, Locale(identifier: "en_US"))

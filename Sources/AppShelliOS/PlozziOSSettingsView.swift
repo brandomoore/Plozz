@@ -2482,18 +2482,26 @@ struct PlozziOSPlaybackSettingsView: View {
                 support: streamingSupport,
                 onShowAdvanced: { showsAdvancedStreaming = true }
             )
-            SettingsSectionGroup("Video") {
-                DefaultVideoZoomControl(model: model)
-                VideoUpscalingControl(selection: $model.settings.videoUpscaling)
-                if AppReleaseChannel.current.isBeta {
-                    DolbyVisionFELConversionControl(isOn: $model.settings.dolbyVisionFELConversion)
+            VStack(spacing: SettingsFormMetrics.connectedGroupSpacing) {
+                SettingsSectionGroup("Video") {
+                    DefaultVideoZoomControl(model: model)
+                    VideoUpscalingControl(selection: $model.settings.videoUpscaling)
+                    if AppReleaseChannel.current.isBeta {
+                        DolbyVisionFELConversionControl(isOn: $model.settings.dolbyVisionFELConversion)
+                    }
                 }
-                PlaybackReadAheadControl()
-                    .settingsSearchAnchor("read-ahead")
-                LivePlaybackBufferControl()
-                    .settingsSearchAnchor("live-buffer")
+                .connectedCard(first: true, last: false)
+                SettingsSectionGroup {
+                    PlaybackReadAheadControl()
+                        .settingsSearchAnchor("read-ahead")
+                    LivePlaybackBufferControl()
+                        .settingsSearchAnchor("live-buffer")
+                }
+                .connectedCard(first: false, last: true)
             }
-            .connectedRows()
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
             .settingsSearchGroup(["default-video-zoom", "custom-video-zoom", "video-upscaling", "read-ahead", "live-buffer"])
             SettingsSectionGroup {
                 Picker("Auto-hide controls", selection: $model.settings.controlsAutoHide) {
