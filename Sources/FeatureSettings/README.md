@@ -18,7 +18,11 @@ or paused** also clears the paused picture after four idle seconds without
 resuming playback. **Never** leaves dismissal to the viewer. VoiceOver and
 Switch Control suspend automatic dismissal regardless of the profile setting.
 
-Playback's **Default player zoom** uses the shared native menu on TV and mobile.
+Playback's **Video** section groups Default player zoom, Video upscaling, beta-only
+Dolby Vision conversion, Video buffer, and Live TV buffer in that order on TV and
+mobile. Each control keeps its help in its own card; small gaps and tighter
+inner corners distinguish the cards without repeating the section heading.
+**Default player zoom** uses the shared native menu on TV and mobile.
 Each profile stores separate iPhone, iPad and Apple TV choices; the current platform's
 control edits only its own choice. Custom exposes the existing 50-200% range.
 Saved movie/series mode overrides take priority. Auto-crop's pinch-selected

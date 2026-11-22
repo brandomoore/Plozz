@@ -34,8 +34,9 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         )
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let zoom = try XCTUnwrap(page.videoRows.first { $0.id == "default-video-zoom" })
         let host = PlayerSupportFocusController(rootView:
-            SettingsFormLayout(title: Text("Playback"), rows: page.zoomRows)
+            SettingsFormLayout(title: Text("Playback"), rows: [zoom])
                 .environment(\.themePalette, .dark)
                 .environment(\.locale, Locale(identifier: "en_US"))
                 .frame(width: SettingsFormMetrics.pageWidth)
@@ -373,7 +374,9 @@ final class PlaybackSettingsHostedTests: XCTestCase {
             audioPolicy: AudioPolicyModel(store: AudioPolicyStore(defaults: defaults))
         )
         XCTAssertEqual(page.audioRows.map(\.id), ["audio-defaults", "lossless-surround"])
-        XCTAssertEqual(page.videoRows.contains { $0.id == "dolby-vision-fel" }, AppReleaseChannel.current.isBeta)
+        XCTAssertTrue(page.videoGroup.hasGroupedContent)
+        XCTAssertEqual(page.videoRows.map(\.id), ["default-video-zoom", "video-upscaling"]
+            + (AppReleaseChannel.current.isBeta ? ["dolby-vision-fel"] : []) + ["read-ahead", "live-buffer"])
         let outputRow = try XCTUnwrap(page.audioRows.first { $0.id == "lossless-surround" })
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)

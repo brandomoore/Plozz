@@ -33,20 +33,15 @@ public struct DefaultVideoZoomControl: View {
     }
 
     public var body: some View {
-        #if os(tvOS)
         SettingsDescribedControl {
+            #if os(tvOS)
             SettingsControlRows { controls }
+            #else
+            VStack(alignment: .leading) { controls }
+            #endif
         } description: {
             help
         }
-        #else
-        SettingsSectionGroup {
-            controls
-        } footer: {
-            help
-        }
-        .settingsSearchGroup(["default-video-zoom", "custom-video-zoom"])
-        #endif
     }
 
     @ViewBuilder private var controls: some View {

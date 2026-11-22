@@ -51,12 +51,16 @@ final class NativeSettingsToggleTests: XCTestCase {
         for width: CGFloat in [390, 834] {
             window.frame = CGRect(x: 0, y: 0, width: width, height: 1000)
             window.rootViewController = UIHostingController(rootView:
-                VideoUpscalingControl(selection: Binding(
-                    get: { model.settings.videoUpscaling },
-                    set: { model.settings.videoUpscaling = $0 }
-                ))
-                .padding(16)
-                .frame(maxHeight: .infinity, alignment: .top)
+                List {
+                    SettingsSectionGroup("Video") {
+                        VideoUpscalingControl(selection: Binding(
+                            get: { model.settings.videoUpscaling },
+                            set: { model.settings.videoUpscaling = $0 }
+                        ))
+                    }
+                    .connectedRows()
+                }
+                .settingsPageSurface()
                 .environment(\.themePalette, .dark)
                 .environment(\.locale, Locale(identifier: "en_US"))
                 .environment(\.colorScheme, .dark)
@@ -1522,8 +1526,11 @@ final class NativeSettingsToggleTests: XCTestCase {
             window.frame = CGRect(x: 0, y: 0, width: width, height: 900)
             window.rootViewController = UIHostingController(rootView:
                 List {
-                    PlaybackReadAheadControl(defaults: defaults)
-                    LivePlaybackBufferControl(defaults: defaults)
+                    SettingsSectionGroup("Video") {
+                        PlaybackReadAheadControl(defaults: defaults)
+                        LivePlaybackBufferControl(defaults: defaults)
+                    }
+                    .connectedRows()
                 }
                 .environment(\.themePalette, .dark)
                 .environment(\.locale, Locale(identifier: "en_US"))

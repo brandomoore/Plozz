@@ -308,7 +308,7 @@
       "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
       "controls": {
         "Sources/FeatureSettings/PlaybackReadAheadControl.swift|LivePlaybackBufferControl|body|SettingsMenuRow|\"Live TV buffer\"": 1,
-        "Sources/FeatureSettings/PlaybackReadAheadControl.swift|LivePlaybackBufferControl|body|Picker|\"Live TV buffer\"": 2
+        "Sources/FeatureSettings/PlaybackReadAheadControl.swift|LivePlaybackBufferControl|picker|Picker|\"Live TV buffer\"": 1
       }
     },
     "PlaybackReadAheadControl": {
@@ -316,7 +316,7 @@
       "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
       "controls": {
         "Sources/FeatureSettings/PlaybackReadAheadControl.swift|PlaybackReadAheadControl|body|SettingsMenuRow|\"Video buffer\"": 1,
-        "Sources/FeatureSettings/PlaybackReadAheadControl.swift|PlaybackReadAheadControl|body|Picker|\"Video buffer\"": 2
+        "Sources/FeatureSettings/PlaybackReadAheadControl.swift|PlaybackReadAheadControl|picker|Picker|\"Video buffer\"": 1
       }
     },
     "DescribedSegmentedPicker": {
@@ -1271,11 +1271,6 @@
       "covered_by": []
     },
     "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Toggle|\"Identify songs\"": {
-      "count": 1,
-      "reason": "Reviewed setting; behavior is covered by its owning component tests.",
-      "covered_by": []
-    },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Toggle|\"P7 FEL \u2192 P8.1 conversion\"": {
       "count": 1,
       "reason": "Reviewed setting; behavior is covered by its owning component tests.",
       "covered_by": []
@@ -3246,7 +3241,7 @@
       "reason": "Reviewed setting; behavior is covered by its owning component tests.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|audioRows|Toggle|\"P7 FEL \u2192 P8.1 conversion\"": {
+    "Sources/FeatureSettings/VideoUpscalingControl.swift|DolbyVisionFELConversionControl|body|Toggle|\"P7 FEL \u2192 P8.1 conversion\"": {
       "count": 1,
       "reason": "Reviewed setting; behavior is covered by its owning component tests.",
       "covered_by": []

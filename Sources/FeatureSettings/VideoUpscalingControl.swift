@@ -11,25 +11,20 @@ public struct VideoUpscalingControl: View {
     }
 
     public var body: some View {
-        #if os(tvOS)
         SettingsDescribedControl {
+            #if os(tvOS)
             SettingsMenuRow(title: "Video upscaling", value: Text(selection.title)) {
                 picker
             }
             .accessibilityIdentifier("video-upscaling")
-        } description: {
-            help
-        }
-        #else
-        SettingsSectionGroup {
+            #else
             picker
                 .accessibilityIdentifier("video-upscaling")
                 .settingsSearchAnchor("video-upscaling")
-        } footer: {
+            #endif
+        } description: {
             help
         }
-        .settingsSearchGroup(["video-upscaling"])
-        #endif
     }
 
     @ViewBuilder private var help: some View {
@@ -43,6 +38,20 @@ public struct VideoUpscalingControl: View {
             ForEach(VideoUpscaling.allCases, id: \.self) {
                 Text($0.title).tag($0)
             }
+        }
+    }
+}
+
+public struct DolbyVisionFELConversionControl: View {
+    @Binding private var isOn: Bool
+
+    public init(isOn: Binding<Bool>) { _isOn = isOn }
+
+    public var body: some View {
+        SettingsDescribedControl {
+            Toggle("P7 FEL → P8.1 conversion", isOn: $isOn)
+        } description: {
+            Text("Approximates enhancement-layer brightness without full FEL reconstruction. Turn off to use HDR10.")
         }
     }
 }

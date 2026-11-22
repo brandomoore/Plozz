@@ -2482,12 +2482,19 @@ struct PlozziOSPlaybackSettingsView: View {
                 support: streamingSupport,
                 onShowAdvanced: { showsAdvancedStreaming = true }
             )
-            VideoUpscalingControl(selection: $model.settings.videoUpscaling)
-            PlaybackReadAheadControl()
-                .settingsSearchAnchor("read-ahead")
-            LivePlaybackBufferControl()
-                .settingsSearchAnchor("live-buffer")
-            DefaultVideoZoomControl(model: model)
+            SettingsSectionGroup("Video") {
+                DefaultVideoZoomControl(model: model)
+                VideoUpscalingControl(selection: $model.settings.videoUpscaling)
+                if AppReleaseChannel.current.isBeta {
+                    DolbyVisionFELConversionControl(isOn: $model.settings.dolbyVisionFELConversion)
+                }
+                PlaybackReadAheadControl()
+                    .settingsSearchAnchor("read-ahead")
+                LivePlaybackBufferControl()
+                    .settingsSearchAnchor("live-buffer")
+            }
+            .connectedRows()
+            .settingsSearchGroup(["default-video-zoom", "custom-video-zoom", "video-upscaling", "read-ahead", "live-buffer"])
             SettingsSectionGroup {
                 Picker("Auto-hide controls", selection: $model.settings.controlsAutoHide) {
                     ForEach(PlaybackControlsAutoHide.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -2650,13 +2657,6 @@ struct PlozziOSPlaybackSettingsView: View {
                 .settingsSearchAnchor("identify-songs")
             }
             .settingsSearchGroup(["lossless-audio", "identify-songs"])
-            if AppReleaseChannel.current.isBeta {
-                SettingsSectionGroup("Video") {
-                    Toggle("P7 FEL → P8.1 conversion", isOn: $model.settings.dolbyVisionFELConversion)
-                } footer: {
-                    Text("Approximates enhancement-layer brightness without full FEL reconstruction. Turn off to use HDR10.")
-                }
-            }
             SettingsSectionGroup("Discs") {
                 Picker("Disc playback", selection: $model.settings.discPlayback) {
                     ForEach(DiscPlaybackBehavior.allCases, id: \.self) {

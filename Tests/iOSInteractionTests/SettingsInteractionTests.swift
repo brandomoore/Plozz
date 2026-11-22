@@ -2319,6 +2319,10 @@ final class SettingsInteractionTests: XCTestCase {
         launchPlayback("--share-only-playback", "--reset-read-ahead")
         let picker = app.buttons["playback-read-ahead"]
         reveal(picker, fullyVisible: true)
+        let video = app.cells.containing(.button, identifier: "playback-read-ahead").firstMatch
+        for id in ["default-video-zoom", "video-upscaling", "live-playback-buffer"] {
+            XCTAssertTrue(video.buttons[id].exists, "\(id) belongs in the same Video section as the video buffer.")
+        }
         XCTAssertTrue(picker.staticTexts["Automatic"].exists)
         for choice in ["1 minute", "5 minutes", "10 minutes", "Maximum available", "Automatic", "10 minutes"] {
             picker.tap()

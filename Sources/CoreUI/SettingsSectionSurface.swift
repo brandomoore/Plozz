@@ -297,6 +297,15 @@ public struct SettingsDisclosureLabel<Title: View, Value: View>: View {
 /// claim the cell's primary action, including taps on a sibling picker's label.
 public struct SettingsSectionGroup<Content: View, Footer: View>: View {
     @Environment(\.themePalette) private var palette
+    private var usesConnectedRows = false
+    #if os(iOS)
+    public func connectedRows() -> Self {
+        var group = self
+        group.usesConnectedRows = true
+        return group
+    }
+    #endif
+
     private let title: Text?
     private let content: Content
     private let footer: Footer
@@ -388,9 +397,15 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                 #endif
             }
 
-            VStack(spacing: 0) {
+            VStack(spacing: usesConnectedRows ? SettingsFormMetrics.connectedGroupSpacing : 0) {
                 Group(subviews: content) { subviews in
                     ForEach(subviews) { subview in
+                        #if os(iOS)
+                        let radii = SettingsFormMetrics.rowCornerRadii(
+                            first: subview.id == subviews.first?.id, last: subview.id == subviews.last?.id,
+                            outer: cornerRadius, inner: usesConnectedRows ? SettingsFormMetrics.connectedGroupInnerCornerRadius : 0
+                        )
+                        #endif
                         subview
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, subview.containerValues.settingsContentOwnsInsets ? 0 : horizontalInset)
@@ -400,13 +415,12 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                             #endif
                             .contentShape(Rectangle())
                             #if os(iOS)
-                            .modifier(SettingsSearchRowHighlight(
-                                isFirst: subview.id == subviews.first?.id,
-                                isLast: subview.id == subviews.last?.id,
-                                cornerRadius: cornerRadius
-                            ))
+                            .modifier(SettingsSearchRowHighlight(cornerRadii: radii))
+                            .background {
+                                if usesConnectedRows { Color.clear.settingsGroupSurface(cornerRadii: radii) }
+                            }
                             .overlayPreferenceValue(SettingsRowTitleAnchorKey.self) { titles in
-                                if subview.id != subviews.last?.id {
+                                if !usesConnectedRows, subview.id != subviews.last?.id {
                                     SettingsRowSeparator(titles: titles)
                                 }
                             }
@@ -439,7 +453,9 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
             // cell's primary action, stealing taps from sibling controls.
             .pickerStyle(.menu)
             #endif
-            .settingsGroupSurface(cornerRadius: cornerRadius)
+            .background {
+                if !usesConnectedRows { Color.clear.settingsGroupSurface(cornerRadius: cornerRadius) }
+            }
 
             footer
                 .font(SettingsRowMetrics.helperFont)

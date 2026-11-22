@@ -38,6 +38,13 @@ public enum SettingsFormMetrics {
     public static let groupCornerRadius = PlozzTheme.Metrics.mediumCardCornerRadius
     public static let connectedGroupSpacing = PlozzTheme.Spacing.xSmall
     public static let connectedGroupInnerCornerRadius: CGFloat = 8
+    public static func rowCornerRadii(
+        first: Bool, last: Bool, outer: CGFloat, inner: CGFloat = connectedGroupInnerCornerRadius
+    ) -> RectangleCornerRadii {
+        let top = first ? outer : inner
+        let bottom = last ? outer : inner
+        return .init(topLeading: top, bottomLeading: bottom, bottomTrailing: bottom, topTrailing: top)
+    }
     public static let dividerFocusClearance = PlozzTheme.Spacing.xSmall
     public static let illustratedGroupSpacing = PlozzTheme.Spacing.medium
     public static var groupInset: CGFloat {
