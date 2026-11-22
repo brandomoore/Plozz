@@ -35,9 +35,23 @@ public enum TrackerHistorySyncError: Error, Equatable {
 }
 
 public struct TrackerHistorySyncResult: Codable, Equatable, Sendable {
+    public enum Outcome: String, CaseIterable, Codable, Sendable {
+        case updated, alreadyMatched, noMatch, multipleMatches, libraryConflict, trackerConflict
+        case unsupported, incompatibleRuntime, wouldClearHistory, unconfirmed, previousUnconfirmed
+        case playing, leftToCheck
+    }
+
+    /// Counts belong to this check and library, not the lifetime delivery ledger.
+    /// Applied/compared rows can combine repeat watches; deferred counts are source entries.
+    public struct Library: Codable, Equatable, Sendable {
+        public let accountID: String
+        public fileprivate(set) var counts: [Outcome: Int] = [:]
+    }
+
     public let completedAt: Date
     public let confirmedCount: Int
     public let hasMoreChanges: Bool
+    public var libraries: [Library]? = nil // Older results did not retain the breakdown.
 }
 
 public enum TrackerHistorySyncCheckStatus: String, Codable, Sendable {
@@ -519,26 +533,38 @@ public final class TrackerHistorySyncController {
     private func perform(_ initial: TrackerHistorySyncGrant, generation current: UUID, drainBatches: Bool) async {
         do {
             try requireCheck(initial, current)
-            var confirmed = 0
-            var more = false
+            var libraries: [TrackerHistorySyncResult.Library] = []
             var buckets = try loadBuckets(initial)
             for (offset, account) in initial.scope.accounts.enumerated() {
                 let scope = try initial.scope.selectingAccounts([account.accountID])
                 var remaining: Set<String>?
+                var library = TrackerHistorySyncResult.Library(accountID: account.accountID)
+                var playing: Set<String> = []
+                var later: Set<String> = []
                 repeat {
                     let batch = try await processBatch(
                         scope: scope, accountID: account.accountID, grant: initial, generation: current,
                         remaining: remaining, buckets: &buckets, libraryNumber: offset + 1
                     )
-                    confirmed += batch.confirmed
-                    more = more || batch.deferred || (!drainBatches && !batch.remaining.isEmpty)
+                    library.counts.merge(batch.counts, uniquingKeysWith: +)
+                    playing.formUnion(batch.playing)
+                    later = batch.outsideBatch
                     remaining = batch.remaining
                 } while drainBatches && remaining?.isEmpty == false
+                later.formUnion(remaining ?? [])
+                later.subtract(playing)
+                if !playing.isEmpty { library.counts[.playing] = playing.count }
+                if !later.isEmpty { library.counts[.leftToCheck] = later.count }
+                libraries.append(library)
             }
             var persisted = try requireCheck(initial, current)
             persisted.reviewCount = Self.reviewCount(buckets)
             persisted.lastCheckStatus = .completed
-            persisted.lastCompletedResult = .init(completedAt: Date(), confirmedCount: confirmed, hasMoreChanges: more)
+            persisted.lastCompletedResult = .init(
+                completedAt: Date(), confirmedCount: libraries.reduce(0) { $0 + ($1.counts[.updated] ?? 0) },
+                hasMoreChanges: libraries.contains { $0.counts[.playing] != nil || $0.counts[.leftToCheck] != nil },
+                libraries: libraries
+            )
             try store.save(persisted, for: grantKey())
             grant = persisted
             #if canImport(OSLog)
@@ -554,8 +580,9 @@ public final class TrackerHistorySyncController {
     }
 
     private struct Batch {
-        var confirmed = 0
-        var deferred = false
+        var counts: [TrackerHistorySyncResult.Outcome: Int] = [:]
+        var playing: Set<String> = []
+        var outsideBatch: Set<String> = []
         var remaining: Set<String> = []
     }
 
@@ -595,7 +622,7 @@ public final class TrackerHistorySyncController {
                       !Self.isEnrolled(hash, accountID, initial, buckets, watched: Self.isWatched(observation)) else { continue }
                 let receipt = Self.receiptKey(accountID, hash, initial)
                 guard buckets[Self.bucket(receipt)].receipts[receipt] == nil else { continue }
-                if remaining?.contains(observation.recordID) == false { batch.deferred = true }
+                if remaining?.contains(observation.recordID) == false { batch.outsideBatch.insert(observation.recordID) }
                 else { newRecords.append(observation.recordID) }
             }
             considered = Set(newRecords.sorted().prefix(Self.batchSize))
@@ -611,7 +638,7 @@ public final class TrackerHistorySyncController {
         var continuations: Set<UUID> = []
         for row in rows {
             if row.comparison == .playing {
-                batch.deferred = true
+                batch.playing.formUnion(considered.intersection(row.recordIDs))
                 continue
             }
             let receipt: Receipt
@@ -625,12 +652,26 @@ public final class TrackerHistorySyncController {
                 if continues { continuations.insert(row.id) }
             } else if row.comparison == .alreadyMatches {
                 receipt = .matched
+                batch.counts[.alreadyMatched, default: 0] += 1
             } else {
                 receipt = .review
+                let reason: TrackerHistorySyncResult.Outcome
+                switch row.comparison {
+                case _ where blocked: reason = .previousUnconfirmed
+                case _ where row.change?.isDestructive == true: reason = .wouldClearHistory
+                case .serverConflict: reason = .libraryConflict
+                case .trackerConflict: reason = .trackerConflict
+                case .unmatched: reason = .noMatch
+                case .ambiguous: reason = .multipleMatches
+                case .incompatibleRuntime: reason = .incompatibleRuntime
+                default: reason = .unsupported
+                }
+                batch.counts[reason, default: 0] += 1
             }
             try record(receipt, row: row, hashes: hashes, accountID: accountID, grant: initial, buckets: &buckets)
             // A coalesced watch earns receipts for its aliases in later batches too.
             batch.remaining.subtract(row.recordIDs)
+            batch.outsideBatch.subtract(row.recordIDs)
         }
         if !selected.isEmpty {
             var persisted = try requireCheck(initial, current)
@@ -647,9 +688,11 @@ public final class TrackerHistorySyncController {
                     .confirmed, row: row, hashes: hashes, accountID: accountID,
                     grant: initial, buckets: &buckets, confirmedBaseline: session.confirmedBaselines[row.id]
                 )
-                batch.confirmed += 1
+                batch.counts[.updated, default: 0] += 1
             }
             if let error = session.error { throw error }
+            let unconfirmed = selected.count - (batch.counts[.updated] ?? 0)
+            if unconfirmed > 0 { batch.counts[.unconfirmed] = unconfirmed }
         }
         return batch
     }

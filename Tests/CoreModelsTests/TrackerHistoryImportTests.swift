@@ -1254,6 +1254,8 @@ final class TrackerHistoryImportTests: XCTestCase {
         let result = try XCTUnwrap(sync.grant?.lastCompletedResult)
         XCTAssertEqual(result.confirmedCount, 2)
         XCTAssertFalse(result.hasMoreChanges)
+        XCTAssertEqual(result.libraries?.map(\.accountID), ["account"])
+        XCTAssertEqual(result.libraries?.first?.counts, [.updated: 2, .noMatch: 24])
         XCTAssertEqual(sync.grant?.reviewCount, 24)
         let historicalResume = try await share.item(id: resume.id)
         XCTAssertNil(historicalResume.resumePosition)
@@ -1400,6 +1402,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         await sync.syncExistingHistory(for: id)
         XCTAssertEqual(sync.grant?.lastCompletedResult?.confirmedCount, 0)
         XCTAssertTrue(sync.hasMoreChanges)
+        XCTAssertEqual(sync.grant?.lastCompletedResult?.libraries?.first?.counts, [.playing: 26])
         await sync.updateSelection(accountIDs: ["account", "second"], categories: [.watched])
         XCTAssertNil(sync.grant?.lastCompletedResult)
         await sync.synchronize()
@@ -1839,9 +1842,11 @@ final class TrackerHistoryImportTests: XCTestCase {
         XCTAssertTrue(sync.hasMoreChanges)
         XCTAssertEqual(sync.confirmedCount, 0)
         XCTAssertEqual(sync.grant?.reviewCount, 25)
+        XCTAssertEqual(sync.grant?.lastCompletedResult?.libraries?.first?.counts, [.noMatch: 24, .trackerConflict: 1, .leftToCheck: 1])
         await sync.synchronize()
         XCTAssertFalse(sync.hasMoreChanges)
         XCTAssertEqual(sync.grant?.reviewCount, 26)
+        XCTAssertEqual(sync.grant?.lastCompletedResult?.libraries?.first?.counts, [.trackerConflict: 1])
         let writes = await provider.writes
         XCTAssertEqual(writes, 0, "The batch boundary cannot hide competing new tracker evidence")
     }

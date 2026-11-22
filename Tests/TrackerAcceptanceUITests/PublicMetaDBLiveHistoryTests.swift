@@ -2640,8 +2640,15 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
             predicate: NSPredicate(format: "enabled == true"), object: app.buttons["tracker-history.sync-now"]
         )
         try require(XCTWaiter.wait(for: [completed], timeout: 65) == .completed, "Expected bounded sync completion")
-        XCTAssertEqual(app.staticTexts["Some changes couldn’t be applied automatically."].exists,
-                       expectingReview, "Review deferral and confirmed ongoing delivery are different outcomes")
+        let result = app.descendants(matching: .any)["tracker-history.last-sync"].firstMatch
+        try require(result.waitForExistence(timeout: 5), "Expected a completed check, not a failed attempt")
+        if app.buttons["tracker-history.last-sync"].exists, result.value as? String != "Expanded" {
+            try tapVisible(result)
+        }
+        let skipped = ["noMatch", "multipleMatches", "libraryConflict", "trackerConflict", "unsupported",
+                       "incompatibleRuntime", "wouldClearHistory", "unconfirmed", "previousUnconfirmed"]
+        XCTAssertEqual(skipped.contains { app.staticTexts["tracker-history.result.\($0)"].firstMatch.exists },
+                       expectingReview, "Check the reasons recorded for this run, not cumulative delivery receipts")
     }
 
     func testDisableOngoingImport() throws {

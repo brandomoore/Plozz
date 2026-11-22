@@ -189,6 +189,34 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
     }
 
     #if os(iOS)
+    func testCompletedCheckExplainsSkipsAndContinuationWithoutRepeatingOldResults() {
+        app.launchArguments = ["--tracker-history-import-fixture", "--history-ongoing-sync", "--history-direct-sync", "--history-result-batch"]
+        app.launch()
+        activate(app.buttons["fixture.history.open"])
+        activate(element("tracker-history.sync-enabled"))
+        activate(element("tracker-history.choose.cedar"))
+        activate(element("tracker-history.start-sync"))
+        activate(app.buttons["Skip"].firstMatch)
+        activate(element("fixture.history.new-play"))
+        activate(element("tracker-history.sync-now"))
+        let remaining = app.staticTexts["Library entries left for the next sync: 1. Use Sync now to continue."]
+        XCTAssertTrue(remaining.waitForExistence(timeout: 10))
+        let summary = element("tracker-history.last-sync")
+        XCTAssertEqual(summary.label, "Last sync: 1 update applied")
+        let skipped = app.staticTexts["Skipped — no exact library match: 24"]
+        XCTAssertFalse(skipped.exists)
+        activate(summary)
+        XCTAssertTrue(skipped.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Updates applied: 1"].exists)
+        activate(summary)
+        activate(element("tracker-history.sync-now"))
+        XCTAssertTrue(remaining.wait(for: \.exists, toEqual: false, timeout: 5))
+        activate(summary)
+        XCTAssertTrue(app.staticTexts["Skipped — no exact library match: 1"].waitForExistence(timeout: 5))
+        XCTAssertFalse(skipped.exists)
+        assertReport(jellyfin: 0, plex: 0, cedar: 1, mariner: 0)
+    }
+
     func testActiveSyncShowsPageProgressInsteadOfSyncNow() {
         app.launchArguments = ["--tracker-history-import-fixture", "--history-ongoing-sync", "--history-direct-sync", "--history-hold-active-read"]
         app.launch()

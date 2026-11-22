@@ -245,18 +245,14 @@ private struct TrackerTwoWaySyncRows: View {
 
     @ViewBuilder private var syncResult: some View {
         if sync.grant?.lastCheckStatus == .incomplete {
-            Text("Last sync didn’t finish.")
+            Text("Last sync didn’t finish. Use Sync now to check again.")
         } else if sync.grant?.lastCheckStatus == .failed {
             Text("Last sync failed. Use Sync now to try again.")
         } else if let result = sync.grant?.lastCompletedResult {
-            if result.confirmedCount == 0 {
-                Text("Last sync: no updates applied.")
-            } else {
-                Text("Last sync: \(result.confirmedCount) updates applied.")
+            TrackerLastSyncRows(result: result) { id in
+                shares.first(where: { $0.id == id }).map(name)
             }
         }
-        if let grant = sync.grant, grant.reviewCount > 0 { Text("Some changes couldn’t be applied automatically.") }
-        if sync.hasMoreChanges { Text("More changes are waiting.") }
     }
 
     private func setEnabled(_ enabled: Bool) {
@@ -297,6 +293,101 @@ private struct TrackerTwoWaySyncRows: View {
             setEnabled(false)
         } else {
             operation = Task { await sync.updateSelection(accountIDs: ids, categories: grant.categories) }
+        }
+    }
+}
+
+private struct TrackerLastSyncRows: View {
+    let result: TrackerHistorySyncResult
+    let libraryName: (String) -> String?
+    @State private var expanded = false
+
+    @ViewBuilder private var summary: some View {
+        switch result.confirmedCount {
+        case 0: Text("Last sync: no updates applied")
+        case 1: Text("Last sync: 1 update applied")
+        default: Text("Last sync: \(result.confirmedCount) updates applied")
+        }
+    }
+
+    private var disclosure: some View {
+        HStack {
+            summary
+            Spacer()
+            Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                .font(.caption.weight(.semibold)).accessibilityHidden(true)
+        }
+    }
+
+    var body: some View {
+        if let libraries = result.libraries, libraries.contains(where: { !$0.counts.isEmpty }) {
+            Button { expanded.toggle() } label: { disclosure }
+            .settingsActionRow()
+            .accessibilityValue(expanded ? Text("Expanded") : Text("Collapsed"))
+            .accessibilityHint("Shows the results for each library.")
+            .accessibilityIdentifier("tracker-history.last-sync")
+            if expanded {
+                ForEach(libraries, id: \.accountID) { library in
+                    VStack(alignment: .leading, spacing: 4) {
+                        if let name = libraryName(library.accountID) { Text(verbatim: name).font(.headline) }
+                        if library.counts.isEmpty { Text("No new activity to check.") }
+                        ForEach(TrackerHistorySyncResult.Outcome.allCases, id: \.self) { reason in
+                            if let count = library.counts[reason] {
+                                Text("\(Text(reason.label)): \(count)")
+                                    .accessibilityIdentifier("tracker-history.result.\(reason.rawValue)")
+                            }
+                        }
+                    }
+                    .font(.subheadline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 8)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            let remaining = libraries.reduce(0) { $0 + ($1.counts[.leftToCheck] ?? 0) }
+            if remaining > 0 {
+                Text("Library entries left for the next sync: \(remaining). Use Sync now to continue.")
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if libraries.contains(where: { $0.counts[.playing] != nil }) {
+                Text("Plozz skips titles during playback. To update their history, sync after playback ends.")
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if libraries.contains(where: { $0.counts[.unconfirmed] != nil || $0.counts[.previousUnconfirmed] != nil }) {
+                let names = libraries.filter { $0.counts[.unconfirmed] != nil || $0.counts[.previousUnconfirmed] != nil }
+                    .compactMap { libraryName($0.accountID) }
+                Group {
+                    if names.isEmpty { Text("Check watched status in Plozz. An update couldn’t be verified and won’t be repeated.") }
+                    else { Text("Check watch history in \(names.formatted(.list(type: .and))). Plozz couldn’t verify an update and won’t repeat it.") }
+                }.fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            summary
+                .accessibilityIdentifier("tracker-history.last-sync")
+            if result.hasMoreChanges {
+                // Older versions saved only the continuation flag.
+                Text("Use Sync now to check the rest of your history.")
+            }
+        }
+    }
+}
+
+private extension TrackerHistorySyncResult.Outcome {
+    var label: LocalizedStringResource {
+        switch self {
+        case .updated: "Updates applied"
+        case .alreadyMatched: "Already matched"
+        case .noMatch: "Skipped — no exact library match"
+        case .multipleMatches: "Skipped — multiple library matches"
+        case .libraryConflict: "Kept existing watch history"
+        case .trackerConflict: "Skipped — tracker records disagree"
+        case .unsupported: "Skipped — unsupported history"
+        case .incompatibleRuntime: "Skipped resume — different or unknown duration"
+        case .wouldClearHistory: "Kept existing watched status or progress"
+        case .unconfirmed: "Update not verified"
+        case .previousUnconfirmed: "Skipped — previous update not verified"
+        case .playing: "Deferred during playback"
+        case .leftToCheck: "Left for the next sync"
         }
     }
 }

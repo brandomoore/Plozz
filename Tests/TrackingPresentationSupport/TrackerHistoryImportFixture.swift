@@ -576,10 +576,11 @@ private final class HistoryImportFixtureModel {
                 fact: .watched(at: Date(timeIntervalSince1970: changed ? 1_700_000_001 : 1_700_000_000))
             )
         ]
-        if arguments.contains("--history-many-records") {
-            for number in 1...240 {
+        let newBatch = arguments.contains("--history-result-batch") && newPlay > 0
+        if arguments.contains("--history-many-records") || newBatch {
+            for number in 1...(newBatch ? 25 : 240) {
                 records.append(try .init(
-                    recordID: "unmatched-\(number)", kind: .movie,
+                    recordID: "z-unmatched-\(number)", kind: .movie,
                     identities: [.external(source: "tmdb", value: "\(10_000 + number)")],
                     sourceTitle: "Archive \(number)", fact: .watched(at: nil)
                 ))

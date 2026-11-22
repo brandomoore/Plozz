@@ -4147,6 +4147,11 @@
       "reason": "Confirms only the libraries reviewed for this connection.",
       "covered_by": []
     },
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerLastSyncRows|body|Button|disclosure": {
+      "count": 1,
+      "reason": "Shows the last completed check for this tracker connection and library selection. Not a preference.",
+      "covered_by": []
+    },
     "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|activeLibraries|Button|librarySummary": {
       "count": 1,
       "reason": "Expands the active connection's eligible library selection.",
