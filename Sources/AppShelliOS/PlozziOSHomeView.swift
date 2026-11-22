@@ -2192,6 +2192,7 @@ struct PlozziOSHomeHeroCarousel: View {
         }
         .task(id: currentItem.map { resolutionKey(for: $0) }) {
             guard let currentItem else { return }
+            if await resolveLibraryPlayableTogether(for: currentItem) { return }
             async let root: Void = resolveRootItem(for: currentItem)
             async let play: Void = resolvePlayTarget(for: currentItem)
             _ = await (root, play)
@@ -2439,6 +2440,40 @@ struct PlozziOSHomeHeroCarousel: View {
         }
     }
 
+    private func resolveLibraryPlayableTogether(for item: MediaItem) async -> Bool {
+        guard (item.kind == .movie || item.kind == .episode), item.discoverySources.isEmpty else { return false }
+        let key = resolutionKey(for: item)
+        guard rootItems[item.id]?.value(for: key) == nil,
+              playTargets[item.id]?.value(for: key) == nil else { return false }
+        let target = bestLibraryItem(for: item)
+        guard target.kind == item.kind, target.discoverySources.isEmpty,
+              let accountID = target.sourceAccountID, !accountID.isEmpty,
+              let provider = provider(for: target) else { return false }
+        let response = try? await provider.item(id: target.id)
+        guard !Task.isCancelled, resolutionKey(for: item) == key else { return true }
+        if let response, response.id == target.id, response.kind == target.kind,
+           response.discoverySources.isEmpty,
+           response.selectedSourceAccountID == nil || response.selectedSourceAccountID == accountID,
+           let playable = HeroDiscoveryPlaybackTarget.validatedHydration(response, original: item, selected: target),
+           playable.sourceAccountID == accountID {
+            let entry = HeroResolutionCacheEntry(key: key, item: playable)
+            playTargets[item.id] = entry
+            if playable.kind == .movie {
+                rootItems[item.id] = entry
+            } else {
+                // An episode is the Play target; its parent still owns the hero title.
+                await finishRootItem(for: item, target: target, key: key, provider: provider, response: response)
+            }
+        } else {
+            // Count the unsuccessful or contradictory read as the root's first attempt.
+            // Play still gets its own lookup; it doesn't wait for the root to recover.
+            async let root: Void = finishRootItem(for: item, target: target, key: key, provider: provider, response: response)
+            await resolvePlayTarget(for: item)
+            await root
+        }
+        return true
+    }
+
     private func resolveRootItem(for item: MediaItem) async {
         guard item.discoverySources.isEmpty || item.locallyValidatedPlayableSource else { return }
         let key = resolutionKey(for: item)
@@ -2450,6 +2485,13 @@ struct PlozziOSHomeHeroCarousel: View {
             return
         }
         let response = try? await provider.item(id: target.id)
+        await finishRootItem(for: item, target: target, key: key, provider: provider, response: response)
+    }
+
+    private func finishRootItem(
+        for item: MediaItem, target: MediaItem, key: HeroPlaybackResolutionKey,
+        provider: any MediaProvider, response: MediaItem?
+    ) async {
         guard !Task.isCancelled,
               let hydrated = HeroDiscoveryPlaybackTarget.validatedHydration(
                 response ?? target, original: item, selected: target
@@ -2469,7 +2511,7 @@ struct PlozziOSHomeHeroCarousel: View {
 
         do {
             var root = try await provider.item(id: metadataID)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, resolutionKey(for: item) == key else { return }
             if root.sourceAccountID == nil,
                let sourceAccountID = target.sourceAccountID {
                 root = root.taggingSource(sourceAccountID)

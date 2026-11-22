@@ -1467,6 +1467,16 @@ restoring the baseline brought them back to 51. Distinct item count stayed at
 simulator. It establishes a request reduction, not lower server CPU, faster
 Home readiness, or improved scroll frame pacing.
 
+The hero title and Play button also asked for the same library movie or
+episode concurrently. In a separate 100-second returning iPhone simulator
+test with real Jellyfin, those two callers made 18 item GETs before sharing
+the response, 9 with sharing, and 18 after reversal. All three runs returned
+the same five Latest lists and 71 ordered items. For the six target items
+common to all runs, first-minute counts were 10, 5, and 10. These are
+caller-tagged relay counts, not totals for the page. Sharing ends with the
+current hero resolution; an episode still needs its series for the title.
+This comparison measured neither first paint after sign-in nor scrolling.
+
 For live scrolling, use a fresh process as the unit of comparison. Keep the
 viewer, viewport, drag distance and cache policy fixed. Counterbalance clean
 and instrumented launches. Score movement of the painted page during the

@@ -24,6 +24,34 @@ final class HomeHeroInteractionTests: XCTestCase {
         try await super.tearDown()
     }
 
+    func testPlayPassesTheHydratedLibraryMovieToPlayback() {
+        app.terminate()
+        app.launchArguments += ["--hero-hydrated-play"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Hydrated Movie"].firstMatch.waitForExistence(timeout: 15))
+        let play = app.buttons["home-hero-play"]
+        XCTAssertTrue(play.wait(for: \.isHittable, toEqual: true, timeout: 5))
+        play.tap()
+        XCTAssertTrue(app.staticTexts["hero-play-payload"].wait(
+            for: \.label, toEqual: "jellyfin/movie:Hydrated Movie", timeout: 5
+        ))
+        XCTAssertEqual(app.staticTexts["hero-play-detail-reads"].label, "1")
+    }
+
+    func testPlayPassesTheHydratedLibraryEpisodeToPlayback() {
+        app.terminate()
+        app.launchArguments += ["--hero-hydrated-episode"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Hero Series"].firstMatch.waitForExistence(timeout: 15))
+        let play = app.buttons["home-hero-play"]
+        XCTAssertTrue(play.wait(for: \.isHittable, toEqual: true, timeout: 5))
+        play.tap()
+        XCTAssertTrue(app.staticTexts["hero-play-payload"].wait(
+            for: \.label, toEqual: "emby/episode:Hydrated Episode", timeout: 5
+        ))
+        XCTAssertEqual(app.staticTexts["hero-play-detail-reads"].label, "1")
+    }
+
     func testArtworkTapOpensCurrentItemAndAccountAfterPaging() {
         let artwork = app.buttons["home-hero-artwork-detail"]
         XCTAssertTrue(artwork.waitForExistence(timeout: 15), app.debugDescription)
