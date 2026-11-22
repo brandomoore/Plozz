@@ -110,7 +110,8 @@ date rather than importing its placeholder. Episodes require their own and their
 parent's matching catalog IDs plus exact coordinates; missing parent IDs never
 become an inferred episode match. Paused progress with a supplied runtime uses
 the documented percentage/runtime conversion, and the shared importer requires
-the server runtime to match within one second. Active playback, missing runtimes
+the file runtime to match within one second. If a pause has no runtime, a
+selected share can use its matched file's measured duration. Active playback
 and zero/100-percent boundaries remain informational percentages, never clears
 or completion events. A deleted or missing play does not unwatch server media.
 
@@ -118,7 +119,7 @@ After comparison, a separate **Ongoing sync** enrollment can import new watched
 states and compatible resume points into Plozz history for selected media shares.
 Managed server users are not destinations. It uses the same
 reader, refresh-stable grant identity, guarded outbox and independent readback;
-it never backfills the baseline or silently resolves a conflicting share resume.
+only **Sync history** includes existing eligible pauses and watches. Sync does not silently resolve a conflicting share resume.
 Disconnect revokes local history permission before coordinated credential removal.
 See the [shared consent lifecycle](../FeatureSettings/README.md).
 

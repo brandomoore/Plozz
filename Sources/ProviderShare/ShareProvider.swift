@@ -1077,6 +1077,22 @@ extension ShareProvider: InteractiveBrowseActivityReporting {
     }
 }
 
+extension ShareProvider: TrackerResumeDurationProviding {
+    public func trackerResumeDuration(for item: MediaItem) async throws -> TimeInterval? {
+        guard let path = ShareWatchStateService.trackerFilePath(item), let streamProber else { return nil }
+        try Task.checkCancellation()
+        let locator = try await networkFileLocator(for: path)
+        let before = try await playbackSource.currentFileRevision(for: path)
+        // Do not reuse path/mtime-keyed facts across file replacements.
+        let facts = await streamProber.probe(locator: locator, requirements: .streamDetails)
+        try Task.checkCancellation()
+        guard let seconds = facts?.durationSeconds, seconds.isFinite, seconds > 0,
+              try await networkFileLocator(for: path) == locator,
+              try await playbackSource.currentFileRevision(for: path) == before else { return nil }
+        return seconds
+    }
+}
+
 extension ShareProvider: SupplementalStreamFactsProviding {
     public func supplementalStreamFacts(for item: MediaItem) async -> ProbedStreamFacts? {
         guard !Task.isCancelled,

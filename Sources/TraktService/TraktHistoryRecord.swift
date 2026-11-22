@@ -123,7 +123,7 @@ struct TraktHistoryRecord: Decodable, Equatable, Sendable {
                 throw TrackerHistoryError.invalidObservation
             }
             // Catalog runtimes cannot establish the duration of the played file.
-            fact = .resumePercentage(percent: progress, updatedAt: date)
+            fact = .pausedProgress(progress, at: date)
         } else {
             guard let action, ["watch", "scrobble", "checkin"].contains(action),
                   let watchedAt, let date = TraktClient.parseTimestamp(watchedAt) else {

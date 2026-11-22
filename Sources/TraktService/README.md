@@ -145,17 +145,17 @@ change; individual play dates/counts are not written to media servers.
 Episode imports require matching episode and parent IDs in the same namespace,
 with the episode ID distinct from the parent's and a single matching episode
 coordinate. Trakt coordinates alone do not establish a server's episode order.
-Unconfirmed identities remain unmatched. Trakt percentages remain visible,
-non-importable observations: catalog runtimes do not establish the played file's
-runtime, and neither 0% nor 100% implies an explicit clear or completed watch.
+Unconfirmed identities remain unmatched. A paused percentage strictly between
+0% and 100% can set progress on a selected share, using the measured duration
+of its matched file. It cannot change a managed server. The boundary values
+do not imply an explicit clear or completed watch.
 
-The separate **Ongoing sync** enrollment can import new watched states into
-Plozz history for selected media shares. It does not write to managed server
-users or backfill the reviewed history. Its
+The **2-way sync** enrollment can import watched states and pauses into
+Plozz history for selected media shares. **Sync history** also imports eligible
+existing pauses; **Skip** leaves those alone. Its
 connection identity survives coordinated refresh/relaunch and changes on each
 new sign-in, including identical returned tokens. Disconnect revokes device-local
-permission before coordinated credential removal. Percentage-only resume remains
-unavailable. See the [shared consent lifecycle](../FeatureSettings/README.md).
+permission before coordinated credential removal. See the [shared consent lifecycle](../FeatureSettings/README.md).
 
 API shape references: Trakt's
 [history client](https://github.com/trakt/trakt-rippple/blob/282a49fa049bcf325e126b4932e6c8d91d580860/Rippple/Trakt%20API/TraktAPIService.swift)

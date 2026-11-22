@@ -53,16 +53,21 @@ struct ShareWatchStateService: Sendable {
         let record = await self.record(for: item.id)
         var result = Self.stamped(item, with: record)
         result.runtime = nil
-        let exactPath = ShareCatalogID.relPath(forFileID: item.id)
-        let versionPath = item.versions.first?.playbackMediaSourceID
-        guard !item.hasMultipleVersions,
-              item.versions.isEmpty || (versionPath != nil && (exactPath == nil || versionPath == exactPath)),
-              let path = exactPath ?? versionPath,
-              !ShareBluRayFolder.isIndex(path), !ShareMediaParser.isExternalLinkFile(path),
+        guard let path = Self.trackerFilePath(item),
               let measured = record?.duration, measured.isFinite, measured > 0,
               let revision = record?.measuredFileRevision, !revision.isEmpty else { return result }
         if try await currentRevision(path) == revision { result.runtime = measured }
         return result
+    }
+
+    static func trackerFilePath(_ item: MediaItem) -> String? {
+        let exact = ShareCatalogID.relPath(forFileID: item.id)
+        let version = item.versions.first?.playbackMediaSourceID
+        guard item.kind == .movie || item.kind == .episode, !item.hasMultipleVersions,
+              item.versions.isEmpty || (version != nil && (exact == nil || version == exact)),
+              let path = exact ?? version, !ShareBluRayFolder.isIndex(path),
+              !ShareMediaParser.isExternalLinkFile(path) else { return nil }
+        return path
     }
 
     private func record(for itemID: String) async -> ShareWatchStore.Record? {

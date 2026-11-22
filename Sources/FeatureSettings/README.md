@@ -14,7 +14,7 @@ Wrapped errors use the same inner clearance as Settings descriptions; the group 
 **Account** groups connection status and account actions. Every tracker uses a red **Disconnect** button.
 **2-way sync** brings supported
 tracker activity into matching Plozz libraries. On first enrollment, **Sync history**
-includes existing watches; **Skip** leaves them alone. Neither choice writes to Plex,
+includes existing watches and supported paused positions; **Skip** leaves them alone. Neither choice writes to Plex,
 Jellyfin, or Emby.
 One-time imports and exports, PublicMetaDB watchlists, history management, ratings, contributions,
 discovery, external-ID tools, and the Last.fm listening-history browser are not v1 destinations.
@@ -102,7 +102,8 @@ coverage, history fidelity, and remaining integration work.
 **2-way sync** is off until the user enables it on the tracker account page.
 Only Plozz-managed watch state for this profile's selected network libraries can change.
 Enrollment checks for new activity immediately. The separate **Sync history / Skip**
-decision concerns only existing watches, never old playback positions or outgoing history.
+decision includes supported paused positions for the originally selected shares, never outgoing history.
+Older watched-only enrollments require a fresh opt-in before progress can be imported.
 Later checks use the provider's supported categories and foreground policy. **Sync now**
 checks all eligible activity present at the start across every selected library in one action.
 Writes are batched internally and checked against current tracker and destination state.
@@ -153,8 +154,8 @@ and requires retry rather than claiming durable disconnection.
 PublicMetaDB uses a specific credential-change failure state so this required
 retry is visible instead of being swallowed by the generic unknown-error copy.
 
-Trakt and Simkl use this same comparison and approval page. Their percentage-only resume
-records are displayed without conversion to server seconds, and episode imports
+Trakt and Simkl use this same comparison and approval page. A paused percentage
+can resume a matched media-share file using that file's measured duration, not a catalog estimate. Episode imports
 require corroborated episode and parent IDs rather than inferred numbering.
 Simkl's aggregate episode counts remain informational, never invented individual
 watches. Its read-only comparison checks activity before fetching changes and

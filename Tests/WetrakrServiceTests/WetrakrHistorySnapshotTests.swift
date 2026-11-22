@@ -116,7 +116,9 @@ final class WetrakrHistorySnapshotTests: XCTestCase {
             let date = try WetrakrDate.parse(date)
             XCTAssertEqual(observation.fact, expectedSeconds.map {
                 .resume(seconds: $0, runtime: 1000, updatedAt: date)
-            } ?? .resumePercentage(percent: percent, updatedAt: date))
+            } ?? (status == "paused" && percent > 0 && percent < 100
+                ? .pausedPercentage(percent: percent, updatedAt: date)
+                : .resumePercentage(percent: percent, updatedAt: date)))
         }
     }
 

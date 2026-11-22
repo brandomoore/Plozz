@@ -23,7 +23,7 @@ public enum TrackerHistorySyncCategory: String, Codable, CaseIterable, Sendable 
     func includes(_ fact: TrackerHistoryObservation.Fact) -> Bool {
         switch (self, fact) {
         case (.watched, .watched), (.watched, .explicitlyUnwatched), (.watched, .animeList),
-             (.watched, .episodeCount), (.resume, .resume), (.resume, .resumePercentage),
+             (.watched, .episodeCount), (.resume, .resume), (.resume, .resumePercentage), (.resume, .pausedPercentage),
              (.resume, .explicitlyClearedResume): true
         default: false
         }
@@ -85,6 +85,8 @@ public struct TrackerHistorySyncGrant: DurableLocalStateValue, Equatable {
     var betaConsentVersion: Int?
     // Applies only to original shares with uninterrupted watched consent.
     var includesExistingWatched: Bool?
+    // A historical watched-only confirmation is not permission to backfill progress.
+    var includesExistingResumes: Bool?
     var checkID: UUID?
     public internal(set) var lastCheckStatus: TrackerHistorySyncCheckStatus?
     /// The last successful check of this selection, not necessarily the latest attempt.
@@ -373,7 +375,8 @@ public final class TrackerHistorySyncController {
                 id: UUID(), identity: identity, scope: scope, categories: categories,
                 createdAt: latest.createdAt, enabled: true,
                 reviewCount: latest.reviewCount, enrollmentIDs: enrollments, betaConsentVersion: latest.betaConsentVersion,
-                includesExistingWatched: categories.contains(.watched) ? latest.includesExistingWatched : nil
+                includesExistingWatched: categories.contains(.watched) ? latest.includesExistingWatched : nil,
+                includesExistingResumes: categories.contains(.resume) ? latest.includesExistingResumes : nil
             )
             do {
                 var buckets = try loadBuckets(latest)
@@ -481,6 +484,7 @@ public final class TrackerHistorySyncController {
             if admittingExistingHistory {
                 guard admitted.includesExistingWatched != true else { return }
                 admitted.includesExistingWatched = true
+                if admitted.categories.contains(.resume) { admitted.includesExistingResumes = true }
             }
             admitted.lastAttemptAt = Date()
             admitted.checkID = current
@@ -616,7 +620,7 @@ public final class TrackerHistorySyncController {
             if index.isMultiple(of: 128) { await Task.yield(); try requireCheck(initial, current); lastProgress = .now }
             guard let hash = hashes[observation.recordID],
                   initial.categories.contains(where: { $0.includes(observation.fact) }),
-                  !Self.isEnrolled(hash, accountID, initial, buckets, watched: Self.isWatched(observation)) else { continue }
+                  !Self.isEnrolled(hash, accountID, initial, buckets, observation: observation) else { continue }
             let receipt = Self.receiptKey(accountID, hash, initial)
             if buckets[Self.bucket(receipt)].receipts[receipt] == nil { eligible.insert(observation.recordID) }
         }
@@ -776,7 +780,7 @@ public final class TrackerHistorySyncController {
                     if let receipt = buckets[Self.bucket(receiptKey)].receipts[receiptKey] {
                         return receipt == .confirmed || receipt == .matched
                     }
-                    return Self.isEnrolled(hash, target.accountID, grant, buckets, watched: Self.isWatched(other.observation))
+                    return Self.isEnrolled(hash, target.accountID, grant, buckets, observation: other.observation)
                 }
             }) else { return false }
         }
@@ -856,6 +860,7 @@ public final class TrackerHistorySyncController {
               stored.authorizesSync, stored.id == expected.id, stored.identity == identity,
               stored.scope == expected.scope, stored.categories == expected.categories,
               stored.includesExistingWatched == expected.includesExistingWatched,
+              stored.includesExistingResumes == expected.includesExistingResumes,
               stored.enrollmentIDs == expected.enrollmentIDs else {
             throw TrackerHistorySyncError.permissionChanged
         }
@@ -939,6 +944,9 @@ public final class TrackerHistorySyncController {
             fact = .animeList(try .init(
                 status: progress.status, episodesWatched: nil, repeats: nil, score: nil, updatedAt: nil
             ))
+        } else if case .pausedPercentage(let percent, let date) = observation.fact {
+            // The new interpretation must not turn previously baselined pauses into new events.
+            fact = .resumePercentage(percent: percent, updatedAt: date)
         } else {
             fact = observation.fact
         }
@@ -962,12 +970,14 @@ public final class TrackerHistorySyncController {
     }
 
     private static func isEnrolled(
-        _ hash: String, _ accountID: String, _ grant: TrackerHistorySyncGrant, _ buckets: [Bucket], watched: Bool
+        _ hash: String, _ accountID: String, _ grant: TrackerHistorySyncGrant, _ buckets: [Bucket], observation: TrackerHistoryObservation
     ) -> Bool {
         let page = buckets[bucket(hash)]
         let enrollment = grant.enrollmentIDs?[accountID]
         if page.baseline.contains(hash) {
-            return !(watched && grant.includesExistingWatched == true && enrollment == nil)
+            let backfill = (isWatched(observation) && grant.includesExistingWatched == true)
+                || (observation.fact.needsFileDuration && grant.includesExistingResumes == true)
+            return !(backfill && enrollment == nil)
         }
         guard let enrollment else { return false }
         return page.shareBaselines?[enrollment]?.contains(hash) == true

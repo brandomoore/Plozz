@@ -160,7 +160,7 @@ final class TraktCredentialLifecycleTests: XCTestCase {
             await bound.scrobble(item: profile.item, progress: 60, event: .pause)
             try await service.scrobbler.scrobbleResult(item: profile.item, progress: 100, event: .stop)
         }
-        XCTAssertEqual(service.historySyncCategories, [.watched])
+        XCTAssertEqual(service.historySyncCategories, [.watched, .resume])
         XCTAssertTrue(first.allowsForegroundChecks)
         try store.save(expired)
         await service.refreshStatus()

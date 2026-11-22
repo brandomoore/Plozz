@@ -293,6 +293,22 @@ final class TrackerHistoryImportTests: XCTestCase {
         }
     }
 
+    func testPausedPercentageUsesEachShareFileDurationButNeverTargetsManagedServers() throws {
+        let pause = try observation(fact: .pausedPercentage(percent: 40, updatedAt: Date()))
+        for runtime in [750.0, 1_000] {
+            var copy = item()
+            copy.runtime = runtime
+            let row = try XCTUnwrap(plan(observations: [pause], items: [copy], provider: .mediaShare).rows.first)
+            XCTAssertEqual(row.comparison, .ready)
+            XCTAssertEqual(row.change, .resume(runtime * 0.4))
+            for provider in [ProviderKind.plex, .jellyfin] {
+                XCTAssertNil(try plan(observations: [pause], items: [copy], provider: provider).rows.first?.change)
+            }
+            copy.runtime = nil
+            XCTAssertNil(try plan(observations: [pause], items: [copy], provider: .mediaShare).rows.first?.change)
+        }
+    }
+
     @MainActor
     func testVerifiedEpisodeMatchingDoesNotTurnOldTrackerEvidenceIntoNewActivity() throws {
         let parent = MediaIdentity.external(source: "series-tmdb:s1e2", value: "100")
@@ -1208,7 +1224,7 @@ final class TrackerHistoryImportTests: XCTestCase {
     }
 
     @MainActor
-    func testExistingHistoryChoiceChecksMultipleBatchesButOnlyWritesWatchedMatchesOnSelectedShare() async throws {
+    func testExistingHistoryImportsWatchesAndPausedProgressOnlyOnSelectedShare() async throws {
         func record(_ id: String, _ tmdb: String, _ fact: TrackerHistoryObservation.Fact = .watched(at: nil)) throws -> TrackerHistoryObservation {
             try .init(recordID: id, kind: .movie, identities: [.external(source: "tmdb", value: tmdb)], fact: fact)
         }
@@ -1235,7 +1251,7 @@ final class TrackerHistoryImportTests: XCTestCase {
         let watches = try (1...24).map { try record("missing-\($0)", String(1_000 + $0)) }
             + [record("first", "550"), record("z-last", "551")]
         let evidence = ImportEvidence(try snapshot(watches + [
-            record("progress", "552", .resume(seconds: 100, runtime: 1_000, updatedAt: nil))
+            record("progress", "552", .pausedPercentage(percent: 10, updatedAt: nil))
         ]))
         let store = try DurableLocalStateStore(secureStore: HistorySyncSecureStore())
         func controller() -> TrackerHistorySyncController {
@@ -1252,13 +1268,13 @@ final class TrackerHistoryImportTests: XCTestCase {
         await sync.syncExistingHistory(for: id)
         XCTAssertNil(sync.error)
         let result = try XCTUnwrap(sync.grant?.lastCompletedResult)
-        XCTAssertEqual(result.confirmedCount, 2)
+        XCTAssertEqual(result.confirmedCount, 3)
         XCTAssertFalse(result.hasMoreChanges)
         XCTAssertEqual(result.libraries?.map(\.accountID), ["account"])
-        XCTAssertEqual(result.libraries?.first?.counts, [.updated: 2, .noMatch: 24])
+        XCTAssertEqual(result.libraries?.first?.counts, [.updated: 3, .noMatch: 24])
         XCTAssertEqual(sync.grant?.reviewCount, 24)
         let historicalResume = try await share.item(id: resume.id)
-        XCTAssertNil(historicalResume.resumePosition)
+        XCTAssertEqual(historicalResume.resumePosition, 100)
         let managedReads = await managed.itemReads
         let managedWrites = await managed.writes
         XCTAssertTrue(managedReads.isEmpty)

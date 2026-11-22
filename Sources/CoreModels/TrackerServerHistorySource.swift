@@ -1,5 +1,11 @@
 import Foundation
 
+/// An unplayed share file has no playback measurement yet. Only ask for its
+/// headers after a tracker resume has been matched to this particular copy.
+public protocol TrackerResumeDurationProviding: Sendable {
+    func trackerResumeDuration(for item: MediaItem) async throws -> TimeInterval?
+}
+
 /// Read-only server evidence for an explicitly selected user and library.
 @MainActor
 public final class TrackerServerHistorySource {

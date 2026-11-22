@@ -16,10 +16,24 @@ public struct TrackerHistoryObservation: Equatable, Sendable {
         case explicitlyUnwatched
         case resume(seconds: TimeInterval, runtime: TimeInterval, updatedAt: Date?)
         case resumePercentage(percent: Double, updatedAt: Date?)
+        case pausedPercentage(percent: Double, updatedAt: Date?)
         case explicitlyClearedResume
         case episodeCount(watched: Int, repeats: Int?)
         case animeList(TrackerAnimeListProgress)
         case listState(TrackerHistoryListState)
+
+        public static func pausedProgress(_ percent: Double, at date: Date?) -> Self {
+            percent > 0 && percent < 100
+                ? .pausedPercentage(percent: percent, updatedAt: date)
+                : .resumePercentage(percent: percent, updatedAt: date)
+        }
+
+        var needsFileDuration: Bool {
+            switch self {
+            case .resume, .pausedPercentage: true
+            default: false
+            }
+        }
     }
 
     public let recordID: String
@@ -74,6 +88,11 @@ public struct TrackerHistoryObservation: Equatable, Sendable {
             }
         case .resumePercentage(let percent, let date):
             guard percent.isFinite, (0...100).contains(percent),
+                  date.map({ $0.timeIntervalSince1970.isFinite }) ?? true else {
+                throw TrackerHistoryError.invalidObservation
+            }
+        case .pausedPercentage(let percent, let date):
+            guard percent > 0, percent < 100,
                   date.map({ $0.timeIntervalSince1970.isFinite }) ?? true else {
                 throw TrackerHistoryError.invalidObservation
             }
@@ -320,7 +339,7 @@ public struct TrackerHistoryImportPlan: Sendable {
                     accountID: accountID, itemID: candidate.item.id,
                     providerKind: serverScope.accounts.first(where: { $0.accountID == accountID })?.providerKind
                 )
-                let (change, comparison) = Self.compare(observation, to: candidate)
+                let (change, comparison) = Self.compare(observation, to: candidate, isShare: target.providerKind == .mediaShare)
                 if let change, let existing = existingChanges[ChangeKey(target: target, change: change)] {
                     result[existing].recordIDs.append(observation.recordID)
                     continue
@@ -345,7 +364,7 @@ public struct TrackerHistoryImportPlan: Sendable {
     }
 
     private static func compare(
-        _ observation: TrackerHistoryObservation, to candidate: TrackerServerHistoryCandidate
+        _ observation: TrackerHistoryObservation, to candidate: TrackerServerHistoryCandidate, isShare: Bool
     ) -> (Change?, Comparison) {
         let item = candidate.item
         guard item.kind == .movie || item.kind == .episode else { return (nil, .unsupported) }
@@ -366,11 +385,13 @@ public struct TrackerHistoryImportPlan: Sendable {
             guard candidate.canWriteResume else { return (nil, .unsupported) }
             guard let serverRuntime = item.runtime, serverRuntime.isFinite,
                   abs(serverRuntime - runtime) <= 1, seconds < serverRuntime else { return (nil, .incompatibleRuntime) }
-            if let position = item.resumePosition, abs(position - seconds) <= 0.5 {
-                return (.resume(seconds), .alreadyMatches)
-            }
-            return (.resume(seconds), item.isPlayed || item.hasBeenPlayed || (item.resumePosition ?? 0) > 0
-                    ? .serverConflict : .ready)
+            return compareResume(seconds, item: item)
+        case .pausedPercentage(let percent, _):
+            guard isShare, candidate.canWriteResume else { return (nil, .unsupported) }
+            guard let duration = item.runtime, duration.isFinite, duration > 0 else { return (nil, .incompatibleRuntime) }
+            let seconds = duration * (percent / 100)
+            guard seconds > 0, seconds < duration else { return (nil, .incompatibleRuntime) }
+            return compareResume(seconds, item: item)
         case .explicitlyClearedResume:
             guard candidate.canWriteResume else { return (nil, .unsupported) }
             return (.resume(0), item.resumePosition == 0 ? .alreadyMatches : .serverConflict)
@@ -379,6 +400,14 @@ public struct TrackerHistoryImportPlan: Sendable {
         case .resumePercentage:
             return (nil, .incompatibleRuntime)
         }
+    }
+
+    private static func compareResume(_ seconds: Double, item: MediaItem) -> (Change?, Comparison) {
+        if let position = item.resumePosition, abs(position - seconds) <= 0.5 {
+            return (.resume(seconds), .alreadyMatches)
+        }
+        return (.resume(seconds), item.isPlayed || item.hasBeenPlayed || (item.resumePosition ?? 0) > 0
+                ? .serverConflict : .ready)
     }
 
     public func approve(

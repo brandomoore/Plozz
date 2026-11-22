@@ -32,7 +32,8 @@ an episode from Simkl removes read evidence, never fabricates an explicit
 unwatch or resume-clear instruction. Changed playback activity or watched state
 refreshes the current paused-playback set because a delta cannot reveal removed
 sessions. Reaching its 10,000-record limit rejects a potentially truncated read.
-No percentage is converted to server seconds, including 0% and 100%.
+Paused percentages strictly between 0% and 100% may be applied to the measured
+duration of the matched media-share file, never a managed server.
 
 Completed movies are watched-state observations, not individual play counts.
 Only originally recorded episode rows become episode observations; imports need
@@ -51,12 +52,11 @@ The destination is the exact active Plex/Jellyfin server user, not a parallel
 tracker-owned history store. Existing conflict, parental authorization,
 current-item revalidation, cancellation, outbox and readback safeguards apply.
 
-After comparison, **Ongoing sync** can save permission to import new watched
-states into Plozz history for selected media shares, not managed server users.
-Enrollment records a baseline of existing history.
-**Sync now** checks new evidence through the same activity-gated reader; Simkl
-never participates in foreground automatic checks. Existing history, removals,
-aggregate counts and percentage-only progress are not backfilled by enrollment.
+**2-way sync** saves permission for selected media shares, not managed server users.
+Enrollment records a baseline; **Sync history** explicitly includes existing
+watches and eligible pauses. Foreground checks and **Sync now** use the same
+activity-gated reader. No background polling timer is started. Removals and
+aggregate counts do not identify a resume position.
 No PRO/VIP rewatch session is created. See the shared
 [consent and disconnect contract](../FeatureSettings/README.md).
 

@@ -49,7 +49,7 @@ final class TraktHistorySnapshotTests: XCTestCase {
         let result = try await snapshot(ReadOnlyHistoryHTTP(http: http))
         XCTAssertEqual(result.trackerID, "trakt")
         XCTAssertEqual(result.observations.map(\.recordID), ["watched/1", "watched/2", "resume/1"])
-        XCTAssertEqual(result.observations[2].fact, .resumePercentage(
+        XCTAssertEqual(result.observations[2].fact, .pausedPercentage(
             percent: 32.5, updatedAt: TraktClient.parseTimestamp(date)
         ))
         XCTAssertEqual(http.sentPaths, ["/sync/last_activities", "/users/me/history", "/sync/playback", "/sync/last_activities"])

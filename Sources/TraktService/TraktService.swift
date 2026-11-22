@@ -37,7 +37,6 @@ public final class TraktService: TrackerHistorySyncReading {
     public private(set) var phase: TraktConnectionPhase
     public let historySyncTrackerID = "trakt"
     public private(set) var historySyncNamespace: String?
-    public var historySyncCategories: Set<TrackerHistorySyncCategory> { [.watched] }
     @ObservationIgnored public var onHistorySyncDisconnect: (@MainActor () throws -> Void)?
     @ObservationIgnored public var makeHistoryExport: (@MainActor () throws -> TrackerHistoryExportSession<TraktHistoryExportTarget>)?
 

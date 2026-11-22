@@ -20,7 +20,6 @@ public final class SimklService: TrackerHistorySyncReading {
     public private(set) var phase: SimklConnectionPhase
     public let historySyncTrackerID = "simkl"
     public private(set) var historySyncNamespace: String?
-    public var historySyncCategories: Set<TrackerHistorySyncCategory> { [.watched] }
     @ObservationIgnored public var onHistorySyncDisconnect: (@MainActor () throws -> Void)?
     @ObservationIgnored public var makeHistoryExport: (@MainActor () throws -> TrackerHistoryExportSession<SimklHistoryExportTarget>)?
     public private(set) var codeLifetime: TimeInterval = 900
@@ -84,7 +83,7 @@ public final class SimklService: TrackerHistorySyncReading {
     public var historySyncIdentity: TrackerHistorySyncIdentity? {
         guard case .connected = phase, let tokens = tokenStore.load(), !tokens.accessToken.isEmpty else { return nil }
         return .init(
-            trackerID: historySyncTrackerID, connectionID: tokens.stableAccountIdentity, allowsForegroundChecks: false
+            trackerID: historySyncTrackerID, connectionID: tokens.stableAccountIdentity
         )
     }
 

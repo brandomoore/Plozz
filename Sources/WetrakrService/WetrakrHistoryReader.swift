@@ -213,6 +213,8 @@ struct WetrakrHistoryRecord: Decodable, Sendable {
             if playback.status == "paused", let runtime = playback.runtime,
                playback.progress > 0, playback.progress < 100 {
                 fact = .resume(seconds: runtime * (playback.progress / 100), runtime: runtime, updatedAt: date)
+            } else if playback.status == "paused" {
+                fact = .pausedProgress(playback.progress, at: date)
             } else {
                 fact = .resumePercentage(percent: playback.progress, updatedAt: date)
             }

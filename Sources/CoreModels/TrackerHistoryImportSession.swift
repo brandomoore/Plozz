@@ -217,7 +217,8 @@ public final class TrackerHistoryImportSession {
                 },
                 loadCurrentItem: { owner, provider, row in
                     guard let target = row.target else { throw TrackerHistoryError.invalidSelection }
-                    return try await owner.freshItem(provider: provider, target: target, generation: current)
+                    return try await owner.freshItem(provider: provider, target: target, generation: current,
+                                                     needsDuration: row.baseline?.runtime != nil)
                 }
             )
             for (row, mutation) in zip(approval.rows, mutations) {
@@ -273,11 +274,13 @@ public final class TrackerHistoryImportSession {
     }
 
     private func readBack(rows: [TrackerHistoryImportPlan.Row], generation: UUID) async throws {
+        var resumed: Set<WatchMutationTarget> = []
         for row in rows where outcomes[row.id] == .queued {
             try requireCurrent(generation)
             guard let target = row.target, let change = row.change else { throw TrackerHistoryError.invalidSelection }
             let provider = try resolveProvider(target.accountID)
-            let item = try await freshItem(provider: provider, target: target, generation: generation)
+            let item = try await freshItem(provider: provider, target: target, generation: generation,
+                                           needsDuration: row.baseline?.runtime != nil)
             let confirmed: Bool
             switch change {
             case .watched(let value): confirmed = item.isPlayed == value
@@ -287,7 +290,15 @@ public final class TrackerHistoryImportSession {
             outcomes[row.id] = row.observation.matches(item) && confirmed ? .confirmed : .unconfirmed
             if outcomes[row.id] == .confirmed {
                 confirmedBaselines[row.id] = .init(item: item)
+                if case .resume = change { resumed.insert(target) }
             }
+        }
+        // Home may already be visible when a foreground sync finishes. Reload
+        // from the share stores once per batch, not from the tracker response.
+        if !resumed.isEmpty {
+            try requireCurrent(generation)
+            MediaItemMutation(itemIDs: Set(resumed.map(\.itemID)), scopedItemIDs: Set(resumed.map(\.id)),
+                              refreshContinueWatching: true).post()
         }
     }
 
@@ -299,9 +310,15 @@ public final class TrackerHistoryImportSession {
         guard permitted.isSubset(of: snapshotIndex.indexedAccountIDs) else { throw TrackerHistoryError.incompleteSnapshot }
         var targets: Set<WatchMutationTarget> = []
         var walkedSeries: Set<WatchMutationTarget> = []
+        var resumesByIdentity: [MediaIdentity: [TrackerHistoryObservation]] = [:]
         for (offset, observation) in snapshot.observations.enumerated() {
             if offset.isMultiple(of: 128) { await Task.yield(); try requireCurrent(generation) }
             guard recordIDs?.contains(observation.recordID) != false else { continue }
+            if observation.fact.needsFileDuration {
+                for id in observation.verifiedEpisodeIdentities ?? observation.identities {
+                    resumesByIdentity[id, default: []].append(observation)
+                }
+            }
             for source in snapshotIndex.sources(forIdentities: observation.identities, kind: observation.kind)
             where permitted.contains(source.accountID) {
                 targets.insert(source.target)
@@ -332,7 +349,7 @@ public final class TrackerHistoryImportSession {
         for target in targets.sorted(by: { $0.id < $1.id }) {
             try requireCurrent(generation)
             let provider = try resolveProvider(target.accountID)
-            let item = try await TrackerServerHistorySource.freshItem(
+            var item = try await TrackerServerHistorySource.freshItem(
                 provider: provider, accountID: target.accountID, itemID: target.itemID,
                 validate: { try self.requireCurrent(generation) },
                 loadSeries: { seriesID in
@@ -350,6 +367,13 @@ public final class TrackerHistoryImportSession {
                 accountID: target.accountID, itemID: target.itemID, serverScope: scope
             )
             try requireCurrent(generation)
+            if !isPlaying, item.runtime == nil, let timing = provider as? any TrackerResumeDurationProviding,
+               (item.resumePosition ?? 0) > 0 || MediaItemIdentity.identities(for: item).contains(where: { id in
+                   resumesByIdentity[id]?.contains(where: { $0.matches(item) }) == true
+               }) {
+                item.runtime = try await timing.trackerResumeDuration(for: item)
+                try requireCurrent(generation)
+            }
             result.append(.init(
                 accountID: target.accountID, item: item,
                 canWriteWatched: provider is any WatchStateProviding || provider is any PlayedStateWriting,
@@ -360,11 +384,16 @@ public final class TrackerHistoryImportSession {
     }
 
     private func freshItem(
-        provider: any MediaProvider, target: WatchMutationTarget, generation: UUID
+        provider: any MediaProvider, target: WatchMutationTarget, generation: UUID, needsDuration: Bool
     ) async throws -> MediaItem {
-        try await TrackerServerHistorySource.freshItem(
+        var item = try await TrackerServerHistorySource.freshItem(
             provider: provider, accountID: target.accountID, itemID: target.itemID,
             validate: { try self.requireCurrent(generation) }
         )
+        if needsDuration, item.runtime == nil, let timing = provider as? any TrackerResumeDurationProviding {
+            item.runtime = try await timing.trackerResumeDuration(for: item)
+            try requireCurrent(generation)
+        }
+        return item
     }
 }

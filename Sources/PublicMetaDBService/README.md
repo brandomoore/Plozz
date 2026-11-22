@@ -1,6 +1,6 @@
 # PublicMetaDBService
 
-## Tracker-sync acceptance status: 21 November 2026
+## Tracker-sync acceptance status: 22 November 2026
 
 The v1 app exposes account connection, one-way playback reporting and opt-in
 watch-history sync for media shares. The one-time transfer, account browser,
@@ -17,10 +17,14 @@ Connecting a new PublicMetaDB tracking account enables playback reporting. The
 account's tracker switch can pause it without disconnecting. Refreshing a saved
 key preserves the previous reporting choice; it never opts an existing user in.
 **2-way sync** is separate from normal reporting. Enabling it checks for
-new activity and offers **Sync history / Skip** for existing watches. Neither
+new activity and offers **Sync history / Skip** for existing watches and supported
+resume positions. Neither
 choice changes managed-server watch state. Earlier builds did not offer historical
 sync. The live provider results below predate the history choice; they do not
 verify the new enrollment flow. A pre-beta grant cannot authorize checks.
+External-app pause → Plozz Continue Watching on launch still needs independent
+verification on dedicated Trakt, Simkl, and WeTrakr accounts; PublicMetaDB
+evidence is not a substitute for those runs.
 
 The branch is not merge-ready. Integration `8ae592a88caa` includes `main`
 through `cd5468e5dd37`. The iPhone simulator app built and installed from

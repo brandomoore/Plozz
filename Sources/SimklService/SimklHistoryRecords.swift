@@ -176,7 +176,7 @@ struct SimklHistoryPlayback: Decodable, Sendable {
         let paused = try pausedAt.map(SimklHistoryDate.parse)
         if let watchedAt { _ = try SimklHistoryDate.parse(watchedAt) }
         // Older schema examples call a timestamp watched_at. Do not relabel it as a pause.
-        let fact = TrackerHistoryObservation.Fact.resumePercentage(percent: progress, updatedAt: paused)
+        let fact = TrackerHistoryObservation.Fact.pausedProgress(progress, at: paused)
         if let movie {
             guard show == nil, anime == nil, episode == nil, type == nil || type == "movie", let ids = movie.ids else {
                 throw TrackerHistoryError.invalidObservation

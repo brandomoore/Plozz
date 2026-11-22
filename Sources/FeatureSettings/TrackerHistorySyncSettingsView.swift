@@ -148,6 +148,10 @@ private struct TrackerTwoWaySyncRows: View {
                 controls
             } footer: {
                 Text("Changes from \(trackerName) update matching titles in Plozz, not on Plex, Jellyfin, or Emby.")
+                if sync.isEnabled, sync.supportedCategories.contains(.resume),
+                   sync.grant?.categories.contains(.resume) == false {
+                    Text("This setup syncs watched titles only. Turn 2-way sync off and on to include resume positions.")
+                }
                 if sync.isEnabled && !sync.isBusy && !sync.identity.allowsForegroundChecks {
                     Text("Use Sync now to check for later changes.").font(.footnote).plozzForeground(.secondary)
                 }
@@ -179,7 +183,11 @@ private struct TrackerTwoWaySyncRows: View {
                     offeredGrant = nil
                 }
             } message: {
-                Text("Mark matching titles as watched in \(destinations). New activity syncs either way.")
+                if sync.grant?.categories.contains(.resume) == true {
+                    Text("Import watched titles and resume positions into \(destinations). New activity syncs either way.")
+                } else {
+                    Text("Mark matching titles as watched in \(destinations). New activity syncs either way.")
+                }
             }
         if sync.isEnabled { activeLibraries }
         if sync.isBusy {
