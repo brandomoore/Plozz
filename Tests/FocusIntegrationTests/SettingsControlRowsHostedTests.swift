@@ -385,7 +385,7 @@ final class SettingsControlRowsHostedTests: XCTestCase {
             let helper = band(1)
             let above = try XCTUnwrap(helper.first) - titleEnd - 1
             let below = image.height - 1 - (try XCTUnwrap(helper.last))
-            XCTAssertEqual(below, above - 4, accuracy: 2, "Leave slightly less space below the helper than above it.")
+            XCTAssertEqual(below, above - 8, accuracy: 2, "Leave slightly less space below the helper than above it.")
         }
     }
 

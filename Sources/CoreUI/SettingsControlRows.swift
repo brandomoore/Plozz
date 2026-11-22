@@ -26,7 +26,7 @@ public struct SettingsDescribedControl<Control: View, Description: View>: View {
                 .settingsHelperText()
                 .fixedSize(horizontal: false, vertical: true)
                 #if os(tvOS)
-                .padding(.bottom, PlozzTheme.Spacing.large - PlozzTheme.Spacing.xxSmall)
+                .padding(.bottom, PlozzTheme.Spacing.medium)
                 #elseif os(iOS)
                 .padding(.bottom, MobileSettingsMetrics.descriptionBottomInset - MobileSettingsMetrics.controlVerticalInset)
                 #endif
