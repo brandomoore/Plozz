@@ -355,6 +355,40 @@ final class SettingsControlRowsHostedTests: XCTestCase {
         }
     }
 
+    func testDescribedRowBalancesHelperClearanceWithoutPaddingAnEmptyHelper() throws {
+        let title = Color.red.frame(height: 20).settingsFormRowLayout()
+        let plain = ImageRenderer(content: SettingsControlGroup { title }.frame(width: 320))
+        plain.scale = 1
+        for helperHeight: CGFloat in [0, 24, 52] {
+            let renderer = ImageRenderer(content:
+                SettingsControlGroup {
+                    SettingsDescribedControl { title } description: {
+                        if helperHeight > 0 { Color.green.frame(height: helperHeight) }
+                    }
+                }
+                .frame(width: 320)
+            )
+            renderer.scale = 1
+            let image = try XCTUnwrap(renderer.cgImage)
+            if helperHeight == 0 {
+                XCTAssertEqual(image.height, try XCTUnwrap(plain.cgImage).height)
+                continue
+            }
+            let bytes = try pixels(image)
+            func band(_ channel: Int) -> [Int] {
+                (0..<image.height).filter { y in
+                    let offset = (y * image.width + image.width / 2) * 4
+                    return bytes[offset + channel] > 140 && bytes[offset + (1 - channel)] < 100
+                }
+            }
+            let titleEnd = try XCTUnwrap(band(0).last)
+            let helper = band(1)
+            let above = try XCTUnwrap(helper.first) - titleEnd - 1
+            let below = image.height - 1 - (try XCTUnwrap(helper.last))
+            XCTAssertEqual(above, below, accuracy: 2, "Keep the space around the helper visually balanced.")
+        }
+    }
+
     func testGroupedControlHelperAndDividerShareTheTextKeyline() throws {
         for direction in [LayoutDirection.leftToRight, .rightToLeft] {
             let renderer = ImageRenderer(content:

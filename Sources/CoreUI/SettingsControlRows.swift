@@ -22,10 +22,12 @@ public struct SettingsDescribedControl<Control: View, Description: View>: View {
                 #if os(iOS)
                 .frame(minHeight: MobileSettingsMetrics.rowMinHeight - 2 * MobileSettingsMetrics.controlVerticalInset)
                 #endif
-            description
+            Group { description }
                 .settingsHelperText()
                 .fixedSize(horizontal: false, vertical: true)
-                #if os(iOS)
+                #if os(tvOS)
+                .padding(.bottom, PlozzTheme.Spacing.large)
+                #elseif os(iOS)
                 .padding(.bottom, MobileSettingsMetrics.descriptionBottomInset - MobileSettingsMetrics.controlVerticalInset)
                 #endif
         }
