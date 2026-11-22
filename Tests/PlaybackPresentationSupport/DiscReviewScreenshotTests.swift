@@ -384,7 +384,7 @@ extension AtlasUI {
         openConnectedAccount()
         defer { app.terminate() }
         let activation = el("publicmetadb.enabled"), sync = el("tracker-history.ongoing-sync")
-        XCTAssertEqual(sync.label, "Ongoing sync (Beta)")
+        XCTAssertEqual(sync.label, "File share sync (Beta)")
         XCTAssertEqual(activation.value as? String, "1", "Connecting enables basic tracking.")
         XCTAssertTrue(activation.isHittable && sync.isHittable)
         for id in ["publicmetadb.ratings", "publicmetadb.watchlist", "publicmetadb.compare-history",
@@ -409,11 +409,14 @@ extension AtlasUI {
         go(sync)
         let syncSwitch = el("tracker-history.sync-enabled")
         XCTAssertTrue(syncSwitch.waitForExistence(timeout: 5))
+        XCTAssertEqual(syncSwitch.label, "Apply new activity from PublicMetaDB")
+        for name in ["Cedar Loft", "Mariner Archive"] { XCTAssertTrue(app.staticTexts[name].exists, name) }
+        for name in ["Northbank Cinema", "Lantern House"] { XCTAssertFalse(app.staticTexts[name].exists, name) }
         XCTAssertEqual(syncSwitch.value as? String, "0", "Reporting must not enroll the profile in sync.")
         go(syncSwitch)
         go(app.buttons["Enable beta sync"].firstMatch)
         XCTAssertTrue(el("tracker-history.sync-watched").waitForExistence(timeout: 5))
-        returnToAccount(from: "Ongoing sync (Beta)", tvBackID: "tracker-history.sync-back", row: sync)
+        returnToAccount(from: "File share sync (Beta)", tvBackID: "tracker-history.sync-back", row: sync)
     }
 
     func testConnectedWithoutMediaSharesHidesOngoingSync() {

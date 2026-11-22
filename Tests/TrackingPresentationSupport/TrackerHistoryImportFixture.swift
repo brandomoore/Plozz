@@ -193,7 +193,7 @@ private final class HistoryImportFixtureModel {
         guard let syncStore else { return nil }
         return TrackerHistorySyncController(
             identity: .init(
-                trackerID: "publicmetadb", connectionID: "fixture-connection",
+                trackerID: arguments.contains("--history-incomplete-trakt") ? "trakt" : "publicmetadb", connectionID: "fixture-connection",
                 allowsForegroundChecks: !arguments.contains("--history-manual-sync")
             ),
             scope: scope, store: syncStore,
@@ -543,6 +543,7 @@ private final class HistoryImportFixtureModel {
 
     private func snapshot() throws -> TrackerHistorySnapshot {
         trackerReads += 1
+        if arguments.contains("--history-incomplete-trakt") { throw TrackerHistoryError.incompleteSnapshot }
         if trackerReads > 1, arguments.contains("--history-revoke-on-recheck") {
             authorized = false
         }

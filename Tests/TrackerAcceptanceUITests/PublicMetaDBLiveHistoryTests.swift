@@ -3536,7 +3536,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
                     "This read-only route check needs an already active tracker and an eligible media share.")
         try tapVisible(app.buttons["tracker-history.ongoing-sync"])
         XCTAssertTrue(ongoingMaster.waitForExistence(timeout: 10))
-        try tapVisible(app.navigationBars["Ongoing sync (Beta)"].buttons.firstMatch)
+        try tapVisible(app.navigationBars["File share sync (Beta)"].buttons.firstMatch)
         XCTAssertTrue(app.navigationBars["Trackers"].waitForExistence(timeout: 10))
     }
 

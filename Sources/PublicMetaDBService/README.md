@@ -16,7 +16,7 @@ earlier builds.
 Connecting a new PublicMetaDB tracking account enables playback reporting. The
 account's tracker switch can pause it without disconnecting. Refreshing a saved
 key preserves the previous reporting choice; it never opts an existing user in.
-Only **Ongoing sync (Beta)** requires separate beta enrollment. An existing
+Only **File share sync (Beta)** requires separate beta enrollment. An existing
 pre-beta sync grant cannot authorize a foreground or manual sync. The opt-in
 and cancellation flow was checked on iPhone and Apple TV simulators; the live
 provider results below predate that change.

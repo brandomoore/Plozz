@@ -54,7 +54,7 @@ public struct TrackerHistorySyncLink: View {
         if let sync = entry.session.ongoingSync, sync.hasSettingsDestination {
             if let accountTrackerID {
                 Button { showingSync = true } label: {
-                    SettingsDisclosureLabel { Text("Ongoing sync (Beta)") }
+                    SettingsDisclosureLabel { Text("File share sync (Beta)") }
                 }
                 .settingsActionRow()
                 .accessibilityIdentifier("\(accountTrackerID).ongoing-sync")
@@ -97,7 +97,7 @@ struct TrackerHistorySyncNavigationRow: View {
                 TrackerHistorySyncSettingsView(session: session, sync: sync)
             }
         } label: {
-            SettingsDisclosureLabel { Text("Ongoing sync (Beta)") }
+            SettingsDisclosureLabel { Text("File share sync (Beta)") }
         }
         .settingsActionRow()
         .accessibilityIdentifier("tracker-history.ongoing-sync")
@@ -134,43 +134,48 @@ struct TrackerHistorySyncSettingsView: View {
     }
 
     var body: some View {
-        GroupedSettingsPage(title: "Ongoing sync (Beta)", backIdentifier: "tracker-history.sync-back") {
+        GroupedSettingsPage(title: "File share sync (Beta)", backIdentifier: "tracker-history.sync-back") {
             if sync.isEnabled || (sync.grant?.enabled != true && !sync.eligibleAccountIDs.isEmpty && !sync.supportedCategories.isEmpty) {
                 SettingsSectionGroup {
-                    Toggle("Sync watch history", isOn: Binding(get: { sync.isEnabled }, set: setEnabled))
+                    Toggle("Apply new activity from \(trackerName)", isOn: Binding(get: { sync.isEnabled }, set: setEnabled))
                         .accessibilityIdentifier("tracker-history.sync-enabled")
                         .disabled(!sync.isEnabled && sync.isBusy)
-                        .confirmationDialog("Enable beta sync?", isPresented: $confirmingBeta, titleVisibility: .visible) {
+                        .confirmationDialog("Update file share history in Plozz?", isPresented: $confirmingBeta, titleVisibility: .visible) {
                             Button("Enable beta sync") { enroll() }
                             Button("Cancel", role: .cancel) {}
                         } message: {
-                            Text("New tracker activity can change watch history on all current media shares in this profile, not your servers. Turning it off won’t undo those changes.")
+                            Text("Applies to \(shareNames). Turning sync off won’t undo changes.")
                         }
                 } footer: {
-                    if sync.isEnabled {
-                        Text("Only new tracker activity updates the selected shares. Turning sync off keeps their history.")
-                    } else if sync.supportedCategories == [.watched] {
-                        Text("New watched titles update all media shares in this profile, not your servers.")
-                    } else if sync.supportedCategories == [.resume] {
-                        Text("New playback positions update all media shares in this profile, not your servers.")
-                    } else {
-                        Text("New watched titles and playback positions update all media shares in this profile, not your servers.")
+                    VStack(alignment: .leading, spacing: 4) {
+                        if sync.supportedCategories == [.watched] {
+                            Text("When \(trackerName) records a new watch, Plozz marks matching titles as watched on your file shares.")
+                        } else if sync.supportedCategories == [.resume] {
+                            Text("New playback positions from \(trackerName) update where you left off in Plozz.")
+                        } else {
+                            Text("Plozz can apply new watches and playback positions from \(trackerName) to matching titles.")
+                        }
+                        Text("Past history isn’t imported. This never changes watch history on Plex or other media servers.")
+                    }
+                }
+                if !sync.isEnabled {
+                    SettingsSectionGroup("File shares in this profile") {
+                        ForEach(shares) { share in
+                            Text(verbatim: shareName(share))
+                        }
                     }
                 }
             }
             if sync.isBusy { ProgressView("Syncing…") }
-            if let error = sync.error { TrackerHistoryImportFailure(error: error) }
+            if reviewedPlan == nil, sync.grant?.enabled != true, sync.error as? TrackerHistoryError == .incompleteSnapshot {
+                Text("Sync is off. Plozz couldn’t verify your full \(trackerName) history. Try again later.")
+            } else if let error = sync.error { TrackerHistoryImportFailure(error: error) }
             if sync.isEnabled, let grant = sync.grant {
                 let selected = Set(grant.scope.accounts.map(\.accountID))
-                let shares = session.destinations.filter { sync.eligibleAccountIDs.contains($0.id) }
-                SettingsSectionGroup("Media shares") {
+                SettingsSectionGroup("File shares to update") {
                     ForEach(shares) { share in
                         Toggle(isOn: choice(share.id, in: selected) { update($0, grant.categories) }) {
-                            if shares.contains(where: { $0.id != share.id && $0.serverName == share.serverName }) {
-                                Text(verbatim: share.historyDisplayName)
-                            } else {
-                                Text(verbatim: share.serverName)
-                            }
+                            Text(verbatim: shareName(share))
                         }
                         .accessibilityIdentifier("tracker-history.sync-server.\(share.id)")
                     }
@@ -204,7 +209,7 @@ struct TrackerHistorySyncSettingsView: View {
                         .settingsActionRow()
                 }
             } else if sync.eligibleAccountIDs.isEmpty {
-                Text("No media shares in this profile.")
+                Text("No file shares in this profile.")
             }
         }
         .tint(palette.primaryText)
@@ -220,6 +225,23 @@ struct TrackerHistorySyncSettingsView: View {
             sync.disable()
         }
     }
+
+    private var trackerName: String {
+        let id = sync.identity.trackerID
+        let page = id == "publicmetadb" ? SettingsSearchPage.publicMetaDB : SettingsSearchPage(rawValue: id)
+        return page?.trackerAccount?.name ?? id
+    }
+
+    private var shares: [TrackerHistoryImportSession.Destination] {
+        session.destinations.filter { sync.eligibleAccountIDs.contains($0.id) }
+    }
+
+    private func shareName(_ share: TrackerHistoryImportSession.Destination) -> String {
+        shares.contains { $0.id != share.id && $0.serverName == share.serverName }
+            ? share.historyDisplayName : share.serverName
+    }
+
+    private var shareNames: String { shares.map(shareName).formatted(.list(type: .and)) }
 
     private func enroll() {
         operation = Task {

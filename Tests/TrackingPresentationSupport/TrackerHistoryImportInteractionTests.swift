@@ -132,6 +132,24 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         assertReport(jellyfin: 0, plex: 0, cedar: 0, mariner: 0)
     }
 
+    func testIncompleteTraktEnrollmentNamesSourceAndLeavesSharesUnchanged() {
+        app.launchArguments = ["--tracker-history-import-fixture", "--history-ongoing-sync", "--history-direct-sync",
+                               "--history-incomplete-trakt", "--history-watched-only"]
+        app.launch()
+        activate(app.buttons["fixture.history.open"])
+        activate(element("tracker-history.ongoing-sync"))
+        let master = element("tracker-history.sync-enabled")
+        XCTAssertTrue(master.waitForExistence(timeout: 5))
+        XCTAssertEqual(master.label, "Apply new activity from Trakt")
+        activate(master)
+        activate(app.buttons["Enable beta sync"].firstMatch)
+        XCTAssertTrue(app.staticTexts["Sync is off. Plozz couldn’t verify your full Trakt history. Try again later."]
+            .waitForExistence(timeout: 5))
+        XCTAssertEqual(master.value as? String, "0")
+        waitForReport(";sync=false;")
+        assertReport(jellyfin: 0, plex: 0, cedar: 0, mariner: 0)
+    }
+
     func testOngoingShareDefaultsAndEditsLeaveUnselectedSourcesUnchanged() {
         verifyOngoingShareSync()
     }

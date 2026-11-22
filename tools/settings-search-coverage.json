@@ -4102,7 +4102,7 @@
       "reason": "Deferred watchlist controls have no v1 destination or search entry.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncNavigationRow|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Ongoing sync (Beta)\") }": {
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncNavigationRow|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"File share sync (Beta)\") }": {
       "count": 1,
       "reason": "Ongoing sync is a destination for one connected tracker with eligible shares or an existing grant. Global search has no account selection.",
       "covered_by": []
@@ -4117,7 +4117,7 @@
       "reason": "Runs the selected tracker grant now; not a scheduling preference.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncSettingsView|body|Toggle|\"Sync watch history\"": {
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncSettingsView|body|Toggle|\"Apply new activity from \\(trackerName)\"": {
       "count": 1,
       "reason": "Enrollment or revocation is bound to this device, profile, tracker connection and eligible media shares; there is no global sync switch.",
       "covered_by": []
@@ -4137,7 +4137,7 @@
       "reason": "Selects one eligible media share in this connection's grant; a share or user name cannot be a global result.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncLink|body|Button|SettingsDisclosureLabel { Text(\"Ongoing sync (Beta)\") }": {
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncLink|body|Button|SettingsDisclosureLabel { Text(\"File share sync (Beta)\") }": {
       "count": 1,
       "reason": "This action belongs to an eligible tracker connection’s sync settings, not to global search.",
       "covered_by": []

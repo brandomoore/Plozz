@@ -2,8 +2,9 @@
 
 **Tracker v1 exposure:** Connecting a tracker starts its supported tracking activity.
 The connected account exposes the tracker switch directly; turning it off pauses
-tracking without removing the account. **Ongoing sync (Beta)** is a separate opt-in
-on supported trackers for eligible media shares, not part of connecting.
+tracking without removing the account. **File share sync (Beta)** names the tracker and
+lists the file shares it would update before enrollment. It applies new activity only;
+it does not backfill tracker history or change watch history on Plex or other media servers.
 One-time imports and exports, PublicMetaDB watchlists, history management, ratings, contributions,
 discovery, external-ID tools, and the Last.fm listening-history browser are not v1 destinations.
 The implementation notes for those tools below describe deferred code, not shipping entry points.
@@ -87,10 +88,10 @@ competing changes to one destination item cannot be selected together. See
 [PublicMetaDBService](../PublicMetaDBService/README.md) for current
 coverage, history fidelity, and remaining integration work.
 
-**Ongoing sync (Beta)** offers only profile-scoped media shares, not managed
+**File share sync (Beta)** offers only profile-scoped media shares, not managed
 servers. Connecting a tracker, reporting playback, and approving a one-time
 import do not enroll anyone. Pre-beta permissions cannot authorize sync; remove
-the previous permission before enrolling again. **Sync watch history** starts
+the previous permission before enrolling again. **Apply new activity from [tracker]** starts
 off. Confirming **Enable beta sync** on this device enrolls the profile’s current
 eligible shares and supported history categories without backfilling old records.
 While it is on, share and category switches edit that selection. Turning it off
@@ -327,7 +328,7 @@ selects a server, library or user, enables a prerequisite, or submits an editor.
 Unavailable controls lead to their existing prerequisite or availability message.
 PublicMetaDB results lead to the current profile's Connect, Retry, or **Playback reporting** row.
 **Playback reporting** is the only indexed PublicMetaDB preference. Search never
-starts pairing or grants device-local consent. **Ongoing sync (Beta)** stays in the selected tracker:
+starts pairing or grants device-local consent. **File share sync (Beta)** stays in the selected tracker:
 its grant, eligible media shares, and supported categories depend on that connection.
 Individual histories, transfers, contributions, and list contents are not indexed.
 On mobile, custom quality keeps its normal modal editor: Cancel discards the draft, Apply
