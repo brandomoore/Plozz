@@ -92,6 +92,12 @@ Place it by what it explains, not by the number of rows:
 | One control among unrelated rows | With that control, using `SettingsDescribedControl` if it needs a second line. Keep a disabled row's recovery instruction there, not below other settings. On Apple TV, keep help with its setting in the detail pane or form. |
 | A material consequence or a request for consent | Where someone can read it **before** deciding. Keep the disc-menu watch-progress warning with **Disc playback** and the diagnostics disclosure before the share buttons. |
 
+On tvOS, a toggle that names the whole setting is its own label. Use
+`.labeledControl()` rather than repeating it as a section heading. For example,
+**Remember series version choices** needs one toggle, not a second “Remember per series” label.
+Keep disclosure labels padding-free when `SettingsFormButtonStyle` supplies the row
+insets; their text should align with the toggle above, focused or not.
+
 Keep engine eligibility tables in the [playback reference](playback-engines.md),
 not in a picker. For a visual comparison, Apple's [iPad Multitasking & Gestures](https://support.apple.com/en-us/111788)
 puts mode descriptions beside the choices and gesture instructions below the switches;

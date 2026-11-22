@@ -345,7 +345,6 @@ public struct CardCaptionSettingsLink: View {
             destination
         } label: {
             SettingsDisclosureLabel { Text("Customize labels") }
-                .settingsFormRowLayout()
         }
         .buttonStyle(SettingsFormButtonStyle())
         .accessibilityIdentifier(identifier)

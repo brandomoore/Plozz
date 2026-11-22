@@ -628,13 +628,12 @@ struct PlaybackDetailView: View {
                 #endif
             },
             SettingsSplitRow(
-                id: "remember-series-version", title: "Remember series version choices",
-                description: "Reuse the version type you pick for later episodes. When choosing automatically, use the best available version if that type is missing."
+                id: "remember-series-version", title: "Remember series version choices"
             ) {
-                Toggle("Remember per series", isOn: $playback.settings.rememberVersionPerSeries)
+                Toggle("Remember series version choices", isOn: $playback.settings.rememberVersionPerSeries)
                     .accessibilityIdentifier("playback-remember-series-version")
                     .settingsSearchAnchor("remember-series-version")
-            }
+            }.labeledControl()
         ]
     }
 
@@ -832,12 +831,11 @@ struct PlaybackDetailView: View {
 
         rows.append(SettingsSplitRow(
             id: "subtitle-remember",
-            title: "Remember subtitles per series",
-            description: "Reuse the subtitle you pick for the rest of a series."
+            title: "Remember subtitles per series"
         ) {
-            Toggle("Remember per series", isOn: $playback.settings.rememberSubtitleTrackPerSeries)
+            Toggle("Remember subtitles per series", isOn: $playback.settings.rememberSubtitleTrackPerSeries)
                 .settingsSearchAnchor("subtitle-remember")
-        })
+        }.labeledControl())
 
         #if os(tvOS)
         rows.insert(contentsOf: subtitleStyleRows, at: 1)
@@ -1004,7 +1002,7 @@ struct PlaybackDetailView: View {
                 Toggle("Ask to resume or start over", isOn: $playback.settings.askBeforeResuming)
                     .accessibilityIdentifier("playback-ask-before-resuming")
                     .settingsSearchAnchor("ask-before-resuming")
-            },
+            }.labeledControl(),
             SettingsSplitRow(
                 id: "resume-rewind",
                 title: "Rewind on resume",

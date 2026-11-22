@@ -685,6 +685,8 @@ final class PlaybackSettingsHostedTests: XCTestCase {
             let top = -scroll.adjustedContentInset.top
             let bottom = max(top, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
             var visible = ""
+            var skipLabelX: CGFloat?
+            var customizeLabelX: CGFloat?
             for offset in stride(from: top, through: bottom + 540, by: 540) {
                 scroll.setContentOffset(CGPoint(x: 0, y: min(offset, bottom)), animated: false)
                 try await Task.sleep(for: .milliseconds(100))
@@ -696,7 +698,14 @@ final class PlaybackSettingsHostedTests: XCTestCase {
                 request.recognitionLevel = .accurate
                 request.recognitionLanguages = ["en-US"]
                 try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
-                let page = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                let observations = request.results ?? []
+                for observation in observations {
+                    guard let label = observation.topCandidates(1).first?.string else { continue }
+                    let x = observation.boundingBox.minX * window.bounds.width
+                    if label.hasPrefix("Skip intros, credits") { skipLabelX = x }
+                    if label == "Customize" { customizeLabelX = x }
+                }
+                let page = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
                 visible += " " + page
                 if page.contains("Skip intros, credits")
                     || page.contains("Version selection") || page.contains("Video buffer")
@@ -736,6 +745,12 @@ final class PlaybackSettingsHostedTests: XCTestCase {
                 XCTAssertFalse(visible.contains(label), visible)
             }
             XCTAssertEqual(visible.contains("Customize"), enabled, visible)
+            XCTAssertFalse(visible.contains("Remember per series"), visible)
+            XCTAssertFalse(visible.contains("Reuse the version type"), visible)
+            if enabled {
+                XCTAssertEqual(try XCTUnwrap(customizeLabelX), try XCTUnwrap(skipLabelX), accuracy: 5,
+                               "The disclosure label should align with its parent toggle.")
+            }
             XCTAssertFalse(visible.contains("Skip markers"), visible)
             for label in ["Set each marker separately", "Use community markers", "Show skip button",
                           "Skip after", "Intros", "Credits", "Recaps", "Previews", "Commercials"] {
