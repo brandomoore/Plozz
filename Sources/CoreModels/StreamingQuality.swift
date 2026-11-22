@@ -374,7 +374,10 @@ public struct StreamingPlaybackOptions: Hashable, Sendable {
     public func selectedSubtitle(in tracks: [MediaTrack]) -> MediaTrack? {
         guard !subtitlesOff else { return nil }
         if let subtitleTrack {
-            if subtitleTrack.isExternal { return subtitleTrack.matchingSidecar(in: tracks) }
+            if subtitleTrack.isExternal
+                || (subtitleTrack.providerSubtitleID != nil && tracks.contains(where: { $0.providerSubtitleID != nil })) {
+                return subtitleTrack.matchingDeliveredSubtitle(in: tracks)
+            }
             return tracks.first { $0.id == subtitleTrack.id && $0.language == subtitleTrack.language }
                 ?? tracks.first {
                     LanguageMatch.matches($0.language, subtitleTrack.language)
@@ -391,9 +394,12 @@ public struct StreamingPlaybackOptions: Hashable, Sendable {
 }
 
 extension MediaTrack {
-    /// A renewed session can replace a sidecar's URL and menu ID. Never restore
-    /// "Signs & Songs" as "Full" just because both are English.
-    public func matchingSidecar(in tracks: [MediaTrack]) -> MediaTrack? {
+    /// Match the same provider track even if its delivery changed. For sidecars
+    /// without inventory IDs, never restore “Signs & Songs” as “Full” on language alone.
+    public func matchingDeliveredSubtitle(in tracks: [MediaTrack]) -> MediaTrack? {
+        if let providerSubtitleID, tracks.contains(where: { $0.providerSubtitleID != nil }) {
+            return tracks.first { $0.providerSubtitleID == providerSubtitleID }
+        }
         let sidecars = tracks.filter(\.isExternal)
         if let deliverySource, let same = sidecars.first(where: { $0.deliverySource == deliverySource }) { return same }
         let candidates = sidecars.filter {

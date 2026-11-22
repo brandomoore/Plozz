@@ -377,6 +377,7 @@ extension SiloProvider: ProviderHTTPResourceResolving {
                     isDefault: plan.subtitle.track_id == entry.track_id && plan.subtitle.mode == "render",
                     isForced: entry.forced, isHearingImpaired: entry.hearing_impaired,
                     deliverySource: .authenticatedHTTP(source), isExternal: true)
+                track.providerSubtitleID = entry.track_id.isEmpty ? nil : entry.track_id
                 if delivery == .directFile, entry.source == "embedded" {
                     let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
                     let index = entry.stream_index ?? query?.first { $0.name == "embedded_stream_index" }?.value.flatMap(Int.init)

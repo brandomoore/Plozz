@@ -26,6 +26,7 @@ extension SiloProviderTests {
         let request = try await provider.playbackInfo(for: "movie:1", mediaSourceID: "42", forceTranscode: false)
         XCTAssertEqual(request.subtitleTracks.map(\.id), [0, 1, 2, 3])
         XCTAssertEqual(request.subtitleTracks.compactMap(\.originalSubtitleStreamIndex), [4, 5, 6, 7])
+        XCTAssertEqual(request.subtitleTracks.compactMap(\.providerSubtitleID), ["sub0", "sub1", "sub2", "sub3"])
         for (track, name) in zip(request.subtitleTracks, names) {
             let label = TrackLabeling.subtitleLabel(
                 displayTitle: track.displayTitle, sourceTitle: track.sourceTitle, language: track.language,

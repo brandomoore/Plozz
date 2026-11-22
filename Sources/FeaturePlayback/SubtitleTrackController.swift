@@ -95,7 +95,9 @@ final class SubtitleTrackController {
         guard let host else { return false }
         func match(_ track: MediaTrack?, in tracks: [MediaTrack]) -> MediaTrack? {
             guard let track else { return nil }
-            if track.kind == .subtitle, track.isExternal { return track.matchingSidecar(in: tracks) }
+            if track.kind == .subtitle, track.isExternal || track.providerSubtitleID != nil {
+                return track.matchingDeliveredSubtitle(in: tracks)
+            }
             return tracks.first { $0.id == track.id && $0.language == track.language }
                 ?? tracks.first {
                     LanguageMatch.matches($0.language, track.language)
@@ -108,13 +110,13 @@ final class SubtitleTrackController {
             selectedAudioTrackID = audio.id
         }
         let subs = selectableSubtitles
-        func sidecarIsGone(_ track: MediaTrack?) -> Bool {
-            guard let track, track.isExternal, let request = host.trackRequest,
+        func deliveredTrackIsGone(_ track: MediaTrack?) -> Bool {
+            guard let track, track.isExternal || track.providerSubtitleID != nil, let request = host.trackRequest,
                   engine.status == .ready, !engine.isSessionReloading else { return false }
-            return track.matchingSidecar(in: request.subtitleTracks) == nil
+            return track.matchingDeliveredSubtitle(in: request.subtitleTracks) == nil
         }
         let primary = match(snapshot.primary, in: subs)
-        if snapshot.primary == nil || (primary == nil && sidecarIsGone(snapshot.primary)) {
+        if snapshot.primary == nil || (primary == nil && deliveredTrackIsGone(snapshot.primary)) {
             selectSubtitleOption(id: PlayerTrackOption.offID, userInitiated: false)
         } else if let track = primary {
             selectSubtitleOption(id: track.id, userInitiated: false)
@@ -122,12 +124,12 @@ final class SubtitleTrackController {
         let secondary = match(snapshot.secondary, in: eligibleSecondarySubtitleTracks())
         if let secondary, secondary.id != selectedSecondarySubtitleTrackID {
             selectSecondarySubtitleOption(id: secondary.id)
-        } else if secondary == nil, selectedSecondarySubtitleTrackID != nil, sidecarIsGone(snapshot.secondary) {
+        } else if secondary == nil, selectedSecondarySubtitleTrackID != nil, deliveredTrackIsGone(snapshot.secondary) {
             selectSecondarySubtitleOption(id: PlayerTrackOption.offID)
         }
         return (snapshot.audio == nil || match(snapshot.audio, in: engine.audioTracks) != nil)
-            && (snapshot.primary == nil || primary != nil || sidecarIsGone(snapshot.primary))
-            && (snapshot.secondary == nil || secondary != nil || sidecarIsGone(snapshot.secondary))
+            && (snapshot.primary == nil || primary != nil || deliveredTrackIsGone(snapshot.primary))
+            && (snapshot.secondary == nil || secondary != nil || deliveredTrackIsGone(snapshot.secondary))
     }
 
     /// Server sidecars and subtitles downloaded during this session, kept
@@ -567,7 +569,9 @@ final class SubtitleTrackController {
         let engineIDs = Set(embedded.map(\.id))
         let matched = embedded.map { track in
             if let original = originals.first(where: { $0.id == track.id }) {
-                return track.enriched(withProvider: original)
+                var merged = track.enriched(withProvider: original)
+                merged.providerSubtitleID = original.providerSubtitleID
+                return merged
             }
             return track.enriched(withProvider: provider.first {
                 $0.originalSubtitleStreamIndex == nil && !$0.isExternal && $0.id == track.id

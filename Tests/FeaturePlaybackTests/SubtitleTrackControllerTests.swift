@@ -641,6 +641,39 @@ final class SubtitleTrackControllerTests: XCTestCase {
         XCTAssertNil(sut.selectedSecondarySubtitleTrackID)
     }
 
+    func testPrimaryAndSecondaryFollowSiloTracksBetweenHLSAndOriginalFile() throws {
+        let (sut, host, engine) = makeSUT(engineKind: .plozzigen, capabilities: [.dualSubtitleDecode])
+        func load(_ session: Int, embedded: Bool) {
+            let tracks = [0, 1, 2].map { index in
+                var track = textSidecar(session * 10 + index)
+                track.sourceTitle = "English"
+                track.providerSubtitleID = "sub\(index)"
+                track.isExternal = !embedded
+                track.originalSubtitleStreamIndex = embedded ? index + 4 : nil
+                return track
+            }
+            engine.subtitleTracks = embedded ? [4, 5, 6].map { embeddedText($0) } : []
+            host.request = PlaybackRequest(item: .init(id: "movie", title: "Movie", kind: .movie),
+                                           streamURL: URL(fileURLWithPath: "/fixture/movie"),
+                                           playSessionID: String(session), subtitleTracks: tracks)
+            sut.loadTrackOptions()
+        }
+        load(1, embedded: false)
+        let options = host.controls.subtitleOptions.compactMap { sut.subtitleTrack(id: $0.id) }
+        sut.selectSubtitleOption(id: try XCTUnwrap(options.first { $0.providerSubtitleID == "sub2" }).id)
+        sut.selectSecondarySubtitleOption(id: try XCTUnwrap(options.first { $0.providerSubtitleID == "sub1" }).id)
+        let sidecars = sut.streamSnapshot()
+        load(2, embedded: true)
+        XCTAssertTrue(sut.restoreStreamSnapshot(sidecars))
+        XCTAssertEqual(sut.selectedSubtitleTrackID, 6)
+        XCTAssertEqual(sut.selectedSecondarySubtitleTrackID, 5)
+        let original = sut.streamSnapshot()
+        load(3, embedded: false)
+        XCTAssertTrue(sut.restoreStreamSnapshot(original))
+        XCTAssertEqual(sut.streamSnapshot().primary?.providerSubtitleID, "sub2")
+        XCTAssertEqual(sut.streamSnapshot().secondary?.providerSubtitleID, "sub1")
+    }
+
     func testServerSidecarRemainsAvailableOnReplayWithoutCollidingWithPGS() async throws {
         let (sut, host, engine) = makeSUT(engineKind: .plozzigen, capabilities: [.dualSubtitleDecode])
         var sidecar = textSidecar(5)

@@ -622,6 +622,8 @@ demuxed stream share one row, keyed by the absolute stream index, not the
 inventory position or language. Standalone sidecars remain separate.
 After a quality change that renews sidecar URLs, both subtitle picks restore
 their named track rather than the first track in the same language.
+Silo's inventory track ID keeps the selection even when changing quality moves
+the same subtitle between a server sidecar and an embedded stream.
 Colliding subtitle labels first expose known format differences, such as SRT,
 ASS or WebVTT. Codec aliases normalize to the same format, and missing/unknown
 formats are not invented. Labels still identical after that gain a localized
