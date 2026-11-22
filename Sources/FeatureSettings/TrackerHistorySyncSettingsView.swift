@@ -162,9 +162,14 @@ private struct TrackerTwoWaySyncRows: View {
         if sync.isBusy {
             ProgressView("Syncing…")
         } else if let error = sync.error {
-            if !sync.isEnabled, error as? TrackerHistoryError == .incompleteSnapshot {
-                Text("Sync is off. Plozz couldn’t verify your full \(trackerName) history. Try again later.")
-            } else { TrackerHistoryImportFailure(error: error) }
+            Group {
+                if !sync.isEnabled, error as? TrackerHistoryError == .incompleteSnapshot {
+                    Text("Sync is off. Plozz couldn’t verify your full \(trackerName) history. Try again later.")
+                } else { TrackerHistoryImportFailure(error: error) }
+            }
+            #if os(iOS)
+            .padding(.vertical, MobileSettingsMetrics.descriptionBottomInset - MobileSettingsMetrics.controlVerticalInset)
+            #endif
         } else if sync.isEnabled {
             syncResult
         }

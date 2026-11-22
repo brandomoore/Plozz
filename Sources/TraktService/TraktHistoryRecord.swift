@@ -2,6 +2,13 @@ import CoreModels
 import CoreNetworking
 import Foundation
 
+enum TraktHistoryDiagnostics {
+    static func incomplete(_ source: StaticString, _ reason: StaticString) -> TrackerHistoryError {
+        HandoffDiagnostics.emit("TRAKT_HISTORY incomplete source=\(source) reason=\(reason)")
+        return .incompleteSnapshot
+    }
+}
+
 struct TraktHistoryRecord: Decodable, Sendable {
     let id: Int
     let type: String
@@ -109,7 +116,7 @@ struct TraktHistoryActivity: Decodable, Equatable, Sendable {
     func validate() throws {
         guard [all, movies.watchedAt, movies.pausedAt, episodes.watchedAt, episodes.pausedAt]
             .allSatisfy({ TraktClient.parseTimestamp($0) != nil }) else {
-            throw TrackerHistoryError.incompleteSnapshot
+            throw TraktHistoryDiagnostics.incomplete("activity", "invalid-timestamp")
         }
     }
 }

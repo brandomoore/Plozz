@@ -124,6 +124,9 @@ pagination totals, exact page sizes and unique record IDs. The relevant
 capped, malformed or changing results fail the comparison instead of becoming a
 partial import. Reads reuse coordinated OAuth refresh and retain profile/grant
 fences before and after each request.
+When diagnostics are enabled, `TRAKT_HISTORY incomplete` records which check rejected
+the response (activity timestamps, pagination, or duplicate records). It uses fixed labels,
+never account identifiers, URLs, header values, or watch history.
 
 The shared importer previews exact server users and requires selected-row
 confirmation before writing through the existing watch outbox. It rechecks server

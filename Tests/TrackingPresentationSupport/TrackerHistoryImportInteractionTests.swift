@@ -1,4 +1,7 @@
 import XCTest
+#if os(iOS)
+import Vision
+#endif
 
 @MainActor
 final class TrackerHistoryImportInteractionTests: XCTestCase {
@@ -151,7 +154,7 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         assertReport(jellyfin: 0, plex: 0, cedar: 1, mariner: 0)
     }
 
-    func testIncompleteTraktEnrollmentNamesSourceAndLeavesSharesUnchanged() {
+    func testIncompleteTraktEnrollmentNamesSourceAndLeavesSharesUnchanged() throws {
         app.launchArguments = ["--tracker-history-import-fixture", "--history-ongoing-sync", "--history-direct-sync",
                                "--history-incomplete-trakt", "--history-watched-only"]
         app.launch()
@@ -161,8 +164,22 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         XCTAssertEqual(master.label, "2-way sync")
         activate(master)
         confirmAllLibraries()
-        XCTAssertTrue(app.staticTexts["Sync is off. Plozz couldn’t verify your full Trakt history. Try again later."]
-            .waitForExistence(timeout: 5))
+        let message = app.staticTexts["Sync is off. Plozz couldn’t verify your full Trakt history. Try again later."]
+        XCTAssertTrue(message.waitForExistence(timeout: 5))
+        #if os(iOS)
+        let row = message.screenshot()
+        let screenshot = XCTAttachment(screenshot: row)
+        screenshot.name = "trakt-enrollment-error"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        let text = VNRecognizeTextRequest()
+        try VNImageRequestHandler(cgImage: XCTUnwrap(row.image.cgImage)).perform([text])
+        let lines = try XCTUnwrap(text.results)
+        XCTAssertTrue(lines.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ").contains("Trakt"))
+        let ink = lines.reduce(CGRect.null) { $0.union($1.boundingBox) }
+        XCTAssertGreaterThanOrEqual(ink.minY * message.frame.height, 10, "Last line crowds the bottom edge")
+        XCTAssertGreaterThanOrEqual((1 - ink.maxY) * message.frame.height, 10, "First line crowds the divider")
+        #endif
         XCTAssertEqual(master.value as? String, "0")
         XCTAssertFalse(app.buttons["Sync history"].exists)
         waitForReport(";sync=false;")

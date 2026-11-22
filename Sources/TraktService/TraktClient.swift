@@ -294,7 +294,7 @@ struct TraktClient: Sendable {
             requiresCompleteEvidence: true, validateScope: validateScope
         )
         let after = try await historyActivity(accessToken: accessToken, validateScope: validateScope)
-        guard before == after else { throw TrackerHistoryError.incompleteSnapshot }
+        guard before == after else { throw TraktHistoryDiagnostics.incomplete("activity", "changed-during-read") }
         return try TrackerHistorySnapshot(
             trackerID: "trakt", connectionID: connectionID,
             observations: watches.map { try $0.observation(playback: false) }
@@ -377,19 +377,27 @@ struct TraktClient: Sendable {
                 throw AppError.decoding
             }
             if requiresCompleteEvidence {
+                // Log only fixed labels, not the request path, account, headers or media records.
+                let source: StaticString = path == "/users/me/history" ? "watches" : path == "/sync/playback" ? "playback" : "other"
                 guard response.value(forHTTPHeaderField: "X-Pagination-Page").flatMap(Int.init) == page,
                       response.value(forHTTPHeaderField: "X-Pagination-Limit").flatMap(Int.init) == limit,
                       let count = response.value(forHTTPHeaderField: "X-Pagination-Item-Count").flatMap(Int.init),
-                      let pages = response.value(forHTTPHeaderField: "X-Pagination-Page-Count").flatMap(Int.init),
-                      (0...(limit * maximumPages)).contains(count),
-                      expectedItemCount == nil || expectedItemCount == count,
-                      expectedPageCount == nil || expectedPageCount == pages,
-                      (count == 0 && page == 1 && (pages == 0 || pages == 1))
+                      let pages = response.value(forHTTPHeaderField: "X-Pagination-Page-Count").flatMap(Int.init) else {
+                    throw TraktHistoryDiagnostics.incomplete(source, "pagination-headers")
+                }
+                guard (0...(limit * maximumPages)).contains(count),
+                      (expectedItemCount == nil || expectedItemCount == count),
+                      (expectedPageCount == nil || expectedPageCount == pages) else {
+                    throw TraktHistoryDiagnostics.incomplete(source, "pagination-totals")
+                }
+                guard (count == 0 && page == 1 && (pages == 0 || pages == 1))
                         || (count > 0 && pages == (count + limit - 1) / limit && page <= pages),
-                      entries.count == min(limit, max(0, count - (page - 1) * limit)),
-                      Set(entries.map(\.id)).count == entries.count,
+                      entries.count == min(limit, max(0, count - (page - 1) * limit)) else {
+                    throw TraktHistoryDiagnostics.incomplete(source, "page-size")
+                }
+                guard Set(entries.map(\.id)).count == entries.count,
                       entries.allSatisfy({ !seenIDs.contains($0.id) }) else {
-                    throw TrackerHistoryError.incompleteSnapshot
+                    throw TraktHistoryDiagnostics.incomplete(source, "duplicate-record")
                 }
             }
             for entry in entries {
