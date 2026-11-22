@@ -1,4 +1,6 @@
 import XCTest
+import CoreGraphics
+import ImageIO
 #if os(iOS)
 import UIKit
 #endif
@@ -310,6 +312,12 @@ final class DiscReviewScreenshotTests: XCTestCase {
         #if os(iOS)
         if !e.isHittable { app.swipeUp() }; if e.elementType == .switch && e.switches.firstMatch.exists { e.switches.firstMatch.tap() } else { e.tap() }
         #else
+        focus(e)
+        XCUIRemote.shared.press(.select)
+        #endif
+    }
+    #if os(tvOS)
+    private func focus(_ e: XCUIElement) {
         for _ in 0..<24 {
             if e.hasFocus { break }
             let current = app.descendants(matching: .any)
@@ -322,9 +330,8 @@ final class DiscReviewScreenshotTests: XCTestCase {
             XCUIRemote.shared.press(direction)
         }
         XCTAssertTrue(e.hasFocus, app.debugDescription)
-        XCUIRemote.shared.press(.select)
-        #endif
     }
+    #endif
     func testComparison() {
         start("comparison")
         let first=el("tracker-history.select.jellyfin:movie"), apply=el("tracker-history.apply")
@@ -512,6 +519,96 @@ extension AtlasUI {
         assertSummary(9)
     }
     func testDisconnect() { scenario("connected",[("","account-connected","@publicmetadb.enabled"),("Disconnect","account-disconnect-confirm","Disconnect PublicMetaDB?")]) }
+
+    func testPublicMetaDBDisconnectRendersRedAndKeepsConfirmation() throws {
+        #if os(iOS)
+        XCUIDevice.shared.orientation = .portrait
+        #endif
+        defer { app.terminate() }
+        openConnectedAccount()
+        let disconnect = app.buttons["Disconnect"]
+        try assertDisconnectRendersRed(disconnect, name: "publicmetadb-disconnect-idle")
+        #if os(tvOS)
+        focus(disconnect)
+        try assertDisconnectRendersRed(disconnect, name: "publicmetadb-disconnect-focused")
+        #endif
+        go(disconnect)
+        let confirmation = app.sheets.firstMatch
+        let alert = app.alerts.firstMatch
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 4) || alert.exists, app.debugDescription)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@", "Your history stays intact."
+        )).firstMatch.exists)
+        shot("publicmetadb-disconnect-confirmation")
+        #if os(iOS)
+        let cancel = app.buttons["Cancel"].firstMatch
+        go(cancel.exists ? cancel : app.otherElements["PopoverDismissRegion"])
+        #else
+        go(app.buttons["Cancel"].firstMatch)
+        #endif
+        XCTAssertTrue(confirmation.waitForNonExistence(timeout: 4))
+        XCTAssertFalse(alert.exists)
+        XCTAssertEqual(app.staticTexts["publicmetadb.status"].label, "Connected")
+        XCTAssertTrue(disconnect.isHittable)
+        shot("publicmetadb-disconnect-cancelled")
+    }
+
+    #if os(tvOS)
+    func testSharedTrackerDisconnectRendersRedWithoutDisconnecting() throws {
+        defer { app.terminate() }
+        start("trackers", ["--history-ongoing-sync"])
+        go(el("settings-page-trakt"))
+        let disconnect = app.buttons["Disconnect"]
+        try assertDisconnectRendersRed(disconnect, name: "trakt-disconnect-idle")
+        focus(disconnect)
+        try assertDisconnectRendersRed(disconnect, name: "trakt-disconnect-focused")
+        XCTAssertTrue(el("trakt.enabled").exists)
+    }
+    #endif
+
+    private func assertDisconnectRendersRed(_ button: XCUIElement, name: String) throws {
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        XCTAssertTrue(button.isHittable)
+        shot(name)
+        let screenshot = button.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name + "-button"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(screenshot.pngRepresentation as CFData, nil))
+        let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+            ))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        var redPixels = 0
+        var redColumns = Set<Int>()
+        for offset in stride(from: 0, to: pixels.count, by: 4) {
+            let r = Int(pixels[offset]), g = Int(pixels[offset + 1]), b = Int(pixels[offset + 2])
+            if r > 100 && r - g > 40 && r - b > 40 {
+                redPixels += 1
+                redColumns.insert((offset / 4) % image.width)
+            }
+        }
+        let redFraction = Double(redPixels) / Double(image.width * image.height)
+        let columnFraction = Double(redColumns.count) / Double(image.width)
+        let metrics = "\(name): \(image.width)x\(image.height), redPixels=\(redPixels), "
+            + "redFraction=\(redFraction), redColumnFraction=\(columnFraction)"
+        let measurement = XCTAttachment(string: metrics)
+        measurement.name = name + "-color"
+        measurement.lifetime = .keepAlways
+        add(measurement)
+        XCTAssertGreaterThan(redFraction, 0.002, metrics)
+        // A red icon alone is insufficient: the Disconnect title must also render red.
+        XCTAssertGreaterThan(columnFraction, 0.1, metrics)
+    }
+
     func testReplace() { scenario("connected",[("Replace API key","account-replace-confirm","Replace this profile")]) }
     func testPairing() {
         #if os(tvOS)

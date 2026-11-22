@@ -7,7 +7,7 @@ and the last result. Library controls are hidden when 2-way sync is off. Turning
 asks which libraries to sync; canceling reads no history and leaves sync off. **Start sync**
 enrolls only the confirmed libraries. Once enabled, one library displays its name and badge directly. For multiple libraries,
 the collapsed row shows the selected count; expanding it lists each library once with its badge and switch.
-**Account** groups connection status and account actions.
+**Account** groups connection status and account actions. Every tracker uses a red **Disconnect** button.
 **2-way sync** brings supported
 tracker activity into matching Plozz libraries. On first enrollment, **Sync history**
 includes existing watches; **Skip** leaves them alone. Neither choice writes to Plex,

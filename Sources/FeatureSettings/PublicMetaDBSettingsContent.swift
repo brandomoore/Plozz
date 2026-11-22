@@ -61,7 +61,7 @@ public struct PublicMetaDBSettingsContent: View {
                 .settingsSearchAnchor("publicmetadb-account", fallbackFor: Self.searchTargets)
             }
             if service.hasSavedKey {
-                Button("Disconnect") { confirmingDisconnect = true }
+                Button("Disconnect", role: .destructive) { confirmingDisconnect = true }
                     .settingsActionRow()
             }
         }

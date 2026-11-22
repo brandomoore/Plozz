@@ -183,8 +183,16 @@ private struct SettingsFormButtonBody: View {
 
     var body: some View {
         SettingsFocusRow(isFocused: isFocused, isPressed: configuration.isPressed, size: .contained) {
-            configuration.label
-                .settingsFormRowLayout()
+            Group {
+                if configuration.role == .destructive {
+                    configuration.label
+                        .plozzForeground(.primary)
+                        .environment(\.settingsRowIsDestructive, true)
+                } else {
+                    configuration.label
+                }
+            }
+            .settingsFormRowLayout()
         }
     }
 }
@@ -468,6 +476,7 @@ public struct SettingsRowSecondaryStyle: ViewModifier {
 /// Mobile leading icons match primary titles with medium-weight monochrome
 /// symbols. TV keeps secondary idle icons and its inverted focus foreground.
 public struct SettingsRowIconStyle: ViewModifier {
+    @Environment(\.settingsRowIsDestructive) private var isDestructive
     @Environment(\.settingsRowIsFocused) private var focused
     @Environment(\.settingsRowFocusForeground) private var focusFg
     @Environment(\.themePalette) private var palette
@@ -481,11 +490,11 @@ public struct SettingsRowIconStyle: ViewModifier {
             .fontWeight(.medium)
             .plozzForeground(.primary)
         #else
-        content.foregroundStyle(
-            focused
-            ? AnyShapeStyle(focusFg)
-            : AnyShapeStyle(palette.secondaryText)
-        )
+        if isDestructive {
+            content.plozzForeground(.primary)
+        } else {
+            content.foregroundStyle(focused ? focusFg : palette.secondaryText)
+        }
         #endif
     }
 }
