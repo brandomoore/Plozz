@@ -212,12 +212,12 @@ public final class ProviderRegistry: ProviderResolving, @unchecked Sendable {
         return provider
     }
 
-    /// Drops all memoized providers. Call when the signed-in account set changes
-    /// so removed accounts don't retain provider/connection state.
-    public func invalidateCache() {
+    /// Drops memoized providers except those whose complete resolution context
+    /// is still authorized. With no exceptions this is a full reset.
+    public func invalidateCache(preserving contexts: [ProviderResolutionContext] = []) {
         lock.lock()
-        let evicted = cache.values.map(\.provider)
-        cache.removeAll()
+        let staleKeys = cache.compactMap { key, entry in contexts.contains(entry.context) ? nil : key }
+        let evicted = staleKeys.compactMap { cache.removeValue(forKey: $0)?.provider }
         lock.unlock()
         Self.teardown(evicted)
     }
