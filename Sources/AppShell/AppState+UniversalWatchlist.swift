@@ -37,7 +37,6 @@ extension AppState: UniversalWatchlistHost {
             traktService.watchlistDestination,
             simklService.watchlistDestination,
             wetrakrService.watchlistDestination,
-            publicMetaDBService.watchlistDestination,
             anilistService.watchlistDestination,
             malService.watchlistDestination,
         ]

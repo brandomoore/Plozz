@@ -50,10 +50,10 @@ private struct PublicMetaDBHistoryExportContent: View {
                     libraryLoadFailed: error != nil, accountID: $accountID, libraryID: $libraryID, identifier: "publicmetadb.export"
                 )
                 if let library = libraries.first(where: { $0.id == libraryID }), !loadingLibraries {
-                    SettingsMenuRow(title: "History to export", value: mode == .watched ? Text("Watched titles") : Text("Where you left off")) {
+                    SettingsMenuRow(title: "History to export", value: mode == .watched ? Text("Watched titles") : Text("Playback progress")) {
                         Picker("History to export", selection: $mode) {
                             Text("Watched titles").tag(PublicMetaDBHistoryExportSession.Mode.watched)
-                            Text("Where you left off").tag(PublicMetaDBHistoryExportSession.Mode.resume)
+                            Text("Playback progress").tag(PublicMetaDBHistoryExportSession.Mode.resume)
                         }
                     }
                     .accessibilityIdentifier("publicmetadb.export.mode")

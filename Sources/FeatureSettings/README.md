@@ -1,5 +1,12 @@
 # FeatureSettings
 
+**Tracker v1 exposure:** The connected PublicMetaDB account opens **Tracking settings**:
+playback reporting and, for eligible media shares or an existing permission, **Ongoing sync (Beta)**.
+The other supporting trackers also open ongoing sync directly, without a comparison.
+One-time imports and exports, PublicMetaDB watchlists, history management, ratings, contributions,
+discovery, external-ID tools, and the Last.fm listening-history browser are not v1 destinations.
+The implementation notes for those tools below describe deferred code, not shipping entry points.
+
 PublicMetaDB catalog labels load verified title names, retaining the exact TMDB
 ID and child coordinates as a fallback when lookup is unavailable. **Open title
 in Plozz** uses the shell's normal detail route rather than a second playback or
@@ -36,7 +43,7 @@ The Settings screen and its detail pages. Profile-aware and integration-aware.
 On Apple TV, a newly opened Settings page should focus its first enabled
 content control, not the Back button. Back remains reachable with the remote.
 
-PublicMetaDB connection management and browsing are shared across TV and mobile.
+PublicMetaDB connection and tracking settings are shared across TV and mobile.
 **Connect PublicMetaDB** opens direct, secure key entry on mobile without
 starting browser pairing. On TV, **Connect PublicMetaDB** immediately starts
 pairing and displays `plozz.app/pmdb`. The QR and short code appear
@@ -317,10 +324,9 @@ Results use the current platform's destination and retain their query on Back.
 Protected destinations retain their normal profile/PIN checks; search never
 selects a server, library or user, enables a prerequisite, or submits an editor.
 Unavailable controls lead to their existing prerequisite or availability message.
-PublicMetaDB results lead to the current profile's Connect, Retry, or Browse action.
-Choosing Browse reveals **Community ratings**, **Playback reporting**, or **Watchlist
-destination** in the existing account sheet. Search never starts pairing, chooses a
-list, or grants device-local consent. **Ongoing sync** stays in the selected tracker:
+PublicMetaDB results lead to the current profile's Connect, Retry, or **Tracking settings** action.
+**Playback reporting** is the only indexed PublicMetaDB preference. Search never
+starts pairing or grants device-local consent. **Ongoing sync (Beta)** stays in the selected tracker:
 its grant, eligible media shares, and supported categories depend on that connection.
 Individual histories, transfers, contributions, and list contents are not indexed.
 On mobile, custom quality keeps its normal modal editor: Cancel discards the draft, Apply

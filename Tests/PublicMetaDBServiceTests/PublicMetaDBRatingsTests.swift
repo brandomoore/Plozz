@@ -22,6 +22,7 @@ final class PublicMetaDBRatingsTests: XCTestCase {
         http.stub(pathSuffix: "/lists", json: #"{"items":[],"total":0,"page":1,"perPage":1,"totalPages":0}"#)
         http.stub(pathSuffix: "/ratings", json: response)
         let service = PublicMetaDBService(
+            accountToolsEnabled: true,
             credentials: RatingsCredentials(), http: http, defaults: defaults,
             watchlistReceiptStore: try DurableLocalStateStore(secureStore: InMemorySecureStore())
         )

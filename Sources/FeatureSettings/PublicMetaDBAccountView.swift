@@ -12,119 +12,20 @@
         var body: some View {
             GroupedSettingsPage(title: "PublicMetaDB", backIdentifier: "publicmetadb.back") {
                 if service.phase == .connected {
-                    SettingsSectionGroup {
-                        Toggle(
-                            "Community ratings",
-                            isOn: Binding(
-                                get: { service.communityRatingsEnabled },
-                                set: { service.setCommunityRatingsEnabled($0) }
-                            )
-                        )
-                        .accessibilityIdentifier("publicmetadb.ratings")
-                        .settingsSearchAnchor("publicmetadb-ratings")
-                    } footer: {
-                        Text("Look up titles you browse to show their PublicMetaDB scores.")
-                    }
                     SettingsSectionGroup("Tracking") {
-                        NavigationLink("Playback reporting") { PublicMetaDBPlaybackSettingsView(service: service) }
-                            .accessibilityIdentifier("publicmetadb.playback")
-                            .settingsSearchAnchor("publicmetadb-playback")
-                        if let makeHistoryImport {
+                        NavigationLink {
+                            PublicMetaDBPlaybackSettingsView(service: service)
+                        } label: {
+                            SettingsDisclosureLabel { Text("Playback reporting") }
+                        }
+                        .settingsActionRow()
+                        .accessibilityIdentifier("publicmetadb.playback")
+                        .settingsSearchAnchor("publicmetadb-playback")
+                    }
+                    if let makeHistoryImport {
+                        SettingsSectionGroup {
                             TrackerHistorySyncLink(makeSession: makeHistoryImport)
                         }
-                        NavigationLink("Watchlist destination") { PublicMetaDBWatchlistSettingsView(service: service) }
-                            .accessibilityIdentifier("publicmetadb.watchlist")
-                            .settingsSearchAnchor("publicmetadb-watchlist")
-                    }
-                    if makeHistoryImport != nil || service.makeHistoryExportSource != nil {
-                        SettingsSectionGroup("Transfer history") {
-                            if let makeHistoryImport {
-                                NavigationLink("Compare watch history") {
-                                    TrackerHistoryImportView(makeSession: makeHistoryImport)
-                                }
-                                .accessibilityIdentifier("publicmetadb.compare-history")
-                            }
-                            if service.makeHistoryExportSource != nil {
-                                NavigationLink("Export server history") {
-                                    PublicMetaDBHistoryExportView(service: service)
-                                }
-                                .accessibilityIdentifier("publicmetadb.export-history")
-                            }
-                        }
-                    }
-                    SettingsSectionGroup("Your history") {
-                        NavigationLink("Watch history") {
-                            PublicMetaDBPagedRecords(
-                                service: service, title: "Watch history",
-                                load: { try await $0.history(page: $1) }
-                            ) { record in
-                                NavigationLink {
-                                    PublicMetaDBHistoryRecordView(service: service, action: .deletePlay(record))
-                                } label: {
-                                    VStack(alignment: .leading) {
-                                        PublicMetaDBContentLabel(content: record.value.content, allowsFocus: false)
-                                        PublicMetaDBWatchDateLabel(date: record.value.watchedAt)
-                                    }
-                                }
-                                .accessibilityIdentifier("publicmetadb.history.record.\(record.id)")
-                            }
-                        }
-                        .accessibilityIdentifier("publicmetadb.history")
-                        NavigationLink("Delete multiple plays") { PublicMetaDBBulkHistoryView(service: service) }
-                            .accessibilityIdentifier("publicmetadb.history.bulk")
-                        NavigationLink("In progress") {
-                            PublicMetaDBPagedRecords(
-                                service: service, title: "Resume points",
-                                load: { try await $0.resumePoints(page: $1) }
-                            ) { record in
-                                NavigationLink {
-                                    PublicMetaDBHistoryRecordView(service: service, action: .clearResume(record))
-                                } label: {
-                                    VStack(alignment: .leading) {
-                                        PublicMetaDBContentLabel(content: record.value.content, allowsFocus: false)
-                                        Text(
-                                            record.value.progress / 100, format: .percent.precision(.fractionLength(1))
-                                        )
-                                        .foregroundStyle(.secondary)
-                                    }
-                                }
-                                .accessibilityIdentifier("publicmetadb.resume.record.\(record.id)")
-                            }
-                        }
-                        NavigationLink("Dropped titles") {
-                            PublicMetaDBPagedRecords(
-                                service: service, title: "Dropped titles",
-                                load: { try await $0.dropped(page: $1) }
-                            ) { record in
-                                NavigationLink {
-                                    PublicMetaDBHistoryRecordView(service: service, action: .undrop(record))
-                                } label: {
-                                    PublicMetaDBContentLabel(content: record.value, allowsFocus: false)
-                                }
-                                .accessibilityIdentifier("publicmetadb.dropped.record.\(record.id)")
-                            }
-                        }
-                    }
-                    SettingsSectionGroup("Lists and discovery") {
-                        NavigationLink("Lists") {
-                            PublicMetaDBPagedRecords(
-                                service: service, title: "Lists", load: { try await $0.lists(page: $1) }
-                            ) { list in
-                                NavigationLink {
-                                    PublicMetaDBOwnedListView(service: service, list: list)
-                                } label: {
-                                    VStack(alignment: .leading) {
-                                        Text(verbatim: list.name)
-                                        Text(list.isPublic ? "Public" : "Private").foregroundStyle(.secondary)
-                                    }
-                                }
-                                .accessibilityIdentifier("publicmetadb.list.record.\(list.id)")
-                            }
-                        }
-                        NavigationLink("Create a list") { PublicMetaDBCreateListView(service: service) }
-                        NavigationLink("Open a public list") { PublicMetaDBOpenListView(service: service) }
-                        NavigationLink("Picks") { PublicMetaDBPicksView(service: service) }
-                        NavigationLink("Look up an external ID") { PublicMetaDBMappingLookupView(service: service) }
                     }
                 } else {
                     PublicMetaDBConnectionStatus(phase: service.phase)

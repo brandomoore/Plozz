@@ -301,7 +301,6 @@ public final class AppState {
     @ObservationIgnored
     public private(set) lazy var mediaItemActionHandler: any MediaItemActionHandling =
         MediaItemActionCoordinator(
-            publicMetaDB: publicMetaDBService,
             providerResolver: { [unowned self] accountID in
                 accountID.flatMap { self.accountsProviders.provider(forAccountID: $0) }
                     ?? self.accountsProviders.primaryProvider
@@ -648,19 +647,6 @@ public final class AppState {
 
     func makeAniListHistoryImport() -> TrackerHistoryImportSession {
         makeTrackerHistoryImport(anilistService)
-    }
-
-    private func makeTrackerHistoryExportSource() -> TrackerServerHistorySource {
-        accountsProviders.makeTrackerServerHistorySource(
-            reconciler: watchReconciler,
-            isPlexIdentityResolved: { [weak self] in
-                self?.plexHomeUsers.hasResolvedWatchMutationIdentity(forAccountID: $0) ?? false
-            },
-            isAuthorized: { [weak self] in
-                guard let self else { return false }
-                return self.isActiveProfileAuthorized && !self.profilesModel.activeProfile.isKids
-            }
-        )
     }
 
     func makeMALHistoryImport() -> TrackerHistoryImportSession {
@@ -1409,11 +1395,8 @@ public final class AppState {
         // Seed other trackers with the same profile namespace.
         self.simklService = simklService ?? SimklServiceFactory.make(namespace: ns)
         self.wetrakrService = wetrakrService ?? WetrakrServiceFactory.make(namespace: ns)
-        let publicMetaDBService = PublicMetaDBService(namespace: ns)
-        self.publicMetaDBService = publicMetaDBService
-        self.ratingsProvider = ratingsProvider ?? PublicMetaDBRatingsProvider(
-            base: RatingsServiceFactory.make(), service: publicMetaDBService
-        )
+        self.publicMetaDBService = PublicMetaDBService(namespace: ns)
+        self.ratingsProvider = ratingsProvider ?? RatingsServiceFactory.make()
         // Seerr uses ONE shared household connection (user-independent Keychain);
         // profiles differ only by which Seerr user they request as (per request).
         self.seerService = resolvedSeerService
@@ -1716,56 +1699,6 @@ public final class AppState {
                 await self.trackerWatchlistConnectionChanged(destination: destination)
             }
         }
-        self.publicMetaDBService.onConnectionChanged = { [weak self] in
-            Task {
-                guard let self else { return }
-                await self.trackerWatchlistConnectionChanged(destination: self.publicMetaDBService.watchlistDestination)
-            }
-        }
-        self.publicMetaDBService.makeHistoryExportSource = { [weak self] in
-            guard let self else { throw CancellationError() }
-            return self.makeTrackerHistoryExportSource()
-        }
-        self.anilistService.makeHistoryExport = { [weak self] in
-            guard let self else { throw CancellationError() }
-            guard let store = self.durableLocalStateStore else { throw DurableLocalStateError.storageUnavailable }
-            return try self.anilistService.makeHistoryExportSession(
-                source: self.makeTrackerHistoryExportSource(), store: store
-            )
-        }
-        self.traktService.makeHistoryExport = { [weak self] in
-            guard let self else { throw CancellationError() }
-            guard let store = self.durableLocalStateStore else { throw DurableLocalStateError.storageUnavailable }
-            return try self.traktService.makeHistoryExportSession(
-                source: self.makeTrackerHistoryExportSource(), store: store
-            )
-        }
-        self.simklService.makeHistoryExport = { [weak self] in
-            guard let self else { throw CancellationError() }
-            guard let store = self.durableLocalStateStore else { throw DurableLocalStateError.storageUnavailable }
-            return try self.simklService.makeHistoryExportSession(
-                source: self.makeTrackerHistoryExportSource(), store: store
-            )
-        }
-        self.wetrakrService.makeHistoryExport = { [weak self] in
-            guard let self else { throw CancellationError() }
-            guard let store = self.durableLocalStateStore else { throw DurableLocalStateError.storageUnavailable }
-            return try self.wetrakrService.makeHistoryExportSession(
-                source: self.makeTrackerHistoryExportSource(), store: store
-            )
-        }
-        self.malService.makeHistoryExport = { [weak self] in
-            guard let self else { throw CancellationError() }
-            guard let store = self.durableLocalStateStore else { throw DurableLocalStateError.storageUnavailable }
-            return try self.malService.makeHistoryExportSession(
-                source: self.makeTrackerHistoryExportSource(), store: store
-            )
-        }
-        self.publicMetaDBService.resolveLibraryEpisode = { [weak self] item in
-            guard let self, let accountID = item.sourceAccountID else { return nil }
-            return try await self.makeTrackerHistoryExportSource()
-                .item(accountID: accountID, itemID: item.id).taggingSource(accountID)
-        }
         self.publicMetaDBService.resolveEpisodeIdentity = { [weak self] content in
             guard let self else { throw CancellationError() }
             let scope = self.accountsProviders.liveTVAuthorizationID
@@ -1776,24 +1709,6 @@ public final class AppState {
                     guard let self else { return false }
                     return self.isActiveProfileAuthorized && !self.profilesModel.activeProfile.isKids
                         && self.accountsProviders.liveTVAuthorizationID == scope
-                        && self.metadataProviderSettingsModel.settings == metadata
-                }
-            )
-        }
-        self.publicMetaDBService.resolveCatalogItem = { [weak self] content in
-            guard let self else { throw CancellationError() }
-            let scope = self.accountsProviders.liveTVAuthorizationID
-            let visibility = self.profileSettings.homeLibraryVisibilityModel.visibility
-            let metadata = self.metadataProviderSettingsModel.settings
-            return try await PublicMetaDBCatalogResolver.resolve(
-                content, accounts: self.accountsProviders.homeAccounts,
-                identitySources: self.identityIndex.identitySourcesProvider,
-                visibility: visibility, metadataSettings: metadata,
-                isCurrent: { [weak self] in
-                    guard let self else { return false }
-                    return self.isActiveProfileAuthorized && !self.profilesModel.activeProfile.isKids
-                        && self.accountsProviders.liveTVAuthorizationID == scope
-                        && self.profileSettings.homeLibraryVisibilityModel.visibility == visibility
                         && self.metadataProviderSettingsModel.settings == metadata
                 }
             )

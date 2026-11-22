@@ -2,6 +2,15 @@
 
 ## Tracker-sync acceptance status: 21 November 2026
 
+The v1 app exposes account connection, one-way playback reporting and opt-in
+watch-history sync for media shares. The one-time transfer, account browser,
+list, contribution and mapping workflows in the historical evidence below are
+not v1 features. Their prior acceptance runs are not release sign-off.
+The tracking-only routes were checked in the iPhone and Apple TV simulator
+apps. A separate read-only test opened tracking settings and ongoing sync
+using an existing dedicated PublicMetaDB account in the normal iPhone app.
+That check did not rerun playback delivery or write watch state.
+
 Only **Ongoing sync (Beta)** requires beta enrollment. Connecting PublicMetaDB
 and enabling one-way playback reporting are separate decisions. An existing
 pre-beta sync grant cannot authorize a foreground or manual sync. The opt-in

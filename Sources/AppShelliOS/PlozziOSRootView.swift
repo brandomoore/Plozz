@@ -380,7 +380,6 @@ public struct PlozziOSRootView: View {
             )
         )
         .mediaItemActionHandler(appModel.mediaItemActionHandler)
-        .publicMetaDBContentPresentation(service: appModel.publicMetaDBService)
         .onChange(of: appModel.publicMetaDBService.catalogNavigation?.id) { _, request in
             guard request != nil else { return }
             showingSettings = false

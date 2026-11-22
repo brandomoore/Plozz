@@ -2,7 +2,7 @@ import AppRuntime
 import CoreModels
 import CoreSecureStore
 import Foundation
-import PublicMetaDBService
+@testable import PublicMetaDBService
 import RatingsService
 import XCTest
 @testable import TestSupportNetworking
@@ -44,7 +44,7 @@ final class PublicMetaDBRatingsProviderTests: XCTestCase {
             status: ratingStatus
         )
         let service = PublicMetaDBService(
-            credentials: RuntimeRatingsCredentials(), http: http, defaults: defaults,
+            accountToolsEnabled: true, credentials: RuntimeRatingsCredentials(), http: http, defaults: defaults,
             watchlistReceiptStore: try DurableLocalStateStore(secureStore: InMemorySecureStore())
         )
         let key = "pm-" + (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").prefix(60)

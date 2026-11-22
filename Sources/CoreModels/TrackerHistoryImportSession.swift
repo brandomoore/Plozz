@@ -29,6 +29,7 @@ public extension TrackerHistorySyncReading {
 @MainActor
 @Observable
 public final class TrackerHistoryImportSession {
+    public enum Purpose: Sendable { case enrollment, transfer }
     public struct Destination: Identifiable, Sendable {
         public let id: String
         public let serverName: String
@@ -48,6 +49,7 @@ public final class TrackerHistoryImportSession {
     public let destinations: [Destination]
     public let scope: WatchMutationServerScope
     public var ongoingSync: TrackerHistorySyncController?
+    private let purpose: Purpose
     private let reconciler: WatchStateReconciler
     private let readSnapshot: @MainActor @Sendable () async throws -> TrackerHistorySnapshot
     private let index: @MainActor @Sendable () -> IdentityIndexSnapshot
@@ -58,12 +60,14 @@ public final class TrackerHistoryImportSession {
     private var approvedGeneration: UUID?
 
     public init(
+        purpose: Purpose = .transfer,
         scope: WatchMutationServerScope, destinations: [Destination], reconciler: WatchStateReconciler,
         readSnapshot: @escaping @MainActor @Sendable () async throws -> TrackerHistorySnapshot,
         index: @escaping @MainActor @Sendable () -> IdentityIndexSnapshot,
         resolveProvider: @escaping @MainActor @Sendable (String) throws -> any MediaProvider,
         isAuthorized: @escaping @MainActor @Sendable () -> Bool
     ) {
+        self.purpose = purpose
         self.scope = scope
         self.destinations = destinations
         self.reconciler = reconciler
@@ -95,6 +99,7 @@ public final class TrackerHistoryImportSession {
     public func compare(
         selectingRecords: (@MainActor (TrackerHistorySnapshot) throws -> Set<String>)? = nil
     ) async {
+        guard purpose == .transfer else { error = TrackerHistoryError.invalidSelection; return }
         guard !isBusy else { return }
         generation = UUID()
         let current = generation
@@ -130,7 +135,7 @@ public final class TrackerHistoryImportSession {
         return snapshot
     }
 
-    public func snapshotAfterReview(_ reviewed: TrackerHistorySnapshot) async throws -> TrackerHistorySnapshot {
+    func snapshotAfterReview(_ reviewed: TrackerHistorySnapshot) async throws -> TrackerHistorySnapshot {
         let snapshot = try await enrollmentSnapshot()
         guard snapshot.trackerID == reviewed.trackerID,
               snapshot.connectionID == reviewed.connectionID,
@@ -144,6 +149,7 @@ public final class TrackerHistoryImportSession {
     public func apply(
         rowIDs: Set<UUID>, overridingConflicts: Set<UUID>, confirmsDestructiveChanges: Bool
     ) async {
+        guard purpose == .transfer else { error = TrackerHistoryError.invalidSelection; return }
         guard !isBusy else { return }
         let current = generation
         let sync = ongoingSync

@@ -49,7 +49,11 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
 
     public private(set) var phase: Phase = .disconnected
     public private(set) var connectionID: UUID?
-    public private(set) var client: PublicMetaDBClient?
+    private(set) var trackingClient: PublicMetaDBClient?
+    /// The account tools can browse and mutate arbitrary records. A tracking
+    /// connection must not hand their client to a presenter or restore their grants.
+    public var client: PublicMetaDBClient? { accountToolsEnabled ? trackingClient : nil }
+    private let accountToolsEnabled: Bool
     public private(set) var hasSavedKey = false
     public var profileNamespace: String? { namespace }
     public let browserPairing: PublicMetaDBBrowserPairing
@@ -91,8 +95,9 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
     public var makeHistoryExportSource: (@MainActor () throws -> TrackerServerHistorySource)?
 
     public func makeHistoryExportSession() throws -> PublicMetaDBHistoryExportSession {
-        guard let connectionID, let makeHistoryExportSource else { throw PublicMetaDB.Failure.disconnected }
+        guard let connectionID else { throw PublicMetaDB.Failure.disconnected }
         let client = try confirmedClient(connectionID)
+        guard let makeHistoryExportSource else { throw PublicMetaDB.Failure.rejected }
         let captured = epoch
         return try PublicMetaDBHistoryExportSession(
             source: makeHistoryExportSource(), client: client, connectionID: connectionID,
@@ -115,13 +120,25 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
     private var playbackStore: PublicMetaDBPlaybackConsentStore { .init(defaults: defaults, namespace: namespace) }
     private var ratingsPreferenceKey: String { SettingsKey.scoped("publicmetadb.communityRatings", namespace: namespace) }
 
-    public init(
+    public convenience init(
         credentials: any PublicMetaDBCredentialStoring = PublicMetaDBKeychainStore(),
         http: (any HTTPClient)? = nil,
         namespace: String? = nil,
         defaults: UserDefaults = .standard,
         watchlistReceiptStore: DurableLocalStateStore? = nil
     ) {
+        self.init(accountToolsEnabled: false, credentials: credentials, http: http, namespace: namespace,
+                  defaults: defaults, watchlistReceiptStore: watchlistReceiptStore)
+    }
+
+    // The deferred account-tool contracts remain independently testable, but
+    // app modules can only create tracking connections.
+    init(
+        accountToolsEnabled: Bool, credentials: any PublicMetaDBCredentialStoring,
+        http: (any HTTPClient)? = nil, namespace: String? = nil,
+        defaults: UserDefaults = .standard, watchlistReceiptStore: DurableLocalStateStore? = nil
+    ) {
+        self.accountToolsEnabled = accountToolsEnabled
         self.credentials = credentials
         self.http = http
         browserPairing = PublicMetaDBBrowserPairing(http: http)
@@ -130,13 +147,13 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
         self.receiptStore = watchlistReceiptStore
         watchlistDestination = PublicMetaDBWatchlistDestination(receiptStore: watchlistReceiptStore)
         hasSavedKey = credentials.load(namespace: namespace) != nil
-        communityRatingsEnabled = defaults.bool(forKey: ratingsPreferenceKey)
+        communityRatingsEnabled = accountToolsEnabled && defaults.bool(forKey: ratingsPreferenceKey)
     }
 
     public func selectProfile(namespace: String?) {
         invalidate()
         self.namespace = namespace
-        communityRatingsEnabled = defaults.bool(forKey: ratingsPreferenceKey)
+        communityRatingsEnabled = accountToolsEnabled && defaults.bool(forKey: ratingsPreferenceKey)
         hasSavedKey = credentials.load(namespace: namespace) != nil
         phase = .disconnected
     }
@@ -219,7 +236,7 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
         deliveredCatalogNavigationID = nil
         epoch.invalidate()
         epoch = PublicMetaDBConnectionEpoch()
-        client = nil
+        trackingClient = nil
         connectionID = nil
         watchlistRequestID = UUID()
         watchlistDestination.disable()
@@ -233,6 +250,7 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
     }
 
     public func setCommunityRatingsEnabled(_ enabled: Bool) {
+        guard accountToolsEnabled else { return }
         invalidateCommunityRatings()
         communityRatingsEnabled = enabled
         defaults.set(enabled, forKey: ratingsPreferenceKey)
@@ -246,6 +264,7 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
     }
 
     public func presentContent(for item: MediaItem) throws {
+        guard accountToolsEnabled else { throw PublicMetaDB.Failure.rejected }
         guard phase == .connected else { throw PublicMetaDB.Failure.disconnected }
         presentedItem = item
     }
@@ -369,6 +388,7 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
     }
 
     public func enableWatchlist(_ list: PublicMetaDB.List, expectedConnectionID: UUID) async throws {
+        guard accountToolsEnabled else { throw PublicMetaDB.Failure.rejected }
         guard expectedConnectionID == connectionID, let client,
               let saved = credentials.load(namespace: namespace),
               saved.connectionID == expectedConnectionID else { throw PublicMetaDB.Failure.connectionChanged }
@@ -409,11 +429,16 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
     }
 
     func confirmedClient(_ expected: UUID) throws -> PublicMetaDBClient {
+        guard accountToolsEnabled else { throw PublicMetaDB.Failure.rejected }
+        return try confirmedTrackingClient(expected)
+    }
+
+    func confirmedTrackingClient(_ expected: UUID) throws -> PublicMetaDBClient {
         try Task.checkCancellation()
-        guard connectionID == expected, phase == .connected, let client else {
+        guard connectionID == expected, phase == .connected, let trackingClient else {
             throw PublicMetaDB.Failure.connectionChanged
         }
-        return client
+        return trackingClient
     }
 
     private func verify(_ saved: PublicMetaDBCredentials, saving: Bool) async {
@@ -436,7 +461,7 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
                 }
                 hasSavedKey = true
             }
-            if let selection = try watchlistStore.load(), selection.connectionID == saved.connectionID {
+            if accountToolsEnabled, let selection = try watchlistStore.load(), selection.connectionID == saved.connectionID {
                 try watchlistDestination.configure(
                     credentials: saved, selection: selection, http: http,
                     connectionIsCurrent: { captured.isCurrent }
@@ -447,7 +472,7 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
                 try configurePlayback(saved, consent: consent)
             }
             connectionID = saved.connectionID
-            client = candidate
+            trackingClient = candidate
             phase = .connected
             onConnectionChanged?()
         } catch {

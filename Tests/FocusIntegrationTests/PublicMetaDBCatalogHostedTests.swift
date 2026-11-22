@@ -4,7 +4,7 @@ import CoreNetworking
 import CoreUI
 import Observation
 @testable import FeatureSettings
-import PublicMetaDBService
+@testable import PublicMetaDBService
 import SwiftUI
 import UIKit
 import Vision
@@ -303,7 +303,7 @@ final class PublicMetaDBCatalogHostedTests: XCTestCase {
         let suite = "PublicMetaDBCatalogHostedTests.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let service = PublicMetaDBService(credentials: CatalogCredentials(), http: http, defaults: defaults)
+        let service = PublicMetaDBService(accountToolsEnabled: true, credentials: CatalogCredentials(), http: http, defaults: defaults)
         if connected {
             let key = "pm-" + (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").prefix(60)
             await service.connect(key: key)

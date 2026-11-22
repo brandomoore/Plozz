@@ -17,7 +17,8 @@ public extension PublicMetaDBService {
     }
 
     func historySnapshot() async throws -> TrackerHistorySnapshot {
-        guard let client, let connectionID else { throw PublicMetaDB.Failure.disconnected }
+        guard let connectionID else { throw PublicMetaDB.Failure.disconnected }
+        let client = try confirmedTrackingClient(connectionID)
         let watches = try await client.completeHistory()
         let resumes = try await client.completeResumePoints()
         try Task.checkCancellation()
@@ -29,7 +30,7 @@ public extension PublicMetaDBService {
             if let item = try await resolveEpisodeIdentity?(content) {
                 episodeIdentities[content] = try PublicMetaDBEpisodeIdentity(content: content, item: item).identities
             }
-            _ = try confirmedClient(connectionID)
+            _ = try confirmedTrackingClient(connectionID)
         }
         var observations: [TrackerHistoryObservation] = []
         observations.reserveCapacity(watches.count + resumes.count)

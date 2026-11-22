@@ -2105,7 +2105,6 @@ struct MainTabView: View {
             )
         }
         .mediaItemActionHandler(mediaItemActionHandler)
-        .publicMetaDBContentPresentation(service: syncServices.publicMetaDB)
         .onChange(of: syncServices.publicMetaDB?.catalogNavigation?.id) { _, _ in
             guard let item = syncServices.publicMetaDB?.consumeCatalogNavigation() else { return }
             openTitleFromLiveTV(item)

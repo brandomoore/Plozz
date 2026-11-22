@@ -2654,7 +2654,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
             predicate: NSPredicate(format: "enabled == true"), object: app.buttons["tracker-history.sync-now"]
         )
         try require(XCTWaiter.wait(for: [completed], timeout: 65) == .completed, "Expected bounded sync completion")
-        XCTAssertEqual(app.staticTexts["Some changes need review. Compare histories before retrying."].exists,
+        XCTAssertEqual(app.staticTexts["Some changes couldn’t be applied automatically."].exists,
                        expectingReview, "Review deferral and confirmed ongoing delivery are different outcomes")
     }
 
@@ -2678,16 +2678,14 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     }
 
     private func openOngoingImportSettings(relaunch: Bool = true) throws {
-        try openHistoryComparison(relaunch: relaunch)
+        try openPublicMetaDBAccount(relaunch: relaunch)
         try showOngoingImportSettings()
     }
 
     private func showOngoingImportSettings() throws {
-        try require(app.activityIndicators["Comparing or verifying history…"].waitForNonExistence(timeout: 75),
-                    "Expected the comparison to finish before opening ongoing sync")
         let link = app.buttons["tracker-history.ongoing-sync"]
         try tapVisible(link, tapping: false, maximumSwipes: 32)
-        try require(link.isEnabled, "Expected ongoing-sync navigation after a successful comparison")
+        try require(link.isEnabled, "Expected this account to offer media-share sync")
         try tapVisible(link)
         try require(ongoingMaster.waitForExistence(timeout: 15), "Expected the ongoing-sync settings page")
     }
@@ -2774,7 +2772,7 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
         try tapVisible(app.buttons["publicmetadb.export.library"])
         try tapVisible(app.buttons[library])
         try tapVisible(app.buttons["publicmetadb.export.mode"])
-        try tapVisible(app.buttons[mode == "Resume points" ? "Where you left off" : mode])
+        try tapVisible(app.buttons[mode == "Resume points" ? "Playback progress" : mode])
         try tapVisible(app.buttons["publicmetadb.export.preview"])
         try require(app.staticTexts["publicmetadb.export.summary"].waitForExistence(timeout: timeout),
                     "Expected a complete real server-history comparison")
@@ -3538,6 +3536,17 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
     private func openPlaybackReporting() throws {
         try openPublicMetaDBAccount()
         try tapVisible(app.buttons["publicmetadb.playback"])
+    }
+
+    func testTrackingOnlyAccountRoutes() throws {
+        try openPublicMetaDBAccount()
+        try tapVisible(app.buttons["publicmetadb.playback"], tapping: false)
+        for id in ["publicmetadb.watchlist", "publicmetadb.ratings", "publicmetadb.history",
+                   "publicmetadb.history.bulk", "publicmetadb.compare-history", "publicmetadb.export-history"] {
+            XCTAssertFalse(app.descendants(matching: .any)[id].firstMatch.exists, id)
+        }
+        try tapVisible(app.buttons["tracker-history.ongoing-sync"])
+        XCTAssertTrue(ongoingMaster.waitForExistence(timeout: 10))
     }
 
     private func openPublicMetaDBAccount(relaunch: Bool = true) throws {

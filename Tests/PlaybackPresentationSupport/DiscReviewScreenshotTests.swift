@@ -349,8 +349,24 @@ extension AtlasUI {
         }
         app.terminate()
     }
-    func testAccount() { scenario("account",[("","account-overview","Playback reporting")]) }
-    func testDisconnect() { scenario("connected",[("","account-connected","Browse PublicMetaDB"),("Disconnect","account-disconnect-confirm","Disconnect PublicMetaDB?")]) }
+    func testAccount() {
+        start("connected", ["--history-ongoing-sync"])
+        defer { app.terminate() }
+        go(el("publicmetadb.browse"))
+        XCTAssertTrue(el("publicmetadb.playback").waitForExistence(timeout: 5))
+        XCTAssertTrue(el("tracker-history.ongoing-sync").exists)
+        for id in ["publicmetadb.ratings", "publicmetadb.watchlist", "publicmetadb.compare-history",
+                   "publicmetadb.export-history", "publicmetadb.history", "publicmetadb.history.bulk"] {
+            XCTAssertFalse(el(id).exists, id)
+        }
+        for label in ["Lists", "Picks", "Choose a list", "Create a list", "Look up an external ID", "Dropped titles"] {
+            XCTAssertFalse(app.buttons[label].exists, label)
+        }
+        shot("tracking-only-account")
+        go(el("tracker-history.ongoing-sync"))
+        XCTAssertTrue(el("tracker-history.sync-enabled").waitForExistence(timeout: 5))
+    }
+    func testDisconnect() { scenario("connected",[("","account-connected","Tracking settings"),("Disconnect","account-disconnect-confirm","Disconnect PublicMetaDB?")]) }
     func testReplace() { scenario("connected",[("Replace API key","account-replace-confirm","Replace this profile")]) }
     func testPairing() {
         #if os(tvOS)
@@ -407,18 +423,12 @@ extension AtlasUI {
     func testReport() { scenario("reporting",[("","reporting-off","Enable playback reporting"),("Enable playback reporting","reporting-consent","Enable reporting")]); scenario("reporting-on",[("","reporting-on","Stop reporting playback")]) }
     func testWatchlist() { scenario("watchlist",[("","watchlist-off","Choose a list"),("Choose a list","watchlist-picker","Weekend matinees"),("Weekend matinees","watchlist-private-consent","Use this list")]); scenario("watchlist-on",[("","watchlist-on","Stop syncing this list")]) }
     func testPublicConsent() { scenario("watchlist",[("Choose a list","watchlist-picker","Harbor lights"),("Harbor lights","watchlist-public-consent","Use this list")]) }
-    func testWatch() { scenario("account",[("@publicmetadb.history","watch-history","@publicmetadb.history.record.harbor"),("@publicmetadb.history.record.harbor","watch-record","Delete this play"),("@publicmetadb.history.action","delete-play-confirm","Change this PublicMetaDB record?")]) }
-    func testResume() { scenario("account",[("Resume points","resume-points","@publicmetadb.resume.record.lantern"),("@publicmetadb.resume.record.lantern","resume-record","Clear this resume point"),("@publicmetadb.history.action","clear-resume-confirm","Change this PublicMetaDB record?")]) }
-    func testDropped() { scenario("account",[("Dropped titles","dropped-titles","@publicmetadb.dropped.record.north"),("@publicmetadb.dropped.record.north","dropped-record","Undrop title"),("@publicmetadb.history.action","undrop-confirm","Change this PublicMetaDB record?")]) }
     func testDrop() { scenario("drop-record",[("","drop-show","Drop show"),("@publicmetadb.history.action","drop-show-confirm","Change this PublicMetaDB record?")]) }
     func testDate() { scenario("new-play",[("","add-play","Watch date unknown"),("@publicmetadb.history.review-date","add-play-confirm","Save play")]) }
-    func testEditDate() { scenario("account",[("@publicmetadb.history","watch-history","@publicmetadb.history.record.harbor"),("@publicmetadb.history.record.harbor","watch-record","Change watch date"),("Change watch date","edit-play","Watch date unknown")]) }
     func testBulk() { scenario("bulk",[("","bulk-delete","@publicmetadb.history.select.harbor"),("@publicmetadb.history.select.harbor","bulk-selected","Review deletion"),("@publicmetadb.history.bulk.review","bulk-delete-confirm","Delete the selected")]) }
-    func testLists() { scenario("account",[("Lists","lists","@publicmetadb.list.record.weekend"),("@publicmetadb.list.record.weekend","list-detail","Browse items"),("Browse items","list-items","The Last Lantern"),("The Last Lantern","list-item","Remove from list"),("Remove from list","list-remove-confirm","Remove this item?")]) }
     func testListDelete() { scenario("list-detail",[("@publicmetadb.list.delete","list-delete-confirm","Delete this PublicMetaDB list?")]) }
     func testAddList() { scenario("add-to-list",[("","add-to-list","Weekend matinees"),("Weekend matinees","list-add-confirm","Add to list")]) }
     func testListForms() { scenario("create-list",[("","list-create","@publicmetadb.list.name")]); scenario("open-list",[("","public-list-open","Open list")]) }
-    func testPicks() { scenario("account",[("Picks","picks","Coastal mysteries"),("Coastal mysteries","recommendations","The Last Lantern")]) }
     func testTitles() { scenario("movie",[("","movie-controls","The Last Lantern")]); scenario("show",[("","series-controls","The Mariner's Almanac")]); scenario("episode",[("","episode-controls","The Mariner's Almanac")]) }
     func testRatings() { scenario("ratings",[("","ratings","@publicmetadb.rating.record.score"),("@publicmetadb.rating.record.score","rating-record","Delete rating"),("Delete rating","rating-delete-confirm","Delete this rating?")]) }
     func testSubmitRating() { scenario("ratings",[("Submit a rating","rating-submit","@publicmetadb.rating.submit"),("@publicmetadb.rating.submit","rating-submit-confirm","Publish rating")]) }
@@ -457,13 +467,36 @@ extension AtlasUI {
     #if os(tvOS)
     func testTrackerHome() { scenario("trackers",[("","trackers","@settings-page-trakt")]) }
     func provider(_ id:String,_ marker:String) {scenario("trackers",[("@settings-page-"+id,"tracker-"+id,marker)])}
-    func testTrackerTrakt() {provider("trakt","Compare watch history")}
-    func testTrackerSimkl() {provider("simkl","Compare watch history")}
-    func testTrackerWetrakr() {provider("wetrakr","Compare watch history")}
-    func testTrackerAni() {provider("anilist","Compare watch history")}
-    func testTrackerMAL() {provider("mal","Compare watch history")}
-    func testTrackerLast() {provider("lastfm","Listening history")}
-    func testTrackerPub() {provider("publicmetadb","Browse PublicMetaDB")}
+    private func checkTrackingAccount(_ id: String, supportsSync: Bool = true, serversOnly: Bool = false) {
+        start("trackers", ["--history-ongoing-sync"] + (serversOnly ? ["--history-servers-only"] : []))
+        defer { app.terminate() }
+        go(el("settings-page-\(id)"))
+        XCTAssertTrue(app.buttons["Disconnect"].waitForExistence(timeout: 5))
+        XCTAssertFalse(el("\(id).compare-history").exists)
+        XCTAssertFalse(el("\(id).export-history").exists)
+        XCTAssertFalse(el("lastfm.history").exists)
+        let sync = el("\(id == "mal" ? "myanimelist" : id).ongoing-sync")
+        if supportsSync && !serversOnly {
+            XCTAssertTrue(sync.waitForExistence(timeout: 5))
+            shot("tracker-\(id)")
+            go(sync)
+            XCTAssertTrue(el("tracker-history.sync-enabled").waitForExistence(timeout: 5))
+        } else {
+            XCTAssertFalse(sync.exists)
+            shot("tracker-\(id)" + (serversOnly ? "-servers-only" : ""))
+        }
+    }
+
+    func testTrackerTrakt() {
+        checkTrackingAccount("trakt")
+        checkTrackingAccount("trakt", serversOnly: true)
+    }
+    func testTrackerSimkl() { checkTrackingAccount("simkl") }
+    func testTrackerWetrakr() { checkTrackingAccount("wetrakr") }
+    func testTrackerAni() { checkTrackingAccount("anilist") }
+    func testTrackerMAL() { checkTrackingAccount("mal") }
+    func testTrackerLast() { checkTrackingAccount("lastfm", supportsSync: false) }
+    func testTrackerPub() {provider("publicmetadb","Tracking settings")}
     #endif
     func field(_ label:String,_ value:String) {
         let e=label.hasPrefix("@") ? el(String(label.dropFirst())) : app.textFields[label].firstMatch

@@ -28,6 +28,7 @@ final class PublicMetaDBListManagementTests: XCTestCase {
         http.stub(pathSuffix: "/lists", json: page([listJSON]))
         configure(http)
         let service = PublicMetaDBService(
+            accountToolsEnabled: true,
             credentials: ListCredentials(), http: http, defaults: defaults,
             watchlistReceiptStore: try DurableLocalStateStore(secureStore: InMemorySecureStore())
         )

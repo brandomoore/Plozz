@@ -26,6 +26,7 @@ final class PublicMetaDBHistoryManagementTests: XCTestCase {
         let http = RecordingHTTPClient()
         http.stub(pathSuffix: "/lists", json: historyPage([]))
         let service = PublicMetaDBService(
+            accountToolsEnabled: true,
             credentials: HistoryCredentials(), http: http, defaults: defaults,
             watchlistReceiptStore: try DurableLocalStateStore(secureStore: InMemorySecureStore())
         )

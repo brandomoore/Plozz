@@ -234,13 +234,12 @@ class RepositoryCoverageTests(unittest.TestCase):
             "exclusions": {k: v for k, v in self.policy["exclusions"].items() if k.startswith(prefix)},
         }
         self.assertEqual(GUARD.check([account, catalog], policy), [])
-        for label in ('"Community ratings"', '"Playback reporting"', '"Watchlist destination"'):
-            with self.subTest(label=label):
-                changed = copy.deepcopy(account)
-                row, = [c for c in changed["controls"] if c["label"] == label]
-                row["anchors"] = []
-                self.assertTrue(any("unregistered" in error and label in error
-                                    for error in GUARD.check([changed, catalog], policy)))
+        self.assertEqual([r["id"] for r in catalog["registrations"]], ['"publicmetadb-playback"'])
+        changed = copy.deepcopy(account)
+        row, = [c for c in changed["controls"] if '"publicmetadb-playback"' in c["anchors"]]
+        row["anchors"] = []
+        self.assertTrue(any("unregistered" in error and "Playback reporting" in error
+                            for error in GUARD.check([changed, catalog], policy)))
 
     def guide_update_coverage_fixture(self):
         guide = copy.deepcopy(next(

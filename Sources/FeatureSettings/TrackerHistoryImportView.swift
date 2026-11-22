@@ -289,7 +289,7 @@ struct TrackerHistoryImportFailure: View {
             switch failure {
             case .unavailable: Text("Ongoing sync is unavailable.")
             case .permissionChanged: Text("Sync permission changed. Review it again.")
-            case .historyTooLarge: Text("History is too large for ongoing sync. Use a one-time import.")
+            case .historyTooLarge: Text("History is too large for ongoing sync.")
             case .timedOut: Text("Sync timed out. Unconfirmed changes need review.")
             case .revocationFailed: Text("Sync is paused. Turn it off again before closing the app.")
             }
@@ -297,11 +297,11 @@ struct TrackerHistoryImportFailure: View {
             Text("Sync records could not be saved or read. Review sync before retrying.")
         } else if let failure = error as? TrackerHistoryError {
             switch failure {
-            case .scopeChanged: Text("The profile, server user, or tracker connection changed. Close this page and compare again.")
-            case .stalePreview: Text("Tracker or server history changed after the comparison. Compare again before applying changes.")
-            case .incompleteSnapshot: Text("The tracker history or library index is incomplete. Wait for loading to finish and compare again.")
-            case .invalidObservation: Text("A tracker record could not be interpreted safely. No comparison is available.")
-            case .invalidSelection: Text("Select supported changes. Conflicting records for the same title cannot both be imported.")
+            case .scopeChanged: Text("The profile, account, or tracker connection changed. Reopen this page to continue.")
+            case .stalePreview: Text("Watch history changed. Try again with the latest history.")
+            case .incompleteSnapshot: Text("Tracker history or the library index is incomplete. Wait for loading to finish, then try again.")
+            case .invalidObservation: Text("A tracker record could not be read safely.")
+            case .invalidSelection: Text("This selection is no longer available.")
             }
         } else {
             PublicMetaDBFailureMessage(error: error)

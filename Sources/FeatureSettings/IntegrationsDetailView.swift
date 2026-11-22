@@ -27,17 +27,6 @@ struct IntegrationsDetailView: View {
     @Bindable var playback: PlaybackSettingsModel
     let serverCount: Int
     @State private var confirmingTraktReconnect = false
-    @State private var showingTraktHistory = false
-    @State private var showingTraktExport = false
-    @State private var showingSimklHistory = false
-    @State private var showingSimklExport = false
-    @State private var showingWetrakrHistory = false
-    @State private var showingWetrakrExport = false
-    @State private var showingAniListHistory = false
-    @State private var showingAniListExport = false
-    @State private var showingMALHistory = false
-    @State private var showingMALExport = false
-    @State private var showingLastFmHistory = false
     @State private var confirmingWetrakrReconnect = false
     #if os(tvOS)
     @Environment(\.settingsInWorkspace) private var inWorkspace
@@ -70,16 +59,6 @@ struct IntegrationsDetailView: View {
             }
             .onChange(of: trakt.phase) { _, _ in
                 confirmingTraktReconnect = false
-                if trakt.historyConnectionID == nil { showingTraktHistory = false }
-            }
-            .sheet(isPresented: $showingTraktHistory) {
-                if let makeTraktHistoryImport {
-                    NavigationStack { TrackerHistoryImportView(makeSession: makeTraktHistoryImport) }
-                }
-            }
-            .onChange(of: trakt.historyConnectionID) { _, _ in showingTraktExport = false }
-            .sheet(isPresented: $showingTraktExport) {
-                NavigationStack { TraktHistoryExportView(service: trakt) }
             }
             .confirmationDialog("Reconnect WeTrakr for this profile?", isPresented: $confirmingWetrakrReconnect, titleVisibility: .visible) {
                 Button("Reconnect WeTrakr", role: .destructive) { wetrakr.connect() }
@@ -89,57 +68,7 @@ struct IntegrationsDetailView: View {
             }
             .onChange(of: wetrakr.phase) { _, _ in
                 confirmingWetrakrReconnect = false
-                if wetrakr.historyConnectionID == nil { showingWetrakrHistory = false }
             }
-            .sheet(isPresented: $showingWetrakrHistory) {
-                if let makeWetrakrHistoryImport {
-                    NavigationStack { TrackerHistoryImportView(makeSession: makeWetrakrHistoryImport) }
-                }
-            }
-            .onChange(of: wetrakr.historyConnectionID) { _, _ in showingWetrakrExport = false }
-            .sheet(isPresented: $showingWetrakrExport) {
-                NavigationStack { WetrakrHistoryExportView(service: wetrakr) }
-            }
-            .onChange(of: simkl.phase) { _, _ in
-                if simkl.historyConnectionID == nil { showingSimklHistory = false }
-            }
-            .onChange(of: anilist.phase) { _, _ in
-                if anilist.historyConnectionID == nil { showingAniListHistory = false }
-            }
-            .onChange(of: anilist.historyConnectionID) { _, _ in showingAniListExport = false }
-            .sheet(isPresented: $showingAniListExport) {
-                NavigationStack { AniListHistoryExportView(service: anilist) }
-            }
-            .sheet(isPresented: $showingAniListHistory) {
-                if let makeAniListHistoryImport {
-                    NavigationStack { TrackerHistoryImportView(makeSession: makeAniListHistoryImport) }
-                }
-            }
-            .onChange(of: mal.phase) { _, _ in
-                if mal.historyConnectionID == nil { showingMALHistory = false }
-            }
-            .onChange(of: mal.historyConnectionID) { _, _ in showingMALExport = false }
-            .sheet(isPresented: $showingMALExport) {
-                NavigationStack { MALHistoryExportView(service: mal) }
-            }
-            .sheet(isPresented: $showingMALHistory) {
-                if let makeMALHistoryImport {
-                    NavigationStack { TrackerHistoryImportView(makeSession: makeMALHistoryImport) }
-                }
-            }
-            .sheet(isPresented: $showingSimklHistory) {
-                if let makeSimklHistoryImport {
-                    NavigationStack { TrackerHistoryImportView(makeSession: makeSimklHistoryImport) }
-                }
-            }
-            .onChange(of: simkl.historyConnectionID) { _, _ in showingSimklExport = false }
-            .sheet(isPresented: $showingSimklExport) {
-                NavigationStack { SimklHistoryExportView(service: simkl) }
-            }
-            .sheet(isPresented: $showingLastFmHistory) {
-                NavigationStack { LastFmListeningHistoryView(service: lastfm) }
-            }
-            .onChange(of: lastfm.historyConnectionID) { _, _ in showingLastFmHistory = false }
             .task {
                 // Load all statuses up front so the left list's value
                 // summaries are correct before any row is focused.
@@ -192,13 +121,8 @@ struct IntegrationsDetailView: View {
                         onCancel: { trakt.cancelConnect() },
                         onDisconnect: { Task { await trakt.disconnect() } }
                     )
-                    if case .connected = trakt.phase, makeTraktHistoryImport != nil {
-                        Button("Compare watch history") { showingTraktHistory = true }
-                            .accessibilityIdentifier("trakt.compare-history")
-                    }
-                    if case .connected = trakt.phase, trakt.makeHistoryExport != nil {
-                        Button("Export server history") { showingTraktExport = true }
-                            .accessibilityIdentifier("trakt.export-history")
+                    if let makeTraktHistoryImport {
+                        TrackerAccountSyncLink(tracker: trakt, makeSession: makeTraktHistoryImport)
                     }
                 }
             },
@@ -223,13 +147,8 @@ struct IntegrationsDetailView: View {
                         onCancel: { simkl.cancelConnect() },
                         onDisconnect: { Task { await simkl.disconnect() } }
                     )
-                    if case .connected = simkl.phase, makeSimklHistoryImport != nil {
-                        Button("Compare watch history") { showingSimklHistory = true }
-                            .accessibilityIdentifier("simkl.compare-history")
-                    }
-                    if case .connected = simkl.phase, simkl.makeHistoryExport != nil {
-                        Button("Export server history") { showingSimklExport = true }
-                            .accessibilityIdentifier("simkl.export-history")
+                    if let makeSimklHistoryImport {
+                        TrackerAccountSyncLink(tracker: simkl, makeSession: makeSimklHistoryImport)
                     }
                 }
             },
@@ -256,13 +175,8 @@ struct IntegrationsDetailView: View {
                         onCancel: { wetrakr.cancelConnect() },
                         onDisconnect: { Task { await wetrakr.disconnect() } }
                     )
-                    if case .connected = wetrakr.phase, makeWetrakrHistoryImport != nil {
-                        Button("Compare watch history") { showingWetrakrHistory = true }
-                            .accessibilityIdentifier("wetrakr.compare-history")
-                    }
-                    if case .connected = wetrakr.phase, wetrakr.makeHistoryExport != nil {
-                        Button("Export server history") { showingWetrakrExport = true }
-                            .accessibilityIdentifier("wetrakr.export-history")
+                    if let makeWetrakrHistoryImport {
+                        TrackerAccountSyncLink(tracker: wetrakr, makeSession: makeWetrakrHistoryImport)
                     }
                 }
             },
@@ -280,13 +194,8 @@ struct IntegrationsDetailView: View {
                         onCancel: { anilist.cancelConnect() },
                         onDisconnect: { Task { await anilist.disconnect() } }
                     )
-                    if case .connected = anilist.phase, makeAniListHistoryImport != nil {
-                        Button("Compare watch history") { showingAniListHistory = true }
-                            .accessibilityIdentifier("anilist.compare-history")
-                    }
-                    if case .connected = anilist.phase, anilist.makeHistoryExport != nil {
-                        Button("Export server history") { showingAniListExport = true }
-                            .accessibilityIdentifier("anilist.export-history")
+                    if let makeAniListHistoryImport {
+                        TrackerAccountSyncLink(tracker: anilist, makeSession: makeAniListHistoryImport)
                     }
                 }
             },
@@ -304,13 +213,8 @@ struct IntegrationsDetailView: View {
                         onCancel: { mal.cancelConnect() },
                         onDisconnect: { Task { await mal.disconnect() } }
                     )
-                    if case .connected = mal.phase, makeMALHistoryImport != nil {
-                        Button("Compare watch history") { showingMALHistory = true }
-                            .accessibilityIdentifier("mal.compare-history")
-                    }
-                    if case .connected = mal.phase, mal.makeHistoryExport != nil {
-                        Button("Export server history") { showingMALExport = true }
-                            .accessibilityIdentifier("mal.export-history")
+                    if let makeMALHistoryImport {
+                        TrackerAccountSyncLink(tracker: mal, makeSession: makeMALHistoryImport)
                     }
                 }
             },
@@ -331,10 +235,6 @@ struct IntegrationsDetailView: View {
                         onCancel: { lastfm.cancelConnect() },
                         onDisconnect: { Task { await lastfm.disconnect() } }
                     )
-                    if case .connected = lastfm.phase {
-                        Button("Listening history") { showingLastFmHistory = true }
-                            .accessibilityIdentifier("lastfm.history")
-                    }
                 }
             }
         ]

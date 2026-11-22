@@ -11,8 +11,79 @@ private let verification = #"{"items":[],"total":0,"page":1,"perPage":1,"totalPa
 
 @MainActor
 final class PublicMetaDBLifecycleTests: XCTestCase {
+    func testTrackingConnectionIgnoresOldAccountToolsGrantsAndRefusesWrites() async throws {
+        let name = "PublicMetaDBLifecycleTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let http = RecordingHTTPClient()
+        http.stub(pathSuffix: "/lists", json: verification)
+        let credentials = CredentialStore()
+        let saved = PublicMetaDBCredentials(key: testKey)
+        let namespace = "viewer"
+        try credentials.save(saved, namespace: namespace)
+        let list = try JSONDecoder().decode(
+            PublicMetaDB.List.self, from: Data(#"{"id":"old","name":"Old list","is_public":true,"type":"watchlist"}"#.utf8)
+        )
+        try PublicMetaDBWatchlistStore(defaults: defaults, namespace: namespace)
+            .save(.init(list: list, connectionID: saved.connectionID))
+        defaults.set(true, forKey: SettingsKey.scoped("publicmetadb.communityRatings", namespace: namespace))
+        let playback = PublicMetaDBPlaybackConsent(connectionID: saved.connectionID)
+        try PublicMetaDBPlaybackConsentStore(defaults: defaults, namespace: namespace).save(playback)
+
+        let service = PublicMetaDBService(
+            credentials: credentials, http: http, namespace: namespace, defaults: defaults,
+            watchlistReceiptStore: try DurableLocalStateStore(secureStore: InMemorySecureStore())
+        )
+        XCTAssertFalse(service.communityRatingsEnabled)
+        service.selectProfile(namespace: nil)
+        await service.setActiveProfile(namespace: namespace)
+        XCTAssertEqual(service.phase, .connected)
+        XCTAssertEqual(service.historyConnectionID, saved.connectionID.uuidString)
+        XCTAssertEqual(service.playbackConnectionID, playback.deliveryScope)
+        XCTAssertNil(service.client, "Account tools must not receive the tracking client")
+        XCTAssertNil(service.watchlistSelection)
+        XCTAssertFalse(service.watchlistDestination.capabilities.write.isWritable)
+        let entries = try await service.watchlistDestination.fetchEntries()
+        XCTAssertTrue(entries.isEmpty)
+
+        let content = try PublicMetaDB.Content(tmdbID: 550, mediaType: .movie)
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie, providerIDs: ["Tmdb": "550"])
+        service.setCommunityRatingsEnabled(true)
+        service.communityRatingsCache[content] = .init(expires: .distantFuture, ratings: [])
+        XCTAssertNil(service.cachedCommunityRatings(for: item))
+        let lookup = try await service.communityRatingLookup(for: item)
+        XCTAssertNil(lookup)
+        XCTAssertThrowsError(try service.presentContent(for: item))
+        service.makeHistoryExportSource = {
+            XCTFail("A tracking connection must never read the server for a one-time export")
+            throw PublicMetaDB.Failure.rejected
+        }
+        XCTAssertThrowsError(try service.makeHistoryExportSession()) {
+            XCTAssertEqual($0 as? PublicMetaDB.Failure, .rejected)
+        }
+
+        do {
+            try await service.enableWatchlist(list, expectedConnectionID: saved.connectionID)
+            XCTFail("A connected key must not grant watchlist access")
+        } catch { XCTAssertEqual(error as? PublicMetaDB.Failure, .rejected) }
+        do {
+            try await service.submitManagedRating(.init(content: content, score: 80, label: "Overall"),
+                                                  expectedConnectionID: saved.connectionID)
+            XCTFail("A connected key must not grant contribution access")
+        } catch { XCTAssertEqual(error as? PublicMetaDB.Failure, .rejected) }
+        do {
+            try await service.submitManagedMapping(.init(
+                mapping: .init(content: content, idType: .imdb, idValue: "tt0137523"),
+                records: [], reverseMatches: [], connectionID: saved.connectionID
+            ))
+            XCTFail("A connected key must not grant manual mapping access")
+        } catch { XCTAssertEqual(error as? PublicMetaDB.Failure, .rejected) }
+        XCTAssertEqual(http.sentPaths, ["/api/external/lists"], "Only the key verification is allowed")
+        XCTAssertTrue(http.sent.allSatisfy { $0.body == nil })
+    }
+
     func testDisconnectRequiresHistoryRevocationBeforeDeletingSavedKey() async throws {
-        try await withWatchlistService { service, _, _ in
+        try await withWatchlistService(accountToolsEnabled: false) { service, _, _ in
             let connection = try XCTUnwrap(service.historySyncIdentity)
             service.onHistorySyncDisconnect = { throw TrackerHistorySyncError.revocationFailed }
             XCTAssertThrowsError(try service.disconnect())
@@ -32,7 +103,7 @@ final class PublicMetaDBLifecycleTests: XCTestCase {
     }
 
     func testPlaybackRequiresSeparateConsentAndDoesNotFollowReplacedKeys() async throws {
-        try await withWatchlistService { service, http, _ in
+        try await withWatchlistService(accountToolsEnabled: false) { service, http, _ in
             var revocations = 0
             service.onHistorySyncDisconnect = { revocations += 1 }
             XCTAssertNil(service.playbackConnectionID)
@@ -134,6 +205,7 @@ final class PublicMetaDBLifecycleTests: XCTestCase {
     }
 
     private func withWatchlistService(
+        accountToolsEnabled: Bool = true,
         _ body: (PublicMetaDBService, RecordingHTTPClient, PublicMetaDB.List) async throws -> Void
     ) async throws {
         let name = "PublicMetaDBWatchlistTests.\(UUID())"
@@ -144,6 +216,7 @@ final class PublicMetaDBLifecycleTests: XCTestCase {
         http.stub(pathSuffix: "/lists", json: verification)
         http.stub(pathSuffix: "/lists", json: #"{"items":[\#(listJSON)],"total":1,"page":1,"perPage":500,"totalPages":1}"#)
         let service = PublicMetaDBService(
+            accountToolsEnabled: accountToolsEnabled,
             credentials: CredentialStore(), http: http, defaults: defaults,
             watchlistReceiptStore: try DurableLocalStateStore(secureStore: InMemorySecureStore())
         )
@@ -232,7 +305,7 @@ final class PublicMetaDBLifecycleTests: XCTestCase {
         await service.connect(key: "pm-" + String(repeating: "C", count: 60))
         XCTAssertEqual(service.phase, .failed(.unauthorized))
         XCTAssertEqual(store.load(namespace: nil)?.connectionID, saved.connectionID)
-        XCTAssertNil(service.client)
+        XCTAssertNil(service.trackingClient)
     }
 
     func testReplacementIsANewConnectionEvenForSameKey() async throws {
@@ -242,7 +315,7 @@ final class PublicMetaDBLifecycleTests: XCTestCase {
         let service = PublicMetaDBService(credentials: store, http: http)
         await service.connect(key: testKey)
         let first = try XCTUnwrap(service.connectionID)
-        let staleClient = try XCTUnwrap(service.client)
+        let staleClient = try XCTUnwrap(service.trackingClient)
         await service.connect(key: testKey)
         XCTAssertNotEqual(service.connectionID, first)
         do { _ = try await staleClient.history(); XCTFail("Old connection could dispatch") }
@@ -256,10 +329,10 @@ final class PublicMetaDBLifecycleTests: XCTestCase {
         http.stub(pathSuffix: "/lists", json: verification)
         let service = PublicMetaDBService(credentials: store, http: http)
         await service.connect(key: testKey)
-        let previousClient = try XCTUnwrap(service.client)
+        let previousClient = try XCTUnwrap(service.trackingClient)
         await service.setActiveProfile(namespace: "second-profile")
         XCTAssertEqual(service.phase, .disconnected)
-        XCTAssertNil(service.client)
+        XCTAssertNil(service.trackingClient)
         XCTAssertNotNil(store.load(namespace: nil))
         XCTAssertNil(store.load(namespace: "second-profile"))
         do { _ = try await previousClient.lists(); XCTFail("Previous profile remained active") }
@@ -288,7 +361,7 @@ final class PublicMetaDBLifecycleTests: XCTestCase {
         let service = PublicMetaDBService(credentials: store, http: http)
         await service.connect(key: testKey)
         XCTAssertEqual(service.phase, .credentialChangeFailed)
-        XCTAssertNil(service.client)
+        XCTAssertNil(service.trackingClient)
         XCTAssertNil(service.connectionID)
         XCTAssertNil(store.load(namespace: nil))
     }

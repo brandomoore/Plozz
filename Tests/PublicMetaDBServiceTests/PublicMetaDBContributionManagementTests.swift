@@ -27,6 +27,7 @@ final class PublicMetaDBContributionManagementTests: XCTestCase {
         let http = RecordingHTTPClient()
         http.stub(pathSuffix: "/lists", json: #"{"items":[],"total":0,"page":1,"perPage":1,"totalPages":0}"#)
         let service = PublicMetaDBService(
+            accountToolsEnabled: true,
             credentials: ContributionCredentials(), http: http, defaults: defaults,
             watchlistReceiptStore: try DurableLocalStateStore(secureStore: InMemorySecureStore())
         )

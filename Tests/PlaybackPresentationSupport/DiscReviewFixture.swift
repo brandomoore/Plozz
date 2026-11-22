@@ -270,7 +270,7 @@ import SimklService
 import WetrakrService
 import TraktService
 import Observation
-import PublicMetaDBService
+@testable import PublicMetaDBService
 private struct AtlasRoot: View {
     @State var data = AtlasModel()
     @State var reviewed: TrackerHistoryImportSession?
@@ -349,7 +349,17 @@ private struct AtlasHTTP: HTTPClient {
 @MainActor private struct AtlasPublic: View {
     let mode:String
     let data:AtlasModel
-    @State private var service = PublicMetaDBService(credentials:AtlasCreds(),http:AtlasHTTP(),defaults:UserDefaults(suiteName:"local-only.tracker-atlas")!,watchlistReceiptStore:try? DurableLocalStateStore(secureStore:InMemorySecureStore()))
+    @State private var service: PublicMetaDBService
+    init(mode: String, data: AtlasModel) {
+        self.mode = mode
+        self.data = data
+        let trackingPage = ["connected", "disconnected", "account", "reporting", "reporting-on"].contains(mode)
+        _service = State(initialValue: PublicMetaDBService(
+            accountToolsEnabled: !trackingPage, credentials: AtlasCreds(), http: AtlasHTTP(),
+            defaults: UserDefaults(suiteName: "local-only.tracker-atlas")!,
+            watchlistReceiptStore: try? DurableLocalStateStore(secureStore: InMemorySecureStore())
+        ))
+    }
     @State private var last = LastFmService(config:.init(apiKey:"not-networked",sharedSecret:"not-networked"),http:AtlasHTTP(),tokenStore:InMemoryLastFmTokenStore(tokens:.init(sessionKey:"not-networked",username:"Mara")))
     @State private var ready=false
     let movie = try! PublicMetaDB.Content(tmdbID:82501,mediaType:.movie)

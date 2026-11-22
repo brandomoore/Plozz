@@ -3,6 +3,25 @@ import CoreModels
 import CoreUI
 import SwiftUI
 
+/// The account page may stay on screen across a reconnect or profile change.
+/// Keep the sheet and its captured session scoped to this connection.
+public struct TrackerAccountSyncLink: View {
+    private let tracker: any TrackerHistorySyncReading
+    private let makeSession: @MainActor () -> TrackerHistoryImportSession
+
+    public init(tracker: any TrackerHistorySyncReading, makeSession: @escaping @MainActor () -> TrackerHistoryImportSession) {
+        self.tracker = tracker
+        self.makeSession = makeSession
+    }
+
+    public var body: some View {
+        if let connectionID = tracker.historyConnectionID {
+            TrackerHistorySyncLink(makeSession: makeSession, accountTrackerID: tracker.historySyncTrackerID)
+                .id(connectionID)
+        }
+    }
+}
+
 /// Creates the account-scoped session once, without fetching tracker history
 /// while the user is browsing the account page.
 public struct TrackerHistorySyncLink: View {
@@ -15,14 +34,44 @@ public struct TrackerHistorySyncLink: View {
     }
 
     @State private var entry: Entry
+    @State private var showingSync = false
+    private let accountTrackerID: String?
 
     public init(makeSession: @escaping @MainActor () -> TrackerHistoryImportSession) {
+        self.init(makeSession: makeSession, accountTrackerID: nil)
+    }
+
+    fileprivate init(makeSession: @escaping @MainActor () -> TrackerHistoryImportSession, accountTrackerID: String?) {
+        self.accountTrackerID = accountTrackerID
         _entry = State(initialValue: Entry(makeSession))
     }
 
     public var body: some View {
         if let sync = entry.session.ongoingSync, sync.hasSettingsDestination {
-            TrackerHistorySyncNavigationRow(session: entry.session, sync: sync)
+            if let accountTrackerID {
+                Button { showingSync = true } label: {
+                    SettingsDisclosureLabel { Text("Ongoing sync (Beta)") }
+                }
+                .settingsActionRow()
+                .accessibilityIdentifier("\(accountTrackerID).ongoing-sync")
+                .sheet(isPresented: $showingSync) {
+                    NavigationStack {
+                        TrackerHistorySyncSettingsView(session: entry.session, sync: sync)
+                            #if os(iOS)
+                            .toolbar {
+                                ToolbarItem(placement: .confirmationAction) {
+                                    Button("Done") { showingSync = false }
+                                }
+                            }
+                            #endif
+                    }
+                    #if os(tvOS)
+                    .environment(\.settingsPageContext, nil)
+                    #endif
+                }
+            } else {
+                TrackerHistorySyncNavigationRow(session: entry.session, sync: sync)
+            }
         }
     }
 }
@@ -111,13 +160,13 @@ struct TrackerHistorySyncSettingsView: View {
                             .accessibilityIdentifier("tracker-history.sync-watched")
                     }
                     if sync.supportedCategories.contains(.resume) {
-                        Toggle("Where you left off", isOn: choice(.resume, in: grant.categories) { update(selected, $0) })
+                        Toggle("Playback progress", isOn: choice(.resume, in: grant.categories) { update(selected, $0) })
                             .accessibilityIdentifier("tracker-history.sync-resume")
                     }
                 }
                 .disabled(sync.isBusy)
                 SettingsSectionGroup {
-                    if grant.reviewCount > 0 { Text("Some changes need review. Compare histories before retrying.") }
+                    if grant.reviewCount > 0 { Text("Some changes couldn’t be applied automatically.") }
                     if sync.hasMoreChanges { Text("More changes are waiting. Sync again to continue.") }
                     Button("Sync now") { operation = Task { await sync.synchronize() } }
                         .settingsActionRow()

@@ -70,15 +70,15 @@ final class SettingsSearchTests: XCTestCase {
             let index = SettingsSearchIndex(entries: SettingsSearchCatalog.entries(on: platform), locale: locale)
             for (query, expected) in [
                 ("PublicMetaDB API key", "publicmetadb-account"),
-                ("PublicMetaDB title scores", "publicmetadb-ratings"),
-                ("PublicMetaDB report playback", "publicmetadb-playback"),
-                ("PublicMetaDB watchlist destination", "publicmetadb-watchlist")
+                ("PublicMetaDB report playback", "publicmetadb-playback")
             ] {
                 let result = index.results(for: query).first
                 XCTAssertEqual(result?.id, expected, query)
                 XCTAssertEqual(result?.destinationPath(on: platform).map { $0.resolved(locale: locale) },
                                ["Trackers", "PublicMetaDB"])
             }
+            XCTAssertEqual(Set(SettingsSearchCatalog.entries(on: platform).filter { $0.page == .publicMetaDB }.map(\.id)),
+                           ["publicmetadb-account", "publicmetadb-playback"])
         }
     }
 

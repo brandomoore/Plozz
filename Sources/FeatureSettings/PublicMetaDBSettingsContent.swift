@@ -29,7 +29,7 @@ public struct PublicMetaDBSettingsContent: View {
                 PublicMetaDBConnectionStatus(phase: service.phase)
             }
             if service.phase == .connected {
-                Button("Browse PublicMetaDB") { showingAccount = true }
+                Button("Tracking settings") { showingAccount = true }
                     .settingsActionRow()
                     .accessibilityIdentifier("publicmetadb.browse")
                     .settingsSearchAnchor("publicmetadb-account", fallbackFor: Self.searchTargets)
@@ -90,17 +90,13 @@ public struct PublicMetaDBSettingsContent: View {
         .sheet(isPresented: $showingAccount) {
             NavigationStack {
                 // A search identifies the setting, not a grant to open private account data.
-                // Reveal the row in the sheet only after the user chooses Browse.
+                // Reveal the row only after the user opens tracking settings.
                 if let target = searchRequest?.targetID, target != "publicmetadb-account", Self.searchTargets.contains(target) {
                     SettingsSearchLanding(targetID: target) { accountPage }
                 } else {
                     accountPage
                 }
             }
-            .environment(\.publicMetaDBCatalogService, service)
-        }
-        .onChange(of: service.catalogNavigation?.id) { _, request in
-            if request != nil { showingAccount = false }
         }
         .onChange(of: service.connectionID) { _, _ in
             key = ""
@@ -205,10 +201,11 @@ struct PublicMetaDBKeyEntryView: View {
                         service.switchToManualKeyEntry()
                         manual = true
                     }
+                    .plozzActionButton()
                     .disabled(service.phase == .connecting)
                     .focused($entryFocus, equals: .manualAction)
                     .accessibilityIdentifier("publicmetadb.pair.manual")
-                    cancelButton
+                    cancelButton.plozzActionButton(role: .secondary)
                 }
             }
         }

@@ -70,8 +70,6 @@ private struct TraktSettingsContent: View {
     @Environment(\.openURL) private var openURL
     @State private var browser = TrackerBrowserAuthorization()
     @State private var confirmingReconnect = false
-    @State private var showingHistory = false
-    @State private var showingExport = false
 
     var body: some View {
         Group {
@@ -85,14 +83,6 @@ private struct TraktSettingsContent: View {
         }
         .onChange(of: service.phase) { _, _ in
             confirmingReconnect = false
-            if service.historyConnectionID == nil { showingHistory = false }
-        }
-        .sheet(isPresented: $showingHistory) {
-            NavigationStack { TrackerHistoryImportView(makeSession: makeHistoryImport) }
-        }
-        .onChange(of: service.historyConnectionID) { _, _ in showingExport = false }
-        .sheet(isPresented: $showingExport) {
-            NavigationStack { TraktHistoryExportView(service: service) }
         }
     }
 
@@ -129,12 +119,7 @@ private struct TraktSettingsContent: View {
             .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
-            Button("Compare watch history") { showingHistory = true }
-                .accessibilityIdentifier("trakt.compare-history")
-            if service.makeHistoryExport != nil {
-                Button("Export server history") { showingExport = true }
-                    .accessibilityIdentifier("trakt.export-history")
-            }
+            TrackerAccountSyncLink(tracker: service, makeSession: makeHistoryImport)
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }
@@ -178,8 +163,6 @@ private struct WetrakrSettingsContent: View {
     @Environment(\.openURL) private var openURL
     @State private var browser = TrackerBrowserAuthorization()
     @State private var confirmingReconnect = false
-    @State private var showingHistory = false
-    @State private var showingExport = false
 
     var body: some View {
         Group { content }
@@ -191,14 +174,6 @@ private struct WetrakrSettingsContent: View {
             }
             .onChange(of: service.phase) { _, _ in
                 confirmingReconnect = false
-                if service.historyConnectionID == nil { showingHistory = false }
-            }
-            .sheet(isPresented: $showingHistory) {
-                NavigationStack { TrackerHistoryImportView(makeSession: makeHistoryImport) }
-            }
-            .onChange(of: service.historyConnectionID) { _, _ in showingExport = false }
-            .sheet(isPresented: $showingExport) {
-                NavigationStack { WetrakrHistoryExportView(service: service) }
             }
     }
 
@@ -229,12 +204,7 @@ private struct WetrakrSettingsContent: View {
                 .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
-            Button("Compare watch history") { showingHistory = true }
-                .accessibilityIdentifier("wetrakr.compare-history")
-            if service.makeHistoryExport != nil {
-                Button("Export server history") { showingExport = true }
-                    .accessibilityIdentifier("wetrakr.export-history")
-            }
+            TrackerAccountSyncLink(tracker: service, makeSession: makeHistoryImport)
             Button("Disconnect", role: .destructive) { Task { await service.disconnect() } }
                 .settingsActionRow()
         case let .error(message):
@@ -265,24 +235,8 @@ private struct SimklSettingsContent: View {
     let service: SimklService
     let makeHistoryImport: @MainActor () -> TrackerHistoryImportSession
     @Environment(\.openURL) private var openURL
-    @State private var showingHistory = false
-    @State private var showingExport = false
 
     var body: some View {
-        Group { content }
-            .onChange(of: service.phase) { _, _ in
-                if service.historyConnectionID == nil { showingHistory = false }
-            }
-            .sheet(isPresented: $showingHistory) {
-                NavigationStack { TrackerHistoryImportView(makeSession: makeHistoryImport) }
-            }
-            .onChange(of: service.historyConnectionID) { _, _ in showingExport = false }
-            .sheet(isPresented: $showingExport) {
-                NavigationStack { SimklHistoryExportView(service: service) }
-            }
-    }
-
-    @ViewBuilder private var content: some View {
         switch service.phase {
         case .unknown:
             loadingStatus
@@ -308,12 +262,7 @@ private struct SimklSettingsContent: View {
             .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
-            Button("Compare watch history") { showingHistory = true }
-                .accessibilityIdentifier("simkl.compare-history")
-            if service.makeHistoryExport != nil {
-                Button("Export server history") { showingExport = true }
-                    .accessibilityIdentifier("simkl.export-history")
-            }
+            TrackerAccountSyncLink(tracker: service, makeSession: makeHistoryImport)
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }
@@ -337,24 +286,8 @@ private struct AniListSettingsContent: View {
     let makeHistoryImport: @MainActor () -> TrackerHistoryImportSession
     @Environment(\.openURL) private var openURL
     @State private var code = ""
-    @State private var showingHistory = false
-    @State private var showingExport = false
 
     var body: some View {
-        Group { content }
-            .onChange(of: service.phase) { _, _ in
-                if service.historyConnectionID == nil { showingHistory = false }
-            }
-            .sheet(isPresented: $showingHistory) {
-                NavigationStack { TrackerHistoryImportView(makeSession: makeHistoryImport) }
-            }
-            .onChange(of: service.historyConnectionID) { _, _ in showingExport = false }
-            .sheet(isPresented: $showingExport) {
-                NavigationStack { AniListHistoryExportView(service: service) }
-            }
-    }
-
-    @ViewBuilder private var content: some View {
         switch service.phase {
         case .unknown:
             loadingStatus
@@ -372,12 +305,7 @@ private struct AniListSettingsContent: View {
             }
         case let .connected(username):
             connectedStatus(username: username)
-            Button("Compare watch history") { showingHistory = true }
-                .accessibilityIdentifier("anilist.compare-history")
-            if service.makeHistoryExport != nil {
-                Button("Export server history") { showingExport = true }
-                    .accessibilityIdentifier("anilist.export-history")
-            }
+            TrackerAccountSyncLink(tracker: service, makeSession: makeHistoryImport)
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }
@@ -429,24 +357,8 @@ private struct MALSettingsContent: View {
     let makeHistoryImport: @MainActor () -> TrackerHistoryImportSession
     @Environment(\.openURL) private var openURL
     @State private var code = ""
-    @State private var showingHistory = false
-    @State private var showingExport = false
 
     var body: some View {
-        Group { content }
-            .onChange(of: service.phase) { _, _ in
-                if service.historyConnectionID == nil { showingHistory = false }
-            }
-            .sheet(isPresented: $showingHistory) {
-                NavigationStack { TrackerHistoryImportView(makeSession: makeHistoryImport) }
-            }
-            .onChange(of: service.historyConnectionID) { _, _ in showingExport = false }
-            .sheet(isPresented: $showingExport) {
-                NavigationStack { MALHistoryExportView(service: service) }
-            }
-    }
-
-    @ViewBuilder private var content: some View {
         switch service.phase {
         case .unknown:
             loadingStatus
@@ -477,12 +389,7 @@ private struct MALSettingsContent: View {
             .settingsActionRow()
         case let .connected(username):
             connectedStatus(username: username)
-            Button("Compare watch history") { showingHistory = true }
-                .accessibilityIdentifier("mal.compare-history")
-            if service.makeHistoryExport != nil {
-                Button("Export server history") { showingExport = true }
-                    .accessibilityIdentifier("mal.export-history")
-            }
+            TrackerAccountSyncLink(tracker: service, makeSession: makeHistoryImport)
             Button("Disconnect", role: .destructive) {
                 Task { await service.disconnect() }
             }

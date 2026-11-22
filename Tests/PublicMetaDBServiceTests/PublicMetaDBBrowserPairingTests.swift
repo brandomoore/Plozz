@@ -119,7 +119,7 @@ final class PublicMetaDBBrowserPairingTests: XCTestCase {
         try await withService(http) { service, store in
             await service.connect(key: pairingTestKey)
             let original = try XCTUnwrap(service.connectionID)
-            let oldClient = try XCTUnwrap(service.client)
+            let oldClient = try XCTUnwrap(service.trackingClient)
             var revokedConsent = false
             service.onHistorySyncDisconnect = { revokedConsent = true }
             await http.setBeforeRedeem { withUnsafeCurrentTask { $0?.cancel() } }
@@ -134,7 +134,7 @@ final class PublicMetaDBBrowserPairingTests: XCTestCase {
                 _ = try await oldClient.lists()
                 XCTFail("A cancelled replacement revived an invalidated client")
             } catch { XCTAssertEqual(error as? PublicMetaDB.Failure, .connectionChanged) }
-            _ = try await XCTUnwrap(service.client).lists()
+            _ = try await XCTUnwrap(service.trackingClient).lists()
             let paths = await http.requests.map(\.path)
             XCTAssertEqual(paths, [
                 "/api/external/lists", "/api/publicmetadb/pairing",
@@ -158,7 +158,7 @@ final class PublicMetaDBBrowserPairingTests: XCTestCase {
             await replacement.value
             XCTAssertEqual(service.phase, .failed(.unauthorized))
             XCTAssertEqual(store.load(namespace: nil)?.connectionID, original)
-            XCTAssertNil(service.client)
+            XCTAssertNil(service.trackingClient)
             XCTAssertNil(service.connectionID)
         }
     }
@@ -175,7 +175,7 @@ final class PublicMetaDBBrowserPairingTests: XCTestCase {
             await replacement.value
             XCTAssertEqual(service.profileNamespace, "other")
             XCTAssertEqual(service.phase, .disconnected)
-            XCTAssertNil(service.client)
+            XCTAssertNil(service.trackingClient)
             XCTAssertNotNil(store.load(namespace: nil))
             XCTAssertNil(store.load(namespace: "other"))
             let reads = await http.requests.filter { $0.path == "/api/external/lists" }

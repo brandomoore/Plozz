@@ -29,6 +29,7 @@ final class PublicMetaDBAnimeManagementTests: XCTestCase {
         let http = RecordingHTTPClient()
         http.stub(pathSuffix: "/lists", json: #"{"items":[],"total":0,"page":1,"perPage":1,"totalPages":0}"#)
         let service = PublicMetaDBService(
+            accountToolsEnabled: true,
             credentials: AnimeCredentials(), http: transport?(http) ?? http, defaults: defaults,
             watchlistReceiptStore: try DurableLocalStateStore(secureStore: InMemorySecureStore())
         )
