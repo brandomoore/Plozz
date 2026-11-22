@@ -128,7 +128,7 @@ private struct TrackerTwoWaySyncRows: View {
                 controls
             } footer: {
                 Text("Beta: Changes from \(trackerName) update matching titles in Plozz, not on Plex, Jellyfin, or Emby.")
-                if sync.isEnabled && !sync.identity.allowsForegroundChecks {
+                if sync.isEnabled && !sync.isBusy && !sync.identity.allowsForegroundChecks {
                     Text("Use Sync now to check for later changes.").font(.footnote).plozzForeground(.secondary)
                 }
             }
@@ -163,10 +163,14 @@ private struct TrackerTwoWaySyncRows: View {
             }
         if sync.isEnabled { activeLibraries }
         if sync.isBusy {
-            ProgressView("Syncing…")
+            progressRow
         } else if let error = sync.error {
             Group {
-                if !sync.isEnabled, error as? TrackerHistoryError == .incompleteSnapshot {
+                if case .rateLimited = error as? AppError {
+                    if let date = sync.retryDate {
+                        Text("\(trackerName) paused the history check. Try again after \(date.formatted(date: .omitted, time: .standard)).")
+                    } else { Text("\(trackerName) paused the history check. Try again later.") }
+                } else if !sync.isEnabled, error as? TrackerHistoryError == .incompleteSnapshot {
                     Text("Sync is off. Plozz couldn’t verify your full \(trackerName) history. Try again later.")
                 } else { TrackerHistoryImportFailure(error: error) }
             }
@@ -178,11 +182,42 @@ private struct TrackerTwoWaySyncRows: View {
         } else if sync.isEnabled {
             syncResult
         }
-        if sync.isEnabled {
+        if sync.isEnabled && !sync.isBusy {
             Button("Sync now") { operation = Task { await sync.synchronize() } }
-                .settingsActionRow().disabled(sync.isBusy)
+                .settingsActionRow()
                 .accessibilityIdentifier("tracker-history.sync-now")
         }
+    }
+
+    private var progressRow: some View {
+        HStack(spacing: 12) {
+            ProgressView().accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                switch sync.stage {
+                case .reading: Text("Reading \(trackerName) watch history…")
+                case .verifying: Text("Verifying \(trackerName) watch history…")
+                case .saving: Text("Saving sync settings…")
+                case .selecting: Text("Updating selected libraries…")
+                case let .comparing(index, total): Text("Checking library \(index) of \(total)…")
+                case let .applying(index, total): Text("Updating library \(index) of \(total)…")
+                }
+                if let detail = sync.readDetail {
+                    Group {
+                        switch detail {
+                        case let .watches(page, total): Text("Read \(page) of \(total) history pages")
+                        case let .verifyingRange(page, total): Text("Checking dates: \(page) of \(total) pages")
+                        case .waiting(let date): Text("Waiting for \(trackerName) until \(date.formatted(date: .omitted, time: .standard))")
+                        }
+                    }.font(.footnote).plozzForeground(.secondary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .lineLimit(nil)
+        .padding(.vertical, 12)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("tracker-history.progress")
     }
 
     @ViewBuilder private var activeLibraries: some View {

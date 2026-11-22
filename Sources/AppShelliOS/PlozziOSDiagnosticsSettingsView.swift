@@ -12,9 +12,6 @@ struct PlozziOSDiagnosticsSettingsView: View {
     let appModel: PlozziOSAppModel
     @Bindable var model: DiagnosticsSettingsModel
     @Bindable var crashReporting: CrashReportingSettingsModel
-    @State private var diagnosticNote = ""
-    @State private var sendStatus: LocalizedStringResource?
-    @State private var isSending = false
 
     private var report: DiagnosticsReport {
         let version = AppVersionIdentity.current
@@ -62,42 +59,11 @@ struct PlozziOSDiagnosticsSettingsView: View {
                 .disabled(!appModel.crashReportingController.isConfigured).settingsSearchAnchor("diagnostic-sharing")
             }
 
-            SettingsSectionGroup("Send Diagnostics", accessory: { DiagnosticsInfoButton() }) {
-                TextField(text: $diagnosticNote, axis: .vertical) {
-                    Text(SettingsCopy.diagnosticsMessage)
-                }
-                .lineLimit(2...4)
-                .accessibilityIdentifier("diagnostics-message")
-                .disabled(!appModel.crashReportingController.isConfigured || isSending)
-                DiagnosticsSendButton(
-                    sharingEnabled: $crashReporting.isEnabled,
-                    isConfigured: appModel.crashReportingController.isConfigured,
-                    hasMessage: CrashDiagnostics.normalizedNote(diagnosticNote) != nil,
-                    isSending: isSending
-                ) {
-                    appModel.applyCrashReportingPreference()
-                    let note = diagnosticNote
-                    isSending = true
-                    Task {
-                        defer { isSending = false }
-                        let sent = await CrashDiagnostics.send(note: note)
-                        sendStatus = sent
-                            ? "Diagnostics submitted for delivery. Thank you."
-                            : SettingsCopy.diagnosticSubmissionFailed
-                    }
-                }
-
-                if let sendStatus {
-                    Text(sendStatus)
-                        .plozzForeground(.secondary)
-                }
-            } footer: {
-                if !appModel.crashReportingController.isConfigured {
-                    Text(SettingsCopy.diagnosticSharingUnavailable)
-                } else if !crashReporting.isEnabled {
-                    Text(SettingsCopy.diagnosticSharingRequired)
-                }
-                Text(SettingsCopy.diagnosticsMessagePrivacy)
+            MobileDiagnosticsSubmissionSection(
+                sharingEnabled: $crashReporting.isEnabled, isConfigured: appModel.crashReportingController.isConfigured
+            ) { note in
+                appModel.applyCrashReportingPreference()
+                return await CrashDiagnostics.send(note: note)
             }
 
             SettingsSectionGroup {
@@ -123,7 +89,6 @@ struct PlozziOSDiagnosticsSettingsView: View {
         .navigationTitle("Help & Diagnostics")
         .onChange(of: crashReporting.isEnabled) {
             appModel.applyCrashReportingPreference()
-            sendStatus = nil
         }
     }
 }

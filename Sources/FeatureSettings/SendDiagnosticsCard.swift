@@ -5,6 +5,58 @@ import CoreNetworking
 import CoreUI
 import CrashReporting
 
+#if os(iOS)
+public struct MobileDiagnosticsSubmissionSection: View {
+    @Binding private var sharingEnabled: Bool
+    @State private var message = ""
+    @State private var status: LocalizedStringResource?
+    @State private var isSending = false
+    @FocusState private var editing: Bool
+    private let isConfigured: Bool
+    private let submit: @MainActor (String) async -> Bool
+
+    public init(sharingEnabled: Binding<Bool>, isConfigured: Bool, submit: @escaping @MainActor (String) async -> Bool) {
+        _sharingEnabled = sharingEnabled
+        self.isConfigured = isConfigured
+        self.submit = submit
+    }
+
+    public var body: some View {
+        SettingsSectionGroup("Send Diagnostics", accessory: { DiagnosticsInfoButton() }) {
+            TextField(text: $message, axis: .vertical) { Text(SettingsCopy.diagnosticsMessage) }
+                .lineLimit(2...4)
+                .padding(.vertical, MobileSettingsMetrics.descriptionBottomInset - MobileSettingsMetrics.controlVerticalInset)
+                .focused($editing)
+                .accessibilityIdentifier("diagnostics-message")
+                .disabled(!isConfigured || isSending)
+                .onChange(of: message) { if !message.isEmpty { status = nil } }
+            DiagnosticsSendButton(
+                sharingEnabled: $sharingEnabled, isConfigured: isConfigured,
+                hasMessage: CrashDiagnostics.normalizedNote(message) != nil, isSending: isSending
+            ) {
+                guard !isSending else { return }
+                let note = message
+                editing = false
+                isSending = true
+                status = nil
+                Task {
+                    let sent = await submit(note)
+                    if sent { message = "" }
+                    status = sent ? "Diagnostics submitted for delivery. Thank you." : SettingsCopy.diagnosticSubmissionFailed
+                    isSending = false
+                }
+            }
+            if let status { Text(status).plozzForeground(.secondary) }
+        } footer: {
+            if !isConfigured { Text(SettingsCopy.diagnosticSharingUnavailable) }
+            else if !sharingEnabled { Text(SettingsCopy.diagnosticSharingRequired) }
+            Text(SettingsCopy.diagnosticsMessagePrivacy)
+        }
+        .onChange(of: sharingEnabled) { status = nil }
+    }
+}
+#endif
+
 /// "Send my recent activity to the developer" card, shared by the Help &
 /// Diagnostics page (so it's discoverable without digging) and the Recent
 /// Activity page (next to the log it sends).

@@ -11,10 +11,12 @@ import CoreNetworking
 struct TraktClient: Sendable {
     let config: TraktConfig
     let http: HTTPClient
+    let historyRead: TraktHistoryReadAttempt?
 
-    init(config: TraktConfig, http: HTTPClient) {
+    init(config: TraktConfig, http: HTTPClient, historyRead: TraktHistoryReadAttempt? = nil) {
         self.config = config
         self.http = http
+        self.historyRead = historyRead
     }
 
     private var baseURL: URL { config.apiBaseURL }
@@ -314,7 +316,7 @@ struct TraktClient: Sendable {
         try Task.checkCancellation()
         try await validateScope()
         let endpoint = Endpoint(method: .get, path: "/sync/last_activities", headers: headers(accessToken: accessToken))
-        let (data, response) = try await http.sendRaw(endpoint, baseURL: baseURL)
+        let (data, response) = try await readPage(endpoint, validate: validateScope)
         try Task.checkCancellation()
         try await validateScope()
         guard response.statusCode == 200 else { throw oauthError(data: data, response: response) }
@@ -338,8 +340,8 @@ struct TraktClient: Sendable {
         reportCorrectedWatchTotal: Bool = false,
         validateScope: @Sendable () async throws -> Void
     ) async throws -> [T] {
-        let limit = 100
-        let maximumPages = 1_000
+        let limit = historyRead != nil && path == "/users/me/history" ? 250 : 100
+        let maximumPages = 100_000 / limit
         var page = 1
         var result: [T] = []
         var seenIDs: Set<Int> = []
@@ -362,10 +364,7 @@ struct TraktClient: Sendable {
                 endpoint.redirectPolicy = .sameOrigin
                 endpoint.redactsURLForLogging = true
             }
-            let (data, response) = try await http.sendRaw(
-                endpoint,
-                baseURL: baseURL
-            )
+            let (data, response) = try await readPage(endpoint, validate: validateScope)
             try Task.checkCancellation()
             try await validateScope()
             if let maximumResponseBytes, data.count > maximumResponseBytes {
@@ -414,6 +413,10 @@ struct TraktClient: Sendable {
                       entries.allSatisfy({ !seenIDs.contains($0.id) }) else {
                     throw TraktHistoryDiagnostics.incomplete(source, "duplicate-record")
                 }
+                if path == "/users/me/history", pages > 0 {
+                    await TrackerHistoryReadDetail.report?(query.isEmpty ? .watches(page: page, total: pages)
+                        : .verifyingRange(page: page, total: pages))
+                } else { await TrackerHistoryReadDetail.report?(nil) }
             }
             for entry in entries {
                 guard seenIDs.insert(entry.id).inserted else {

@@ -8,10 +8,10 @@ import XCTest
 final class TraktHistorySnapshotTests: XCTestCase {
     private let date = "2026-10-24T12:00:00.000Z"
 
-    private func headers(page: Int = 1, count: Int = 0) -> [String: String] {
+    private func headers(page: Int = 1, count: Int = 0, limit: Int = 100) -> [String: String] {
         [
-            "X-Pagination-Page": String(page), "X-Pagination-Limit": "100",
-            "X-Pagination-Page-Count": String((count + 99) / 100),
+            "X-Pagination-Page": String(page), "X-Pagination-Limit": String(limit),
+            "X-Pagination-Page-Count": String((count + limit - 1) / limit),
             "X-Pagination-Item-Count": String(count)
         ]
     }
@@ -28,11 +28,11 @@ final class TraktHistorySnapshotTests: XCTestCase {
         #"{"id":\#(id),"watched_at":"\#(date)","action":"watch",\#(media)}"#
     }
 
-    private func http(history: String = "[]", historyCount: Int = 0, resume: String = "[]", resumeCount: Int = 0) -> RecordingHTTPClient {
+    private func http(history: String = "[]", historyCount: Int = 0, resume: String = "[]", resumeCount: Int = 0, watchLimit: Int = 100) -> RecordingHTTPClient {
         let http = RecordingHTTPClient()
         http.stub(pathSuffix: "/users/settings", json: #"{"user":{"username":"fixture"}}"#)
         http.stub(pathSuffix: "/sync/last_activities", json: activity())
-        http.stub(pathSuffix: "/users/me/history", json: history, headers: headers(count: historyCount))
+        http.stub(pathSuffix: "/users/me/history", json: history, headers: headers(count: historyCount, limit: watchLimit))
         http.stub(pathSuffix: "/sync/playback", json: resume, headers: headers(count: resumeCount))
         return http
     }
@@ -219,7 +219,7 @@ final class TraktHistorySnapshotTests: XCTestCase {
         let store = InMemoryTraktTokenStore(tokens: .init(
             accessToken: "fixture", refreshToken: "fixture-refresh", expiresAt: .distantFuture, accountIdentity: "grant"
         ))
-        let http = http()
+        let http = http(watchLimit: 250)
         let service = TraktService(config: .init(clientID: "fixture"), http: http, tokenStore: store)
         await service.refreshStatus()
         let connection = try XCTUnwrap(service.historyConnectionID)
@@ -235,6 +235,33 @@ final class TraktHistorySnapshotTests: XCTestCase {
         XCTAssertEqual(service.historyConnectionID, connection)
         XCTAssertEqual(store.load()?.accessToken, "rotated")
         XCTAssertEqual(http.sentPaths.filter { $0 == "/oauth/token" }.count, 1)
+    }
+
+    @MainActor
+    func testHistoryLimitRetriesOnlyTheThrottledPageAndHonorsLongCooldown() async throws {
+        let path = "/users/me/history"
+        let http = http(history: "[" + (1...250).map { watch($0) }.joined(separator: ",") + "]", historyCount: 251, watchLimit: 250)
+        http.stub(pathSuffix: path, json: "{}", status: 429, headers: ["Retry-After": "1"])
+        http.stub(pathSuffix: path, json: "[\(watch(251))]", headers: headers(page: 2, count: 251, limit: 250))
+        let gate = TraktHistoryReadCooldown()
+        http.stub(pathSuffix: "/sync/last_activities", json: activity())
+        http.stub(pathSuffix: "/sync/last_activities", json: "{}", status: 429, headers: ["Retry-After": "120"])
+        func read() async throws -> TrackerHistorySnapshot {
+            try await TraktClient(config: .init(clientID: "fixture"), http: http, historyRead: .init(cooldown: gate))
+                .historySnapshot(accessToken: "fixture", connectionID: "fixture", validateScope: {})
+        }
+        let snapshot = try await read()
+        XCTAssertEqual(snapshot.observations.count, 251)
+        XCTAssertEqual(http.sent.filter { $0.path == path }.compactMap { $0.queryItems.first { $0.name == "page" }?.value }, ["1", "2", "2"])
+        let before = http.sentPaths.count
+        for _ in 1...2 {
+            do { _ = try await read(); XCTFail("Throttling must not return partial evidence") }
+            catch {
+                guard case .rateLimited(let delay) = error as? AppError else { return XCTFail("Expected a cooldown") }
+                XCTAssertGreaterThan(delay ?? 0, 110)
+            }
+        }
+        XCTAssertEqual(http.sentPaths.count, before + 1)
     }
 
     @MainActor

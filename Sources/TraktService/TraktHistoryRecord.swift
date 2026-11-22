@@ -13,7 +13,53 @@ struct TraktCorrectedWatchTotal: Error {
     let ids: Set<Int>
 }
 
+@MainActor
+final class TraktHistoryReadCooldown {
+    private var until = Date.distantPast
+    func requireReady() throws {
+        let remaining = until.timeIntervalSinceNow
+        if remaining > 0 { throw AppError.rateLimited(retryAfter: remaining) }
+    }
+    func block(seconds: TimeInterval?) -> Date {
+        until = max(until, Date().addingTimeInterval(max(1, seconds ?? 60)))
+        return until
+    }
+}
+
+@MainActor
+final class TraktHistoryReadAttempt {
+    let cooldown: TraktHistoryReadCooldown
+    private var retried = false
+    init(cooldown: TraktHistoryReadCooldown) { self.cooldown = cooldown }
+    func pause(after delay: TimeInterval?) async throws {
+        let until = cooldown.block(seconds: delay)
+        let remaining = until.timeIntervalSinceNow
+        // Only one short, server-directed retry per snapshot. Never restart pagination.
+        guard !retried, delay != nil, remaining <= 15 else { throw AppError.rateLimited(retryAfter: remaining) }
+        retried = true
+        TrackerHistoryReadDetail.report?(.waiting(until: until))
+        try await Task.sleep(for: .seconds(max(0, remaining)))
+        try cooldown.requireReady()
+        TrackerHistoryReadDetail.report?(nil)
+    }
+}
+
 extension TraktClient {
+    func readPage(_ endpoint: Endpoint, validate: @Sendable () async throws -> Void) async throws -> (Data, HTTPURLResponse) {
+        guard let historyRead else { return try await http.sendRaw(endpoint, baseURL: config.apiBaseURL) }
+        while true {
+            try await historyRead.cooldown.requireReady()
+            try await validate()
+            try Task.checkCancellation()
+            let result = try await http.sendRaw(endpoint, baseURL: config.apiBaseURL)
+            guard result.1.statusCode == 429,
+                  case .rateLimited(let delay) = oauthError(data: result.0, response: result.1) else { return result }
+            HandoffDiagnostics.emit("TRAKT_HISTORY rate-limited")
+            try await validate()
+            try await historyRead.pause(after: delay)
+        }
+    }
+
     func verifyWatchRanges(
         _ correction: TraktCorrectedWatchTotal, accessToken: String,
         validateScope: @escaping @Sendable () async throws -> Void

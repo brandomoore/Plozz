@@ -86,6 +86,10 @@ struct TrackerHistoryImportFixture: View {
         VStack(alignment: .leading, spacing: 8) {
             report
             if testsOngoingSync {
+                if let resume = model.resumeRead {
+                    Button("Finish fixture read") { model.resumeRead = nil; resume.resume() }
+                        .accessibilityIdentifier("fixture.history.finish-read")
+                }
                 Button("New tracker play") { model.newPlay += 1 }
                     .accessibilityIdentifier("fixture.history.new-play")
             }
@@ -113,6 +117,8 @@ private final class HistoryImportFixtureModel {
     let index: IdentityIndexSnapshot
     var authorized = true
     var trackerReads = 0
+    var resumeRead: CheckedContinuation<Void, Never>?
+    private var heldRead = false
     var trackerWrites = 0
     var newPlay = 0
     var exported = false
@@ -539,7 +545,14 @@ private final class HistoryImportFixtureModel {
                 .init(account: $0.account)
             },
             reconciler: makeReconciler(),
-            readSnapshot: { try self.snapshot() },
+            readSnapshot: {
+                if self.arguments.contains("--history-hold-active-read"), self.sync?.isEnabled == true, !self.heldRead {
+                    self.heldRead = true
+                    TrackerHistoryReadDetail.report?(.watches(page: 1, total: 3))
+                    await withCheckedContinuation { self.resumeRead = $0 }
+                }
+                return try self.snapshot()
+            },
             index: { self.index },
             resolveProvider: {
                 guard let provider = self.provider($0) else { throw AppError.serverUnreachable }

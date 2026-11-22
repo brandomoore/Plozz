@@ -55,6 +55,7 @@ public final class TraktService: TrackerHistorySyncReading {
     @ObservationIgnored private let config: TraktConfig
     @ObservationIgnored private let auth: TraktAuthService
     @ObservationIgnored private let http: HTTPClient
+    @ObservationIgnored private let historyCooldown = TraktHistoryReadCooldown()
     @ObservationIgnored private let tokenStore: TraktTokenStoring
     @ObservationIgnored private let activation: TrackerActivationStore
     @ObservationIgnored private let coordinator: TraktTokenCoordinator
@@ -129,10 +130,11 @@ public final class TraktService: TrackerHistorySyncReading {
             guard self?.historyConnectionID == expectedConnectionID else { throw TrackerHistoryError.scopeChanged }
         }
         try current()
+        try historyCooldown.requireReady()
         let store = tokenStore.snapshot()
         guard let access = try await coordinator.accessToken(store: store, auth: auth) else { throw AppError.unauthorized }
         try current()
-        return try await TraktClient(config: config, http: http).historySnapshot(
+        return try await TraktClient(config: config, http: http, historyRead: .init(cooldown: historyCooldown)).historySnapshot(
             accessToken: access, connectionID: expectedConnectionID, validateScope: { try await current() }
         )
     }

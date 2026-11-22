@@ -188,6 +188,30 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         assertReport(jellyfin: 0, plex: 0, cedar: 0, mariner: 0)
     }
 
+    #if os(iOS)
+    func testActiveSyncShowsPageProgressInsteadOfSyncNow() {
+        app.launchArguments = ["--tracker-history-import-fixture", "--history-ongoing-sync", "--history-direct-sync", "--history-hold-active-read"]
+        app.launch()
+        activate(app.buttons["fixture.history.open"])
+        activate(element("tracker-history.sync-enabled"))
+        activate(element("tracker-history.choose.cedar"))
+        activate(element("tracker-history.start-sync"))
+        let progress = element("tracker-history.progress")
+        XCTAssertTrue(progress.waitForExistence(timeout: 10))
+        let updated = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Checking library 1 of 1", "Read 1 of 3 history pages"),
+            object: progress
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 5), .completed)
+        XCTAssertFalse(app.buttons["tracker-history.sync-now"].exists)
+        XCTAssertGreaterThan(progress.frame.height, 52)
+        activate(element("fixture.history.finish-read"))
+        activate(app.buttons["Skip"].firstMatch)
+        XCTAssertTrue(app.buttons["tracker-history.sync-now"].waitForExistence(timeout: 5))
+        XCTAssertFalse(progress.exists)
+    }
+    #endif
+
     func testOngoingShareDefaultsAndEditsLeaveUnselectedSourcesUnchanged() {
         verifyOngoingShareSync()
     }

@@ -129,6 +129,10 @@ correction exactly, Plozz discards that read and checks two open-ended date rang
 Both must paginate completely and together reproduce the exact set of individual
 play IDs. A mismatch, duplicate outside the overlap, or activity change still stops sync.
 Paused playback and export do not use this recovery path.
+The app requests 250 watches per page and still caps the read at 100,000 entries.
+On HTTP 429, history reads honor the service cooldown. A snapshot may retry the
+same GET once after a short `Retry-After` (up to 15 seconds); longer waits or
+repeated throttles stop the check. No partial result is applied.
 When diagnostics are enabled, `TRAKT_HISTORY incomplete` records which check rejected
 the response (activity timestamps, pagination, or duplicate records). It uses fixed labels,
 never account identifiers, URLs, header values, or watch history.

@@ -46,6 +46,13 @@ public enum TrackerHistorySyncCheckStatus: String, Codable, Sendable {
     case failed, completed
 }
 
+/// Counts describe one provider read, not overall import completion.
+public enum TrackerHistoryReadDetail: Equatable, Sendable {
+    case watches(page: Int, total: Int), verifyingRange(page: Int, total: Int)
+    case waiting(until: Date)
+    @TaskLocal public static var report: (@MainActor @Sendable (Self?) -> Void)?
+}
+
 public struct TrackerHistorySyncGrant: DurableLocalStateValue, Equatable {
     public static let durableLocalStateSchemaID = "tracker-history-sync-grant.v1"
     static let currentBetaConsentVersion = 1
@@ -77,6 +84,13 @@ public struct TrackerHistorySyncGrant: DurableLocalStateValue, Equatable {
 @MainActor
 @Observable
 public final class TrackerHistorySyncController {
+    public enum Stage {
+        case reading, verifying, saving, selecting
+        case comparing(library: Int, total: Int), applying(library: Int, total: Int)
+    }
+    public private(set) var stage: Stage = .reading
+    public private(set) var readDetail: TrackerHistoryReadDetail?
+    public private(set) var retryDate: Date?
     public let identity: TrackerHistorySyncIdentity
     public let contextScope: WatchMutationServerScope
     public let supportedCategories: Set<TrackerHistorySyncCategory>
@@ -101,6 +115,15 @@ public final class TrackerHistorySyncController {
     private static let bucketCount = 64
     private static let maximumObservations = 100_000
     private static let batchSize = 25
+
+    private func trackRead<T>(_ current: UUID, _ body: @MainActor () async throws -> T) async rethrows -> T {
+        readDetail = nil
+        defer { if generation == current { readDetail = nil } }
+        return try await TrackerHistoryReadDetail.$report.withValue({ [weak self] detail in
+            guard let self, self.generation == current else { return }
+            self.readDetail = detail
+        }, operation: body)
+    }
 
     private enum Receipt: String, Codable, Sendable { case pending, confirmed, matched, review }
     private struct Bucket: DurableLocalStateValue {
@@ -232,11 +255,13 @@ public final class TrackerHistorySyncController {
             let selectedScope = try contextScope.selectingAccounts(accountIDs)
             guard permits(selectedScope) else { throw TrackerHistoryError.invalidSelection }
             let previous: TrackerHistorySyncGrant? = try store.load(for: grantKey())
-            let reviewed = try await reviewedSnapshot()
+            stage = .reading
+            let reviewed = try await trackRead(current, reviewedSnapshot)
             try requireContext(current)
             let session = try makeSession(contextScope, isAuthorized)
             defer { session.cancel() }
-            let snapshot = try await session.snapshotAfterReview(reviewed)
+            stage = .verifying
+            let snapshot = try await trackRead(current) { try await session.snapshotAfterReview(reviewed) }
             try requireContext(current)
             guard snapshot.trackerID == identity.trackerID else { throw TrackerHistoryError.scopeChanged }
             guard snapshot.observations.count <= Self.maximumObservations else {
@@ -245,6 +270,7 @@ public final class TrackerHistorySyncController {
             guard try store.load(TrackerHistorySyncGrant.self, for: grantKey()) == previous else {
                 throw TrackerHistorySyncError.permissionChanged
             }
+            stage = .saving
             var next = TrackerHistorySyncGrant(
                 id: UUID(), identity: identity, scope: selectedScope,
                 categories: categories, createdAt: Date(), enabled: false, reviewCount: 0,
@@ -309,6 +335,7 @@ public final class TrackerHistorySyncController {
             stop()
             current = generation
             isEditing = true
+            stage = .selecting
             defer { isEditing = false }
             let addedAccounts = accountIDs.subtracting(previous.scope.accounts.map(\.accountID))
             let addedCategories = categories.subtracting(previous.categories)
@@ -495,13 +522,13 @@ public final class TrackerHistorySyncController {
             var confirmed = 0
             var more = false
             var buckets = try loadBuckets(initial)
-            for account in initial.scope.accounts {
+            for (offset, account) in initial.scope.accounts.enumerated() {
                 let scope = try initial.scope.selectingAccounts([account.accountID])
                 var remaining: Set<String>?
                 repeat {
                     let batch = try await processBatch(
                         scope: scope, accountID: account.accountID, grant: initial, generation: current,
-                        remaining: remaining, buckets: &buckets
+                        remaining: remaining, buckets: &buckets, libraryNumber: offset + 1
                     )
                     confirmed += batch.confirmed
                     more = more || batch.deferred || (!drainBatches && !batch.remaining.isEmpty)
@@ -534,7 +561,7 @@ public final class TrackerHistorySyncController {
 
     private func processBatch(
         scope: WatchMutationServerScope, accountID: String, grant initial: TrackerHistorySyncGrant, generation current: UUID,
-        remaining: Set<String>?, buckets: inout [Bucket]
+        remaining: Set<String>?, buckets: inout [Bucket], libraryNumber: Int
     ) async throws -> Batch {
         try requireCheck(initial, current)
         let session = try makeSession(scope) { [weak self] in
@@ -555,7 +582,8 @@ public final class TrackerHistorySyncController {
         // Every batch compares fresh, complete evidence. Only consider each
         // first-snapshot candidate once: active playback or a moving tracker
         // cannot cause an unbounded loop or starve later records.
-        await session.compare { [buckets] snapshot in
+        stage = .comparing(library: libraryNumber, total: initial.scope.accounts.count)
+        let selectRecords: @MainActor (TrackerHistorySnapshot) throws -> Set<String> = { [buckets] snapshot in
             try self.requireCheck(initial, current)
             guard snapshot.trackerID == initial.identity.trackerID else { throw TrackerHistoryError.scopeChanged }
             guard snapshot.observations.count <= Self.maximumObservations else { throw TrackerHistorySyncError.historyTooLarge }
@@ -574,6 +602,7 @@ public final class TrackerHistorySyncController {
             batch.remaining = Set(newRecords).subtracting(considered)
             return considered
         }
+        await trackRead(current) { await session.compare(selectingRecords: selectRecords) }
         try requireCheck(initial, current)
         if let error = session.error { throw error }
         guard let plan = session.plan else { throw TrackerHistoryError.incompleteSnapshot }
@@ -608,7 +637,10 @@ public final class TrackerHistorySyncController {
             persisted.reviewCount = Self.reviewCount(buckets)
             try store.save(persisted, for: grantKey())
             grant = persisted
-            await session.apply(rowIDs: selected, overridingConflicts: continuations, confirmsDestructiveChanges: false)
+            stage = .applying(library: libraryNumber, total: initial.scope.accounts.count)
+            await trackRead(current) {
+                await session.apply(rowIDs: selected, overridingConflicts: continuations, confirmsDestructiveChanges: false)
+            }
             try requireCheck(initial, current)
             for row in rows where session.outcomes[row.id] == .confirmed {
                 try record(
@@ -823,6 +855,9 @@ public final class TrackerHistorySyncController {
     }
 
     private func report(_ error: any Error) {
+        if case .rateLimited(let delay) = error as? AppError, let delay, delay.isFinite {
+            retryDate = Date().addingTimeInterval(delay)
+        } else { retryDate = nil }
         self.error = error
         #if canImport(OSLog)
         Logger(subsystem: "com.plozz.app", category: "tracker-history")

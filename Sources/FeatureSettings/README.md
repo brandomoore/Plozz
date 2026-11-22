@@ -8,6 +8,7 @@ asks which libraries to sync; canceling reads no history and leaves sync off. **
 enrolls only the confirmed libraries. Once enabled, one library displays its name and badge directly. For multiple libraries,
 the collapsed row shows the selected count; expanding it lists each library once with its badge and switch.
 On mobile, the Settings list must show the entire sync error at the available width.
+While a check is running, its current stage and available page counts replace **Sync now**.
 Wrapped errors use the same inner clearance as Settings descriptions; the group owns the horizontal inset.
 **Account** groups connection status and account actions. Every tracker uses a red **Disconnect** button.
 **2-way sync** brings supported
@@ -1536,6 +1537,8 @@ watch history and planning-list behavior are documented in
   auto-download) lives here; the subtitle *look* is now adjusted in the
   player while watching.
 - **Send Diagnostics** on TV and mobile uses the existing crash-reporting consent.
+  On mobile, the input gives the placeholder and draft the same inset. Successful
+  submission clears the draft; failure keeps it available for retry.
   The setting is labeled **Share Diagnostics** because it covers more than crashes.
   When sharing is off, the native **Enable Sharing** action opens the existing
   consent prompt; confirming only enables sharing, without submitting or clearing
