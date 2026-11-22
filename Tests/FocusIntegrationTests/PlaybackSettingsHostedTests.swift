@@ -52,7 +52,7 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         }
         try await Task.sleep(for: .milliseconds(350))
         let initial = try visibleText(in: window, attachment: nil)
-        XCTAssertTrue(initial.contains("Default zoom"), initial)
+        XCTAssertTrue(initial.contains("Default player zoom"), initial)
         XCTAssertEqual(playback.settings.videoZoom.television.mode, .fit)
         XCTAssertTrue(initial.contains("Normal"), initial)
         XCTAssertEqual(nativeFocusItems(in: window).count, 1)
@@ -92,10 +92,11 @@ final class PlaybackSettingsHostedTests: XCTestCase {
             subtitlePolicy: SubtitlePolicyModel(store: SubtitlePolicyStore(defaults: defaults)),
             audioPolicy: AudioPolicyModel(store: AudioPolicyStore(defaults: defaults))
         )
+        let upscaling = try XCTUnwrap(page.videoRows.first { $0.id == "video-upscaling" })
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
         window.rootViewController = UIHostingController(rootView:
-            SettingsFormLayout(title: Text("Playback"), rows: page.videoUpscalingRows)
+            SettingsFormLayout(title: Text("Playback"), rows: [upscaling])
                 .environment(\.themePalette, .dark)
                 .environment(\.locale, Locale(identifier: "en_US"))
                 .frame(width: SettingsFormMetrics.pageWidth)
@@ -371,7 +372,8 @@ final class PlaybackSettingsHostedTests: XCTestCase {
             subtitlePolicy: SubtitlePolicyModel(store: SubtitlePolicyStore(defaults: defaults)),
             audioPolicy: AudioPolicyModel(store: AudioPolicyStore(defaults: defaults))
         )
-        XCTAssertEqual(page.audioRows.map(\.id), ["audio-defaults", "lossless-surround", "dolby-vision-fel"])
+        XCTAssertEqual(page.audioRows.map(\.id), ["audio-defaults", "lossless-surround"])
+        XCTAssertEqual(page.videoRows.contains { $0.id == "dolby-vision-fel" }, AppReleaseChannel.current.isBeta)
         let outputRow = try XCTUnwrap(page.audioRows.first { $0.id == "lossless-surround" })
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)

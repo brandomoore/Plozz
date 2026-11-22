@@ -60,7 +60,7 @@ extension SettingsSearchCatalog {
               keywords: "night shift circadian blue light warm dim evening schedule"),
         .init("up-next-lead", page: .playback, title: "Up Next lead time",
               keywords: "video player playback"),
-        .init("default-video-zoom", page: .playback, title: "Default zoom",
+        .init("default-video-zoom", page: .playback, title: "Default player zoom",
               keywords: "video crop black bars fit stretch picture notch Dynamic Island"),
         .init("custom-video-zoom", page: .playback, title: "Custom zoom",
               keywords: "video crop black bars fit stretch picture size percentage"),

@@ -658,12 +658,16 @@ struct PlaybackDetailView: View {
                     SettingsConnectedControlGroups {
                         ForEach(upNextRows) { $0.detail() }
                     }
-                }.groupedContent()
-            ] + zoomRows + playerTabRows + versionSelectionRows + videoUpscalingRows + readAheadRows + skipIntroRows + [
+                }.groupedContent(),
+                SettingsSplitRow(id: "resuming-playback", title: "Resuming playback") {
+                    SettingsControlRows {
+                        ForEach(resumeRows) { $0.detail() }
+                    }
+                }
+            ] + zoomRows + playerTabRows + versionSelectionRows + videoRows + readAheadRows + skipIntroRows + [
                 SettingsSplitRow(id: "seeking", title: "Seeking") {
                     SettingsControlRows {
                         ForEach(skipIntervalRows) { $0.detail() }
-                        ForEach(resumeRows) { $0.detail() }
                         ForEach(scrubbingRows) { row in
                             VStack(alignment: .leading, spacing: SettingsFormMetrics.relatedControlSpacing) {
                                 row.detail()
@@ -681,7 +685,7 @@ struct PlaybackDetailView: View {
             + audioRows
             + zoomRows
             + versionSelectionRows
-            + videoUpscalingRows
+            + videoRows
             + skipIntroRows
             + skipIntervalRows
             + resumeRows
@@ -713,16 +717,24 @@ struct PlaybackDetailView: View {
     }
 
     var zoomRows: [SettingsSplitRow] {
-        [SettingsSplitRow(id: "default-video-zoom", title: "Default zoom") {
+        [SettingsSplitRow(id: "default-video-zoom", title: "Default player zoom") {
             DefaultVideoZoomControl(model: playback)
         }.labeledControl()]
     }
 
-    var videoUpscalingRows: [SettingsSplitRow] {
+    var videoRows: [SettingsSplitRow] {
         [SettingsSplitRow(id: "video-upscaling", title: "Video upscaling") {
             VideoUpscalingControl(selection: $playback.settings.videoUpscaling)
                 .settingsSearchAnchor("video-upscaling")
-        }.labeledControl()]
+        }.labeledControl()] + (AppReleaseChannel.current.isBeta ? [
+            SettingsSplitRow(id: "dolby-vision-fel", title: "Video") {
+                SettingsDescribedControl {
+                    Toggle("P7 FEL → P8.1 conversion", isOn: $playback.settings.dolbyVisionFELConversion)
+                } description: {
+                    Text("Approximates enhancement-layer brightness without full FEL reconstruction. Turn off to use HDR10.")
+                }
+            }
+        ] : [])
     }
 
     private var advancedRows: [SettingsSplitRow] {
@@ -920,15 +932,7 @@ struct PlaybackDetailView: View {
                     .settingsSearchAnchor("identify-songs")
                 }
             }
-        ] + (AppReleaseChannel.current.isBeta ? [
-            SettingsSplitRow(id: "dolby-vision-fel", title: "Video") {
-                SettingsDescribedControl {
-                    Toggle("P7 FEL → P8.1 conversion", isOn: $playback.settings.dolbyVisionFELConversion)
-                } description: {
-                    Text("Approximates enhancement-layer brightness without full FEL reconstruction. Turn off to use HDR10.")
-                }
-            }
-        ] : [])
+        ]
     }
 
     private var skipIntroRows: [SettingsSplitRow] {

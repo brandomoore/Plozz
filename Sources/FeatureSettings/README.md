@@ -18,7 +18,7 @@ or paused** also clears the paused picture after four idle seconds without
 resuming playback. **Never** leaves dismissal to the viewer. VoiceOver and
 Switch Control suspend automatic dismissal regardless of the profile setting.
 
-Playback's **Default zoom** uses the shared native menu on TV and mobile.
+Playback's **Default player zoom** uses the shared native menu on TV and mobile.
 Each profile stores separate iPhone, iPad and Apple TV choices; the current platform's
 control edits only its own choice. Custom exposes the existing 50-200% range.
 Saved movie/series mode overrides take priority. Auto-crop's pinch-selected
@@ -26,6 +26,9 @@ screen-edge/cutout-safe framing instead carries across all videos for that devic
 type and profile. Changing Custom's percentage preserves that shared framing.
 The playback settings payload carries all three defaults through profile switching,
 transfer and sync.
+
+**Resuming playback** groups the resume-or-start-over prompt with the rewind
+interval for returning to a title. Skip intervals apply during playback instead.
 
 Live TV's **Clean channel names** switch is profile-scoped and off by default.
 The shared TV/mobile section previews up to three distinct original names from

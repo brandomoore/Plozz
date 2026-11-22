@@ -2524,6 +2524,13 @@ struct PlozziOSPlaybackSettingsView: View {
                     }
                 }
                 .settingsSearchAnchor("skip-forward")
+            }
+            .settingsSearchGroup(["skip-backward", "skip-forward"])
+
+            SettingsSectionGroup("Resuming playback") {
+                Toggle("Ask to resume or start over", isOn: $model.settings.askBeforeResuming)
+                    .accessibilityIdentifier("playback-ask-before-resuming")
+                    .settingsSearchAnchor("ask-before-resuming")
                 Picker("Resume rewind", selection: $model.settings.resumeRewindInterval) {
                     ForEach(ResumeRewindInterval.allCases, id: \.self) {
                         Text(verbatim: $0.title(locale: locale)).tag($0)
@@ -2531,12 +2538,9 @@ struct PlozziOSPlaybackSettingsView: View {
                 }
                 .settingsSearchAnchor("resume-rewind")
             }
-            .settingsSearchGroup(["skip-backward", "skip-forward", "resume-rewind"])
+            .settingsSearchGroup(["ask-before-resuming", "resume-rewind"])
 
             SettingsSectionGroup("Playback") {
-                Toggle("Ask to resume or start over", isOn: $model.settings.askBeforeResuming)
-                    .accessibilityIdentifier("playback-ask-before-resuming")
-                    .settingsSearchAnchor("ask-before-resuming")
                 PlaybackVersionPreferencePicker(model: model)
                     .settingsSearchAnchor("version-selection")
                 Toggle("Remember series version choices", isOn: $model.settings.rememberVersionPerSeries)
@@ -2576,7 +2580,7 @@ struct PlozziOSPlaybackSettingsView: View {
                 ).settingsSearchAnchor("cross-server-watch-sync")
             }
             .settingsSearchGroup([
-                "ask-before-resuming", "version-selection", "remember-series-version", "background-audio",
+                "version-selection", "remember-series-version", "background-audio",
                 "volume-brightness", "seek-without-pausing", "autoplay-next-episode",
                 "autoplay-next-playlist", "show-up-next-card", "up-next-lead",
                 "cross-server-watch-sync"

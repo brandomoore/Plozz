@@ -51,7 +51,7 @@ public struct DefaultVideoZoomControl: View {
 
     @ViewBuilder private var controls: some View {
         #if os(tvOS)
-        SettingsMenuRow(title: "Default zoom", value: Text(mode.wrappedValue.title)) {
+        SettingsMenuRow(title: "Default player zoom", value: Text(mode.wrappedValue.title)) {
             modePicker
         }
         .accessibilityIdentifier("default-video-zoom")
@@ -91,7 +91,7 @@ public struct DefaultVideoZoomControl: View {
     }
 
     private var modePicker: some View {
-        Picker("Default zoom", selection: mode) {
+        Picker("Default player zoom", selection: mode) {
             ForEach([VideoZoomPreference.Mode.picture, .fit, .fill, .stretch, .custom], id: \.self) {
                 Text($0.title).tag($0)
             }

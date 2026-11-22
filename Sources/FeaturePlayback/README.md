@@ -1644,7 +1644,7 @@ back to coded dimensions.
 Authored bitmap clearance maps the image, lower-region envelope, and protected
 artwork boundary through that same zoom/stretch geometry before moving a region.
 
-The profile's Default zoom is stored separately for iPhone, iPad and Apple TV.
+The profile's **Default player zoom** is stored separately for iPhone, iPad and Apple TV.
 It applies to movies, episodes, extras, trailers and Live TV; each platform starts
 with Normal. Older saved Auto-crop defaults and title choices reset to Normal once;
 other modes, Custom percentages and cutout-safe preferences remain intact.
