@@ -178,6 +178,32 @@ final class PlexAbsoluteArtworkURLTests: XCTestCase {
         )
     }
 
+    func testTranscodedCompositePreservesQueryAndReplacesExistingTokens() throws {
+        let token = "fixture+&=%"
+        let client = PlexClient(
+            baseURL: URL(string: "https://plex.host:32400/plex")!,
+            deviceProfile: PlexDeviceProfile(clientIdentifier: "dev1"), token: token, http: StubHTTPClient()
+        )
+        let path = "/library/collections/123/composite"
+        let parameters = "width=400&height=600&label=A%2BB%26C&label=other"
+        for suffix in ["", "&x-plex-token=old&X-Plex-Token=older"] {
+            let url = try XCTUnwrap(client.imageURL(path: "\(path)?\(parameters)\(suffix)", maxWidth: 500))
+            let outer = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+            XCTAssertEqual(outer.path, "/plex/photo/:/transcode")
+            let items = try XCTUnwrap(outer.queryItems)
+            XCTAssertEqual(items.first { $0.name == "width" }?.value, "500")
+            XCTAssertEqual(items.first { $0.name == "X-Plex-Token" }?.value, token)
+            let inner = try XCTUnwrap(items.first { $0.name == "url" }?.value.flatMap(URLComponents.init(string:)))
+            XCTAssertEqual(inner.path, path)
+            XCTAssertEqual(inner.queryItems, [
+                .init(name: "width", value: "400"), .init(name: "height", value: "600"),
+                .init(name: "label", value: "A+B&C"), .init(name: "label", value: "other"),
+                .init(name: "X-Plex-Token", value: token)
+            ])
+            XCTAssertTrue(inner.percentEncodedQuery?.contains("label=A%2BB%26C") == true)
+        }
+    }
+
     func testProviderReauthenticatesPersistedTranscodeAndKeepsRevision() throws {
         let live = try XCTUnwrap(
             makeClient().imageURL(

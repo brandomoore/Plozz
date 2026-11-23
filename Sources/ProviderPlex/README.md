@@ -45,6 +45,9 @@ first-class backends; co-equal with `ProviderJellyfin`.
 - **No UI imports.** Pure logic + DTOs.
 - **Tokens never logged.** `X-Plex-Token` flows through `CoreNetworking`
   redaction; PIN values are never persisted (see `PlexPinFlow`).
+- Resized library artwork preserves the source path's query (including
+  composite dimensions) and replaces any old token before nesting the source
+  URL in the photo transcoder request. Absolute artwork URLs remain untouched.
 - **All errors become `AppError`.**
 - Lenient scalar decoders check key presence before trying alternate types.
   Sparse stream records must not construct decoding errors for absent optional
