@@ -472,7 +472,7 @@ _xcb_once() {
   fi
   echo "run-tests.sh: result bundle: $result_bundle"
   if [[ $reaped_after_verdict -ne 1 ]] \
-     && ! python3 tools/run-bounded.py 30 "xcresult summary" -- \
+     && ! python3 tools/run-bounded.py 180 "xcresult summary" -- \
        xcrun xcresulttool get test-results summary --path "$result_bundle" > "$summary"; then
     echo "run-tests.sh: FAILURE — no readable xcresult; console summaries cannot prove success." >&2
     return 1

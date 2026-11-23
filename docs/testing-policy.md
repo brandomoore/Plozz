@@ -528,6 +528,8 @@ Set `PLOZZ_VERDICT_GRACE=0` to check results as soon as the bundles report.
 last bundle reports, allowing Xcode's 600-second simulator diagnostic collection
 to finish. This is a ceiling, not a fixed wait. A readable result bundle is
 always required; reaching the grace period alone never interrupts its writer.
+After the writer exits, the final summary read has a separate 180-second limit
+for large package shards. A timeout or unreadable summary still fails the run.
 If finalization or the no-progress watchdog times out, the run fails even if a
 later summary becomes readable after termination.
 

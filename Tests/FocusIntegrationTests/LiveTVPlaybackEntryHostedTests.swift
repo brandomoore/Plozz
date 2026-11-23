@@ -47,9 +47,22 @@ final class LiveTVPlaybackEntryHostedTests: XCTestCase {
             if stage == 1 { probe.phase = .active; probe.active = false }
         }
         probe.active = true
-        try await Task.sleep(for: .seconds(1))
+        let host = try XCTUnwrap(window.rootViewController)
+        var deadline = ContinuousClock.now + .seconds(5)
+        while host.presentedViewController == nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertNotNil(host.presentedViewController)
         XCTAssertNil(probe.input)
         XCTAssertFalse(store.load().hasChosenAutoPreview)
+
+        // Let the unanswered sheet release native focus before removing its window.
+        probe.active = false
+        deadline = ContinuousClock.now + .seconds(5)
+        while host.presentedViewController != nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertNil(host.presentedViewController)
     }
 
     func testPreviewStartsAfterDestinationAndSceneBecomeActive() async throws {
