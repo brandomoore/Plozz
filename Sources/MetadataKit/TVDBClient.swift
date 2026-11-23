@@ -412,7 +412,10 @@ public actor TVDBClient {
         return prefersPortrait ? Self.bestPortraitHero(artworks) : Self.bestBackdrop(artworks)
     }
 
-    func posterURL(title: String, year: Int?, isMovie: Bool, tvdbID: String?, language: String) async -> URL? {
+    func posterURL(
+        title: String,  // l10n:content — media title used as a TheTVDB lookup key
+        year: Int?, isMovie: Bool, tvdbID: String?, language: String
+    ) async -> URL? {
         guard config.isConfigured else { return nil }
         let match = tvdbID?.nonEmpty == nil ? await resolve(title: title, year: year, isMovie: isMovie) : nil
         guard let id = tvdbID?.nonEmpty ?? match?.tvdbID,
