@@ -2,38 +2,58 @@
 import SwiftUI
 import UIKit
 
-/// Selection artwork only. Neither the snapshot nor either of its endpoints
-/// depends on a SwiftUI update after the button fires.
+/// The name and artwork share one presentation layer throughout the flight.
 @MainActor
 final class PlozziOSProfileAvatarFlight {
     private let tiles = NSMapTable<NSString, UIView>.strongToWeakObjects()
     fileprivate weak var viewport: Viewport?
+    private var placeCapturedIdentity: (() -> Void)?
     private(set) var profileID: String?
+    private(set) var captionSpace: CGFloat = 0
 
     fileprivate func register(_ marker: UIView, for id: String) {
         tiles.setObject(marker, forKey: id as NSString)
     }
 
-    func start(profileID: String, targetSize: CGFloat, reduceMotion: Bool) {
+    func prepare(profileID: String, avatarSize: CGFloat, targetSize: CGFloat, reduceMotion: Bool,
+               caption: (CGFloat) -> UIImage?) {
         guard let viewport, let marker = tiles.object(forKey: profileID as NSString),
               let window = marker.window, viewport.window === window else { return }
         viewport.layoutIfNeeded()
-        let crop = marker.convert(marker.bounds, to: window)
-        guard crop.width > 0, crop.height > 0, !viewport.bounds.isEmpty,
-              window.bounds.contains(crop),
+        let tile = marker.convert(marker.bounds, to: window)
+        let crop = CGRect(x: tile.midX - avatarSize / 2, y: tile.minY, width: avatarSize, height: avatarSize)
+        guard tile.width > 0, !viewport.bounds.isEmpty, window.bounds.contains(tile),
               let avatar = window.resizableSnapshotView(
                 from: crop, afterScreenUpdates: false, withCapInsets: .zero
-              ) else { return }
+              ), let name = caption(tile.width) else { return }
+        let identity = UIView(frame: CGRect(origin: .zero, size: crop.size))
+        avatar.frame = identity.bounds
+        avatar.layer.cornerRadius = crop.width / 2
+        avatar.clipsToBounds = true
+        identity.addSubview(avatar)
+        let label = UIImageView(image: name)
+        label.center = CGPoint(x: identity.bounds.midX, y: identity.bounds.maxY + 10 + name.size.height / 2)
+        identity.addSubview(label)
+        captionSpace = (10 + name.size.height) * targetSize / avatarSize
         self.profileID = profileID
-        viewport.fly(avatar, from: viewport.convert(crop, from: window), targetSize: targetSize,
-                     reduceMotion: reduceMotion)
+        let source = viewport.convert(crop, from: window)
+        // Capture on tap, but install the copy in the same update that hides
+        // the original tile; otherwise both names can be visible for one frame.
+        placeCapturedIdentity = { [weak viewport] in
+            viewport?.fly(identity, from: source, targetSize: targetSize, reduceMotion: reduceMotion)
+        }
     }
 
     fileprivate func update(selected: String?, showing: Bool) {
         guard let profileID else { return }
         if selected == profileID {
+            if showing {
+                placeCapturedIdentity?()
+                placeCapturedIdentity = nil
+            }
             viewport?.showSnapshot(showing)
         } else {
+            placeCapturedIdentity = nil
             viewport?.clear()
             self.profileID = nil
         }
@@ -51,8 +71,6 @@ final class PlozziOSProfileAvatarFlight {
             avatar = snapshot
             snapshot.isAccessibilityElement = false
             snapshot.bounds = CGRect(origin: .zero, size: source.size)
-            snapshot.layer.cornerRadius = source.width / 2
-            snapshot.layer.masksToBounds = true
             backgroundColor = backdrop
             addSubview(snapshot)
             let scale = targetSize / source.width
@@ -67,17 +85,23 @@ final class PlozziOSProfileAvatarFlight {
                 size.fromValue = 1
                 size.toValue = scale
                 let flight = CAAnimationGroup()
-                flight.duration = 0.36
+                flight.duration = 0.52
                 position.duration = flight.duration
                 size.duration = flight.duration
                 flight.animations = [position, size]
                 flight.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 snapshot.layer.add(flight, forKey: "profile-to-center")
+                // Only the background color fades in. The moving identity stays
+                // opaque while the rest of the still-mounted picker dissolves.
+                let dissolve = CABasicAnimation(keyPath: "backgroundColor")
+                let color = backdrop.resolvedColor(with: traitCollection)
+                dissolve.fromValue = color.withAlphaComponent(0).cgColor
+                dissolve.toValue = color.cgColor
+                dissolve.duration = 0.36
+                dissolve.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                layer.add(dissolve, forKey: "picker-dissolve")
             }
             CATransaction.commit()
-            // Publish the endpoint and explicit animation together *before*
-            // the caller changes picker state or schedules authorization.
-            CATransaction.flush()
         }
 
         override func layoutSubviews() {
@@ -92,11 +116,15 @@ final class PlozziOSProfileAvatarFlight {
 
         fileprivate func showSnapshot(_ visible: Bool) {
             avatar?.isHidden = !visible
-            if !visible { avatar?.layer.removeAnimation(forKey: "profile-to-center") }
+            if !visible {
+                avatar?.layer.removeAnimation(forKey: "profile-to-center")
+                layer.removeAnimation(forKey: "picker-dissolve")
+            }
             backgroundColor = visible ? backdrop : .clear
         }
 
         fileprivate func clear() {
+            layer.removeAnimation(forKey: "picker-dissolve")
             avatar?.layer.removeAllAnimations()
             avatar?.removeFromSuperview()
             avatar = nil

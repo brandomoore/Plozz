@@ -86,6 +86,48 @@ final class ProfilePickerPresentationTests: XCTestCase {
         }
     }
 
+    @Observable fileprivate final class FlightSelection { var id: String? }
+
+    func testCenteredFlightKeepsItsCaptionVisibleBelowTheAvatar() async throws {
+        struct Surface: View {
+            let flight: PlozziOSProfileAvatarFlight
+            let selection: FlightSelection
+            var body: some View {
+                PlozziOSAvatarFlightSurface(flight: flight, selected: selection.id,
+                                            showing: selection.id != nil, backdrop: .black)
+            }
+        }
+        let selection = FlightSelection()
+        let flight = PlozziOSProfileAvatarFlight()
+        let caption = UIGraphicsImageRenderer(size: CGSize(width: 60, height: 18)).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 60, height: 18))
+        }
+        let size = CGSize(width: 390, height: 844)
+        let page = ZStack(alignment: .topLeading) {
+            Color.black
+            VStack(spacing: 10) {
+                Circle().fill(.red).frame(width: 80, height: 80)
+                Color.clear.frame(height: 18)
+            }
+            .frame(width: 120)
+            .background(PlozziOSAvatarCaptureMarker(flight: flight, profileID: "test"))
+            .offset(x: 12, y: 100)
+            Surface(flight: flight, selection: selection)
+        }.ignoresSafeArea()
+        try await withWindow(page, size: size) { window in
+            window.layoutIfNeeded()
+            _ = self.capture(window)
+            flight.prepare(profileID: "test", avatarSize: 80, targetSize: 80, reduceMotion: true) { _ in caption }
+            selection.id = "test"
+            try await Task.sleep(for: .milliseconds(50))
+            let image = self.capture(window)
+            let x = Int(size.width / 2), y = Int(size.height / 2 + 40 + 10 + 9)
+            XCTAssertGreaterThan(try self.brightness(image, x: x, y: y), 200)
+            XCTAssertLessThan(try self.brightness(image, x: x + 40, y: y), 15)
+        }
+    }
+
     func testEntranceIsStaggeredSettlesWithoutOvershootAndHonorsReduceMotion() async throws {
         for count in [1, 3, 6, 8, 16, 40] {
             XCTAssertEqual(PlozziOSProfilePickerEntrance.delay(at: 0, profileCount: count), 0)

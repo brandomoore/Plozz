@@ -210,6 +210,7 @@ struct PlozziOSProfilePickerView: View {
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
+                let hasFlight = selectedProfileID != nil && avatarFlight.profileID == selectedProfileID
                 let layout = PlozziOSProfilePickerLayout(
                     width: geometry.size.width,
                     itemCount: profiles.count + (manager != nil ? 2 : 0),
@@ -229,7 +230,7 @@ struct PlozziOSProfilePickerView: View {
                                 reduceMotion: reduceMotion
                             ))
                             .animation(reduceMotion ? nil : .easeOut(duration: 0.18)) { content in
-                                content.opacity(isCovered || centersSelection ? 0 : 1)
+                                content.opacity(isCovered || (centersSelection && !hasFlight) ? 0 : 1)
                             }
 
                         PlozziOSProfilePickerGrid(
@@ -267,6 +268,11 @@ struct PlozziOSProfilePickerView: View {
                 }
                 .scrollBounceBehavior(.basedOnSize)
                 .accessibilityHidden(centersSelection)
+                // The flight backdrop covers the grid, but cannot hide it once
+                // the whole picker becomes translucent. Fade the source page too.
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.36)) { page in
+                    page.opacity(centersSelection && hasFlight ? 0 : 1)
+                }
                 .overlay {
                     if identityNamespace != nil {
                         PlozziOSAvatarFlightSurface(flight: avatarFlight, selected: selectedProfileID,
@@ -279,6 +285,7 @@ struct PlozziOSProfilePickerView: View {
                     if centersSelection, let profile = profiles.first(where: { $0.id == selectedProfileID }) {
                         PlozziOSCenteredProfileCaption(
                             profile: profile, showsLock: showsPINLock(profile),
+                            flightCaptionSpace: hasFlight ? avatarFlight.captionSpace : nil,
                             identity: PINProfileTransition(
                                 profileID: profile.id, namespace: identityNamespace ?? localIdentityNamespace
                             )
@@ -352,6 +359,7 @@ struct PlozziOSProfilePickerView: View {
     private struct PlozziOSCenteredProfileCaption: View {
         let profile: Profile
         let showsLock: Bool
+        let flightCaptionSpace: CGFloat?
         let identity: PINProfileTransition
         @Environment(\.themePalette) private var palette
         @State private var showsProgress = false
@@ -362,10 +370,18 @@ struct PlozziOSProfilePickerView: View {
                 .frame(height: identity.avatarSize)
                 .overlay(alignment: .bottom) {
                     VStack(spacing: 10) {
-                        ProfileNameLabel(profile: profile, showsLock: showsLock)
-                            .font(identity.nameFont)
-                            .foregroundStyle(palette.primaryText)
-                            .matchedGeometryEffect(id: identity.nameID, in: identity.namespace, properties: .position)
+                        Group {
+                            if let flightCaptionSpace {
+                                Color.clear
+                                    .frame(height: flightCaptionSpace)
+                                    .accessibilityRepresentation { ProfileNameLabel(profile: profile, showsLock: showsLock) }
+                            } else {
+                                ProfileNameLabel(profile: profile, showsLock: showsLock)
+                                    .font(identity.nameFont)
+                                    .foregroundStyle(palette.primaryText)
+                                    .matchedGeometryEffect(id: identity.nameID, in: identity.namespace, properties: .position)
+                            }
+                        }
                             .accessibilityFocused($focused)
                         if showsProgress {
                             ProgressView().controlSize(.small).accessibilityLabel("Loading")
@@ -373,7 +389,7 @@ struct PlozziOSProfilePickerView: View {
                     }
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
-                    .alignmentGuide(.bottom) { $0[.top] - 10 }
+                    .alignmentGuide(.bottom) { $0[.top] - (flightCaptionSpace == nil ? 10 : 0) }
                 }
                 .allowsHitTesting(false)
                 .task {
@@ -444,6 +460,7 @@ struct PlozziOSProfilePickerLayout {
 }
 
 private struct PlozziOSProfilePickerGrid: View {
+    @Environment(\.self) private var environment
     let profiles: [Profile]
     let layout: PlozziOSProfilePickerLayout
     let showsPINLock: (Profile) -> Bool
@@ -481,7 +498,19 @@ private struct PlozziOSProfilePickerGrid: View {
                     if isEditing, canManage {
                         onEdit(profile)
                     } else if selectedProfileID == nil {
-                        flight?.start(profileID: profile.id, targetSize: identity.avatarSize, reduceMotion: reduceMotion)
+                        flight?.prepare(profileID: profile.id, avatarSize: layout.avatarSize,
+                                      targetSize: identity.avatarSize, reduceMotion: reduceMotion) { width in
+                            // Render only the selected name, with a transparent background.
+                            // A window crop would carry a rectangle of the old theme behind it.
+                            let renderer = ImageRenderer(content:
+                                ProfileNameLabel(profile: profile, showsLock: showsLock)
+                                    .modifier(PlozziOSPickerTileCaption())
+                                    .environment(\.self, environment)
+                            )
+                            renderer.proposedSize = .init(width: width, height: nil)
+                            renderer.scale = environment.displayScale
+                            return renderer.uiImage
+                        }
                         onSelect(profile)
                     }
                 } label: {
@@ -506,13 +535,6 @@ private struct PlozziOSProfilePickerGrid: View {
                                 }
                         }
                         .frame(width: layout.avatarSize, height: layout.avatarSize)
-                        .background {
-                            if let flight {
-                                PlozziOSAvatarCaptureMarker(flight: flight, profileID: profile.id)
-                                    .allowsHitTesting(false)
-                                    .accessibilityHidden(true)
-                            }
-                        }
                         .overlay(alignment: .bottomTrailing) {
                             if isEditing {
                                 Image(systemName: "pencil.circle.fill")
@@ -520,6 +542,13 @@ private struct PlozziOSProfilePickerGrid: View {
                                     .symbolRenderingMode(.palette)
                                     .foregroundStyle(.black, .white)
                             }
+                        }
+                    }
+                    .background {
+                        if let flight {
+                            PlozziOSAvatarCaptureMarker(flight: flight, profileID: profile.id)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
                         }
                     }
                 }
@@ -541,7 +570,8 @@ private struct PlozziOSProfilePickerGrid: View {
                 .animation(
                     reduceMotion || profile.id == selectedProfileID ? nil : .easeOut(duration: 0.18)
                 ) { content in
-                    content.opacity(isCovered || (centersSelection && !staticFallback) ? 0 : 1)
+                    content.opacity(isCovered || (centersSelection && !staticFallback
+                        && (centered || flight?.profileID == nil)) ? 0 : 1)
                 }
             }
             if canManage, !isEditing {
@@ -552,7 +582,7 @@ private struct PlozziOSProfilePickerGrid: View {
                     isPresented: hasAppeared, position: profiles.count,
                     profileCount: profiles.count, reduceMotion: reduceMotion
                 ))
-                .opacity(isCovered || centersSelection ? 0 : 1)
+                .opacity(isCovered || (centersSelection && flight?.profileID == nil) ? 0 : 1)
                 PlozziOSProfilePickerAddTile(
                     title: KidsProfileCopy.addTile, symbol: "figure.and.child.holdinghands",
                     size: layout.avatarSize
@@ -561,11 +591,11 @@ private struct PlozziOSProfilePickerGrid: View {
                     isPresented: hasAppeared, position: profiles.count + 1,
                     profileCount: profiles.count, reduceMotion: reduceMotion
                 ))
-                .opacity(isCovered || centersSelection ? 0 : 1)
+                .opacity(isCovered || (centersSelection && flight?.profileID == nil) ? 0 : 1)
             }
         }
         .animation(reduceMotion ? nil : .smooth(duration: 0.36), value: centersSelection)
-        .disabled(isCovered || centersSelection)
+        .allowsHitTesting(!isCovered && !centersSelection)
         .background {
             ProfilePickerPresentationObserver(
                 startsDuringPresentation: startsDuringPresentation, isReady: isPresented
@@ -704,21 +734,27 @@ struct ProfilePickerPresentationObserver: UIViewControllerRepresentable {
 private struct PlozziOSProfilePickerTile<Title: View, Avatar: View>: View {
     let title: Title
     @ViewBuilder var avatar: () -> Avatar
-    @Environment(\.themePalette) private var palette
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(spacing: 10) {
             avatar()
-            title
-                .font(.callout)
-                .foregroundStyle(palette.primaryText)
-                .multilineTextAlignment(.center)
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
-                .fixedSize(horizontal: false, vertical: true)
+            title.modifier(PlozziOSPickerTileCaption())
         }
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
+    }
+}
+
+private struct PlozziOSPickerTileCaption: ViewModifier {
+    @Environment(\.themePalette) private var palette
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    func body(content: Content) -> some View {
+        content.font(.callout)
+            .foregroundStyle(palette.primaryText)
+            .multilineTextAlignment(.center)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

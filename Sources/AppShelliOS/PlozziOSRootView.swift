@@ -337,12 +337,14 @@ public struct PlozziOSRootView: View {
                 .allowsHitTesting(homeEntrance == nil)
                 .accessibilityHidden(homeEntrance != nil)
             if appModel.canEnterApp && (showsLaunchProfilePicker || homeEntrance?.origin == .launch) {
-                PlozziOSProfileSelectionView(
-                    appModel: appModel,
-                    onSelectionStarted: { isSelectingLaunchProfile = true },
-                    onComplete: { selectedProfile(from: .launch) }
-                )
-                .modifier(PlozziOSPickerReveal(entrance: homeEntrance))
+                PlozziOSPickerHost(entrance: homeEntrance) {
+                    PlozziOSProfileSelectionView(
+                        appModel: appModel,
+                        onSelectionStarted: { isSelectingLaunchProfile = true },
+                        onComplete: { selectedProfile(from: .launch) }
+                    )
+                }
+                .ignoresSafeArea(.container)
                 .id(pickerRevision)
             }
         }
@@ -370,12 +372,14 @@ public struct PlozziOSRootView: View {
             consumeDeferredPairingURL()
             notificationDismissals.remove(.profileSwitcher)
         }) {
-            PlozziOSProfileSelectionView(
-                appModel: appModel,
-                onComplete: { selectedProfile(from: .switcher) },
-                onCancel: { showingProfileSwitcher = false }
-            )
-            .modifier(PlozziOSPickerReveal(entrance: homeEntrance))
+            PlozziOSPickerHost(entrance: homeEntrance) {
+                PlozziOSProfileSelectionView(
+                    appModel: appModel,
+                    onComplete: { selectedProfile(from: .switcher) },
+                    onCancel: { showingProfileSwitcher = false }
+                )
+            }
+            .ignoresSafeArea(.container)
             .id(pickerRevision)
             // Keep the normal Home attached under UIKit's cover; the picker
             // paints its own opaque background, including during PIN checks.
@@ -437,8 +441,6 @@ public struct PlozziOSRootView: View {
     private func finishHomeEntrance(_ request: PlozziOSProfileHomeEntrance, _ profileID: String) {
         guard homeEntrance?.id == request.id, profileID == request.profileID else { return }
         if homeEntranceIsInvalid { reconcileHomeEntrance(request); return }
-        // Only the picker's opacity reads the animated property. The shell,
-        // its environment and profile/model identity do not change mid-fade.
         request.reveal(reduceMotion: reduceMotion) {
             guard homeEntrance?.id == request.id else { return }
             if homeEntranceIsInvalid { reconcileHomeEntrance(request); return }
@@ -1119,7 +1121,7 @@ struct PlozziOSNavigationBackground: ViewModifier {
     }
 }
 
-@MainActor @Observable
+@MainActor
 final class PlozziOSProfileHomeEntrance {
     enum Origin { case launch, switcher }
     let id = UUID()
@@ -1127,7 +1129,8 @@ final class PlozziOSProfileHomeEntrance {
     let origin: Origin
     let profileID: String
     let generation: Int
-    private(set) var isRevealing = false
+    fileprivate weak var pickerView: UIView?
+    fileprivate private(set) var isRevealing = false
 
     init(origin: Origin, profileID: String, generation: Int) {
         self.origin = origin
@@ -1141,23 +1144,49 @@ final class PlozziOSProfileHomeEntrance {
 
     func reveal(reduceMotion: Bool, completion: @escaping () -> Void) {
         guard !isRevealing else { return }
-        withAnimation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), completionCriteria: .removed) {
-            isRevealing = true
-        } completion: {
+        isRevealing = true
+        guard !reduceMotion, let pickerView, pickerView.window != nil else {
             completion()
+            return
         }
+        pickerView.isUserInteractionEnabled = false
+        pickerView.accessibilityElementsHidden = true
+        // Submit the complete fade to the compositor before Home's first layout.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        CATransaction.setCompletionBlock(completion)
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 1
+        fade.toValue = 0
+        fade.duration = 0.34
+        fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        pickerView.layer.opacity = 0
+        pickerView.layer.add(fade, forKey: "picker-reveal")
+        CATransaction.commit()
+        CATransaction.flush()
     }
 }
 
-private struct PlozziOSPickerReveal: ViewModifier {
+private struct PlozziOSPickerHost: UIViewControllerRepresentable {
     let entrance: PlozziOSProfileHomeEntrance?
+    @ViewBuilder let selection: () -> PlozziOSProfileSelectionView
 
-    func body(content: Content) -> some View {
-        let revealing = entrance?.isRevealing == true
-        content
-            .opacity(revealing ? 0 : 1)
-            .allowsHitTesting(!revealing)
-            .accessibilityHidden(revealing)
+    func makeUIViewController(context: Context) -> UIHostingController<AnyView> {
+        let host = UIHostingController(rootView: AnyView(selection().environment(\.self, context.environment)))
+        host.view.backgroundColor = .clear
+        host.view.layer.allowsGroupOpacity = true
+        return host
+    }
+
+    func updateUIViewController(_ host: UIHostingController<AnyView>, context: Context) {
+        host.rootView = AnyView(selection().environment(\.self, context.environment))
+        entrance?.pickerView = host.view
+        if entrance?.isRevealing != true, host.view.layer.opacity == 0 {
+            host.view.layer.removeAnimation(forKey: "picker-reveal")
+            host.view.layer.opacity = 1
+            host.view.isUserInteractionEnabled = true
+            host.view.accessibilityElementsHidden = false
+        }
     }
 }
 

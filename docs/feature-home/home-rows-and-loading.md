@@ -343,8 +343,12 @@ curation and removes its placeholder. Existing profile, visibility, and
 resume-snapshot restrictions continue to govern cached heroes.
 
 On mobile, when the profile picker hands off to Home, the authorized viewer's
-ordinary Home loads behind the selected avatar. Home reports readiness from the
-same presentation it draws: a configured hero with a usable item, media in the
+ordinary Home loads behind the picker. The selected avatar and the name below
+it move to the center together as the other profiles fade away. As soon as Home
+is ready, the picker fades out. With Reduce Motion, the pair appears at the
+center without travel and the picker dismisses without a fade. Loading never
+waits for an animation. Home reports readiness from the same presentation it
+draws: a configured hero with a usable item, media in the
 first ordered shelf, or the final empty/error screen. A lower shelf arriving
 first does not count. This signal does not request artwork or rows, and it does
 not mean every image has finished decoding. The entrance can end early and
