@@ -2,6 +2,40 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "id": "release/075",
+      "version": "2026.11.23",
+      "marketingVersion": "2026.11.23",
+      "build": 75,
+      "releasedAt": "2026-11-23",
+      "sections": [
+        {
+          "category": "New",
+          "items": [
+            "2-way sync is now supported for all watch-history trackers on media shares (experimental). Plex, Emby, Silo, and Jellyfin still sync one way: from Plozz to your tracker.",
+            "PublicMetaDB tracker support."
+          ]
+        },
+        {
+          "category": "Updated",
+          "items": [
+            "Reorganized Settings.",
+            "Search results stay visible while refreshing.",
+            "The IPTV guide reuses saved listings when you reopen it."
+          ]
+        },
+        {
+          "category": "Fixed",
+          "items": [
+            "Silo playback could lose access after an account refresh or forget your selected subtitle.",
+            {"text": "The iPad app could fail to launch on some Macs running macOS 15.", "platforms": ["iOS"]},
+            {"text": "Spoiler protection could miss episode titles and artwork.", "platforms": ["iOS"]},
+            {"text": "Profile setup could disappear after creating a profile.", "platforms": ["iOS"]},
+            {"text": "Opening Settings from a title page could take extra remote presses.", "platforms": ["tvOS"]}
+          ]
+        }
+      ]
+    },
+    {
       "id": "release/074.1",
       "version": "2026.11.21",
       "marketingVersion": "2026.11.20",
