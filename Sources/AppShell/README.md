@@ -480,6 +480,10 @@ its prior content focus.
 
 Settings is a normal destination in all three navigation shells. Its root keeps
 app navigation visible and available; categories and nested pages hide it.
+Selecting Settings from the native sidebar must show its root immediately,
+even when the previous tab has a title detail open. Back is not part of entry.
+Once Settings is visible, the sidebar requests focus on the selected Settings
+row, just as it requests content focus on Home.
 In the custom pinned and top-bar shells, programmatic destination changes
 use the same rendered-presentation focus handoff as navigation selections.
 Home's See all pages, including Watchlist, instead push onto Home's existing

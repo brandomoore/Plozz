@@ -27,6 +27,15 @@ See [Apple's external-testing guidance](https://developer.apple.com/help/app-sto
 An App Store release may require a new Apple version even when a TestFlight
 update does not.
 
+A TestFlight archive can ship unchanged on the App Store. `PlozzReleaseChannel`
+identifies the archive lane, not the install. On iOS/iPadOS and tvOS, Plozz
+uses the installed receipt, or, for a distribution archive without a recognized
+receipt, the environment of a verified StoreKit app transaction. If StoreKit
+cannot establish the channel within one second, that launch uses production
+behavior, including on an offline tester's device. The app never requests a
+receipt refresh or carries a previous install's channel into a new launch.
+Changing channels does not change the user's crash-reporting consent.
+
 ## Prepare an explicitly selected release
 
 `App/Resources/ReleaseNotes.json` owns release identity and approved notes.

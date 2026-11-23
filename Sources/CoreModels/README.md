@@ -123,6 +123,9 @@ checks, not an atomic transaction with either remote service.
 - The dual-provider abstraction: `MediaProvider` protocol, `ProviderKind`,
   `ProviderRegistry` / `ProviderResolving`, `ResolvedAccount`.
 - Cross-cutting UI state: `LoadState`, `AppError`.
+- `AppReleaseChannel.current` is the effective install channel for both diagnostics
+  and beta features. Both app roots resolve it before constructing their models;
+  [release identity](../../docs/release-versioning.md) documents the fallback.
 - `ApplicationStorageLifecycle` fences process-wide storage admission before
   asynchronously closing registered actor-owned stores. Owners register before
   opening files, reject inactive access, and ignore stale cleanup after resume.

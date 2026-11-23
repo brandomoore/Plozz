@@ -387,7 +387,7 @@ private struct PlozziOSProfileSettingsPage: View {
         case .subtitles:
             PlozziOSSubtitleSettingsView(
                 behavior: appModel.settings.subtitleBehavior, policy: appModel.settings.subtitlePolicy,
-                style: appModel.settings.subtitleStyle
+                style: appModel.settings.subtitleStyle, playback: appModel.settings.playback
             )
         case .liveTV:
             LiveTVSettingsView(
@@ -1382,7 +1382,11 @@ private struct PlozziOSSettingsSearchDestination: View {
     }
 
     private var targetID: String {
-        needsSeparateSubtitleStyle ? "live-subtitle-style" : entry.anchorID
+        if needsSeparateSubtitleStyle { return "live-subtitle-style" }
+        if entry.id == "custom-video-zoom", appModel.settings.playback.settings.videoZoom[.current].mode != .custom {
+            return "default-video-zoom"
+        }
+        return entry.anchorID
     }
 
     var body: some View {
@@ -1429,6 +1433,7 @@ private struct PlozziOSSettingsSearchDestination: View {
     @ViewBuilder private var destination: some View {
         switch entry.destinationPage(on: UIDevice.current.userInterfaceIdiom == .phone ? .phone : .tablet) {
         case .playback: profilePage(.playback)
+        case .playerTabs: PlayerTabSettingsView(model: appModel.settings.playback)
         case .playbackAdvanced:
             PlaybackAdvancedSettingsView()
         case .streamingAdvanced:
@@ -1459,9 +1464,7 @@ private struct PlozziOSSettingsSearchDestination: View {
             SkipMarkerSettingsView(
                 model: appModel.settings.playback, initialKind: entry.skipKind, initialCategory: entry.contentCategory
             )
-        case .subtitles:
-            if entry.id == "subtitle-remember" { profilePage(.playback) }
-            else { profilePage(.subtitles) }
+        case .subtitles: profilePage(.subtitles)
         case .subtitleStyle:
             @Bindable var style = appModel.settings.subtitleStyle
             SubtitleStyleSettingsView(style: $style.style, initialPage: entry.subtitlePage)
@@ -2462,6 +2465,7 @@ struct PlozziOSPlaybackSettingsView: View {
     let streamingSupport: StreamingQualitySupport
     @State private var showsAdvancedStreaming = false
     @State private var showsAdvancedPlayback = false
+    @State private var showsPlayerTabs = false
     @State private var showsSkipMarkerSettings = false
 
     private static let policyCategories: [ContentCategory] = [.movie, .tvShow, .anime]
@@ -2472,44 +2476,92 @@ struct PlozziOSPlaybackSettingsView: View {
 
     var body: some View {
         List {
-            PlozziOSStreamingSettings(
-                settings: $model.settings.streaming, hasCompatibleServer: hasStreamingServer,
-                support: streamingSupport,
-                onShowAdvanced: { showsAdvancedStreaming = true }
-            )
-            SettingsSectionGroup {
-                VideoUpscalingControl(selection: $model.settings.videoUpscaling)
-                    .settingsSearchAnchor("video-upscaling")
+            ForEach(PlaybackFormSection.allCases, id: \.self) { section in
+                sectionView(section)
             }
-            PlaybackReadAheadControl()
-                .settingsSearchAnchor("read-ahead")
-            LivePlaybackBufferControl()
-                .settingsSearchAnchor("live-buffer")
-            DefaultVideoZoomControl(model: model)
-            SettingsSectionGroup {
-                Picker("Auto-hide controls", selection: $model.settings.controlsAutoHide) {
-                    ForEach(PlaybackControlsAutoHide.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.menu)
-                .settingsSearchAnchor("auto-hide-controls")
-            }
-            .settingsSearchGroup(["auto-hide-controls"])
-            if UIDevice.current.userInterfaceIdiom == .phone {
-                SettingsSectionGroup {
+        }
+        .settingsPageSurface()
+        .navigationTitle("Playback")
+        .navigationDestination(isPresented: $showsPlayerTabs) {
+            PlayerTabSettingsView(model: model)
+        }
+        .navigationDestination(isPresented: $showsSkipMarkerSettings) {
+            SkipMarkerSettingsView(model: model)
+        }
+        .navigationDestination(isPresented: $showsAdvancedStreaming) {
+            PlozziOSAdvancedStreamingSettings(settings: $model.settings.streaming, support: streamingSupport)
+        }
+        .navigationDestination(isPresented: $showsAdvancedPlayback) {
+            PlaybackAdvancedSettingsView()
+        }
+    }
+
+    @ViewBuilder private func sectionView(_ section: PlaybackFormSection) -> some View {
+        switch section {
+        case .player:
+            SettingsSectionGroup(section.title) {
+                DefaultVideoZoomControl(model: model)
+                if UIDevice.current.userInterfaceIdiom == .phone {
                     Picker("Player orientation", selection: $model.settings.orientation) {
                         ForEach(PlaybackOrientation.allCases, id: \.self) {
                             Text($0.title).tag($0)
                         }
                     }
-                    .pickerStyle(.menu)
                     .accessibilityIdentifier("playback-orientation")
                     .settingsSearchAnchor("player-orientation")
                 }
+                Picker("Auto-hide controls", selection: $model.settings.controlsAutoHide) {
+                    ForEach(PlaybackControlsAutoHide.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .settingsSearchAnchor("auto-hide-controls")
+                SettingsDescribedControl {
+                    Toggle("Volume and brightness gestures", isOn: $model.settings.volumeBrightnessGestures)
+                        .accessibilityIdentifier("playback-volume-brightness-gestures")
+                } description: {
+                    Text("Swipe up or down on the left for brightness, or on the right for system volume.")
+                }
+                .settingsSearchAnchor("volume-brightness")
+                Button { showsPlayerTabs = true } label: {
+                    SettingsDisclosureLabel { Text("Player tabs") }
+                }
+                .settingsActionRow()
+                .accessibilityIdentifier("playback-player-tabs")
             }
-            SkipMarkerSettingsControl(model: model, onOpenSettings: { showsSkipMarkerSettings = true })
-                .settingsSearchGroup(["skip-intros"])
-
-            SettingsSectionGroup("Skipping") {
+            .settingsSearchGroup([
+                "default-video-zoom", "custom-video-zoom", "player-orientation", "auto-hide-controls", "volume-brightness"
+            ])
+        case .versions:
+            SettingsSectionGroup(section.title) {
+                SettingsDescribedControl {
+                    PlaybackVersionPreferencePicker(model: model)
+                        .settingsSearchAnchor("version-selection")
+                } description: {
+                    Text("Ask each time, let Plozz choose, or use the server's first version.")
+                }
+                Toggle("Remember series version choices", isOn: $model.settings.rememberVersionPerSeries)
+                    .accessibilityIdentifier("playback-remember-series-version")
+                    .settingsSearchAnchor("remember-series-version")
+            }
+            .settingsSearchGroup(["version-selection", "remember-series-version"])
+        case .resuming:
+            SettingsSectionGroup(section.title) {
+                Toggle("Ask to resume or start over", isOn: $model.settings.askBeforeResuming)
+                    .accessibilityIdentifier("playback-ask-before-resuming")
+                    .settingsSearchAnchor("ask-before-resuming")
+                SettingsDescribedControl {
+                    Picker("Rewind on resume", selection: $model.settings.resumeRewindInterval) {
+                        ForEach(ResumeRewindInterval.allCases, id: \.self) {
+                            Text(verbatim: $0.title(locale: locale)).tag($0)
+                        }
+                    }
+                    .settingsSearchAnchor("resume-rewind")
+                } description: {
+                    Text(model.settings.resumeRewindInterval.effectDescription)
+                }
+            }
+            .settingsSearchGroup(["ask-before-resuming", "resume-rewind"])
+        case .seeking:
+            SettingsSectionGroup(section.title) {
                 Picker("Skip backward", selection: $model.settings.skipBackwardInterval) {
                     ForEach(SkipInterval.allCases, id: \.self) {
                         Text(verbatim: $0.title(locale: locale)).tag($0)
@@ -2522,125 +2574,65 @@ struct PlozziOSPlaybackSettingsView: View {
                     }
                 }
                 .settingsSearchAnchor("skip-forward")
-                Picker("Resume rewind", selection: $model.settings.resumeRewindInterval) {
-                    ForEach(ResumeRewindInterval.allCases, id: \.self) {
-                        Text(verbatim: $0.title(locale: locale)).tag($0)
-                    }
-                }
-                .settingsSearchAnchor("resume-rewind")
-            }
-            .settingsSearchGroup(["skip-backward", "skip-forward", "resume-rewind"])
-
-            SettingsSectionGroup("Playback") {
-                Toggle("Ask to resume or start over", isOn: $model.settings.askBeforeResuming)
-                    .accessibilityIdentifier("playback-ask-before-resuming")
-                    .settingsSearchAnchor("ask-before-resuming")
-                PlaybackVersionPreferencePicker(model: model)
-                    .settingsSearchAnchor("version-selection")
-                Toggle("Remember series version choices", isOn: $model.settings.rememberVersionPerSeries)
-                    .accessibilityIdentifier("playback-remember-series-version")
-                    .settingsSearchAnchor("remember-series-version")
-                Toggle("Background Audio", isOn: $model.settings.backgroundAudio)
-                    .settingsSearchAnchor("background-audio")
-                SettingsDescribedControl {
-                    Toggle("Volume and brightness gestures", isOn: $model.settings.volumeBrightnessGestures)
-                        .accessibilityIdentifier("playback-volume-brightness-gestures")
-                } description: {
-                    Text("Swipe up or down on the left for brightness, or on the right for system volume.")
-                }
-                .settingsSearchAnchor("volume-brightness")
                 Toggle("Seek without pausing", isOn: $model.settings.seekWithoutPausing)
                     .settingsSearchAnchor("seek-without-pausing")
-                // Autoplay first: whether the next episode starts at all, then
-                // whether the card announces it. Independent switches.
+            }
+            .settingsSearchGroup(["skip-backward", "skip-forward", "seek-without-pausing"])
+        case .skipMarkers:
+            SkipMarkerSettingsControl(model: model, onOpenSettings: { showsSkipMarkerSettings = true })
+                .settingsSearchGroup(["skip-intros"])
+        case .autoplay:
+            connectedCards(section) {
                 Toggle("Autoplay next episode", isOn: $model.settings.autoPlayNextEpisode)
                     .settingsSearchAnchor("autoplay-next-episode")
                 Toggle("Autoplay next playlist item", isOn: $model.settings.autoPlayNextPlaylistItem)
                     .settingsSearchAnchor("autoplay-next-playlist")
+            } second: {
                 Toggle("Show Up Next card", isOn: $model.settings.showUpNextCard)
                     .settingsSearchAnchor(
                         "show-up-next-card", fallbackFor: model.settings.showUpNextCard ? [] : ["up-next-lead"]
                     )
                 if model.settings.showUpNextCard {
-                    Picker("Up Next lead time", selection: $model.settings.upNextLeadSeconds) {
-                        ForEach(PlaybackSettings.upNextLeadSecondsOptions, id: \.self) {
-                            Text("\($0) sec").tag($0)
-                        }
-                    }.settingsSearchAnchor("up-next-lead")
-                }
-                Toggle(isOn: $model.settings.syncWatchAcrossServers) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Sync across servers")
-                        Text("Keep watched status and playback progress in sync.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }.settingsSearchAnchor("cross-server-watch-sync")
-            }
-            .settingsSearchGroup([
-                "ask-before-resuming", "version-selection", "remember-series-version", "background-audio",
-                "volume-brightness", "seek-without-pausing", "autoplay-next-episode",
-                "autoplay-next-playlist", "show-up-next-card", "up-next-lead",
-                "cross-server-watch-sync"
-            ])
-
-            PlayerTabSettingsControls(model: model)
-
-            SettingsSectionGroup(LocalizedStringResource(
-                "settings.section.tracks",
-                defaultValue: "Tracks",
-                comment: "Settings section for default audio and subtitle track selection. Media streams inside a video file, not music tracks."
-            )) {
-                // Set separately, "Everything else" takes over the one
-                // preference, so it isn't shown twice.
-                if audioPolicy.overrides.isEmpty {
-                    Picker("Preferred audio language", selection: $model.settings.audioLanguagePreference) {
-                        ForEach(Self.audioOptions, id: \.self) { preference in
-                            audioName(preference).tag(preference)
-                        }
-                    }
-                    .settingsSearchAnchor("audio-language")
-                }
-                Toggle("Set separately for movies, TV shows & anime", isOn: audioOverridesEnabled)
-                    .settingsSearchAnchor(
-                        "audio-separate",
-                        fallbackFor: audioPolicy.overrides.isEmpty
-                            ? Self.policyCategories.map { "audio-language-\($0.rawValue)" } : []
-                    )
-                if !audioPolicy.overrides.isEmpty {
-                    ForEach(Self.policyCategories + [.other], id: \.self) { category in
-                        Picker(selection: category == .other
-                            ? $model.settings.audioLanguagePreference
-                            : audioBinding(for: category)
-                        ) {
-                            ForEach(Self.audioOptions, id: \.self) { preference in
-                                audioName(preference).tag(preference)
+                    SettingsDescribedControl {
+                        Picker("Time before the end", selection: $model.settings.upNextLeadSeconds) {
+                            ForEach(PlaybackSettings.upNextLeadSecondsOptions, id: \.self) {
+                                Text("\($0) sec").tag($0)
                             }
-                        } label: {
-                            SeparateSettingLabel(category: category)
                         }
-                        .settingsSearchAnchor(category == .other ? "audio-language" : "audio-language-\(category)")
+                        .settingsSearchAnchor("up-next-lead")
+                    } description: {
+                        Text("When credits can't be detected")
                     }
                 }
-                Toggle(
-                    "Remember audio language per series",
-                    isOn: $model.settings.rememberAudioTrackPerSeries
-                )
-                .settingsSearchAnchor("remember-audio")
-                Toggle(
-                    "Remember subtitles per series",
-                    isOn: $model.settings.rememberSubtitleTrackPerSeries
-                )
-                .settingsSearchAnchor("subtitle-remember")
             }
-            .settingsSearchGroup(
-                ["audio-language", "audio-separate", "remember-audio", "subtitle-remember"]
-                    + Self.policyCategories.map { "audio-language-\($0.rawValue)" }
+            .settingsSearchGroup(["autoplay-next-episode", "autoplay-next-playlist", "show-up-next-card", "up-next-lead"])
+        case .video:
+            connectedCards(section) {
+                VideoUpscalingControl(selection: $model.settings.videoUpscaling)
+                if AppReleaseChannel.current.isBeta {
+                    DolbyVisionFELConversionControl(isOn: $model.settings.dolbyVisionFELConversion)
+                }
+            } second: {
+                PlaybackReadAheadControl()
+                    .settingsSearchAnchor("read-ahead")
+                LivePlaybackBufferControl()
+                    .settingsSearchAnchor("live-buffer")
+            }
+            .settingsSearchGroup(["video-upscaling", "read-ahead", "live-buffer"])
+        case .streaming:
+            PlozziOSStreamingSettings(
+                settings: $model.settings.streaming, hasCompatibleServer: hasStreamingServer,
+                support: streamingSupport,
+                onShowAdvanced: { showsAdvancedStreaming = true }
             )
-            SettingsSectionGroup("Audio") {
+        case .audio:
+            connectedCards(section) {
+                audioLanguageControls
+            } second: {
                 LosslessAudioControl()
                     .settingsSearchAnchor("lossless-audio")
+                Toggle("Background Audio", isOn: $model.settings.backgroundAudio)
+                    .settingsSearchAnchor("background-audio")
                 SettingsDescribedControl {
                     Toggle("Identify songs", isOn: $model.settings.identifySongs)
                 } description: {
@@ -2648,29 +2640,25 @@ struct PlozziOSPlaybackSettingsView: View {
                 }
                 .settingsSearchAnchor("identify-songs")
             }
-            .settingsSearchGroup(["lossless-audio", "identify-songs"])
-            if AppReleaseChannel.current.isBeta {
-                SettingsSectionGroup("Video") {
-                    SettingsDescribedControl {
-                        Toggle("P7 FEL → P8.1 conversion", isOn: $model.settings.dolbyVisionFELConversion)
-                    } description: {
-                        Text("Approximates enhancement-layer brightness without full FEL reconstruction. Turn off to use HDR10.")
-                    }
-                }
-            }
-            SettingsSectionGroup("Discs") {
+            .settingsSearchGroup(
+                ["audio-language", "audio-separate", "remember-audio", "lossless-audio", "background-audio", "identify-songs"]
+                    + Self.policyCategories.map { "audio-language-\($0.rawValue)" }
+            )
+        case .discs:
+            SettingsSectionGroup(section.title) {
                 SettingsDescribedControl {
                     Picker("Disc playback", selection: $model.settings.discPlayback) {
                         ForEach(DiscPlaybackBehavior.allCases, id: \.self) {
                             Text($0.title).tag($0)
                         }
                     }
+                    .settingsSearchAnchor("disc-playback")
                 } description: {
                     Text(DiscPlaybackBehavior.settingsNotice)
                 }
-                .settingsSearchAnchor("disc-playback")
             }
             .settingsSearchGroup(["disc-playback"])
+        case .advanced:
             SettingsSectionGroup {
                 Button { showsAdvancedPlayback = true } label: {
                     SettingsDisclosureLabel { Text("Advanced") }
@@ -2679,17 +2667,53 @@ struct PlozziOSPlaybackSettingsView: View {
                 .accessibilityIdentifier("playback-advanced")
             }
         }
-        .settingsPageSurface()
-        .navigationTitle("Playback")
-        .navigationDestination(isPresented: $showsSkipMarkerSettings) {
-            SkipMarkerSettingsView(model: model)
+    }
+
+    private func connectedCards<First: View, Second: View>(
+        _ section: PlaybackFormSection, @ViewBuilder first: () -> First, @ViewBuilder second: () -> Second
+    ) -> some View {
+        VStack(spacing: SettingsFormMetrics.connectedGroupSpacing) {
+            SettingsSectionGroup(section.title, content: first)
+                .connectedCard(first: true, last: false)
+            SettingsSectionGroup(content: second)
+                .connectedCard(first: false, last: true)
         }
-        .navigationDestination(isPresented: $showsAdvancedStreaming) {
-            PlozziOSAdvancedStreamingSettings(settings: $model.settings.streaming, support: streamingSupport)
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+    }
+
+    @ViewBuilder private var audioLanguageControls: some View {
+        if audioPolicy.overrides.isEmpty {
+            Picker("Preferred audio language", selection: $model.settings.audioLanguagePreference) {
+                ForEach(Self.audioOptions, id: \.self) { preference in
+                    audioName(preference).tag(preference)
+                }
+            }
+            .settingsSearchAnchor("audio-language")
         }
-        .navigationDestination(isPresented: $showsAdvancedPlayback) {
-            PlaybackAdvancedSettingsView()
+        Toggle("Set separately for movies, TV shows & anime", isOn: audioOverridesEnabled)
+            .settingsSearchAnchor(
+                "audio-separate", fallbackFor: audioPolicy.overrides.isEmpty
+                    ? Self.policyCategories.map { "audio-language-\($0.rawValue)" } : []
+            )
+        if !audioPolicy.overrides.isEmpty {
+            ForEach(Self.policyCategories + [.other], id: \.self) { category in
+                Picker(selection: category == .other
+                    ? $model.settings.audioLanguagePreference
+                    : audioBinding(for: category)
+                ) {
+                    ForEach(Self.audioOptions, id: \.self) { preference in
+                        audioName(preference).tag(preference)
+                    }
+                } label: {
+                    SeparateSettingLabel(category: category)
+                }
+                .settingsSearchAnchor(category == .other ? "audio-language" : "audio-language-\(category.rawValue)")
+            }
         }
+        Toggle("Remember audio language per series", isOn: $model.settings.rememberAudioTrackPerSeries)
+            .settingsSearchAnchor("remember-audio")
     }
 
     private var audioOverridesEnabled: Binding<Bool> {
@@ -2736,6 +2760,7 @@ private struct PlozziOSSubtitleSettingsView: View {
     @Bindable var behavior: SubtitleBehaviorModel
     @Bindable var policy: SubtitlePolicyModel
     @Bindable var style: SubtitleStyleModel
+    @Bindable var playback: PlaybackSettingsModel
     @State private var showsSubtitleStyle = false
     @State private var showsLiveSubtitleStyle = false
 
@@ -2752,12 +2777,8 @@ private struct PlozziOSSubtitleSettingsView: View {
                 .accessibilityIdentifier("subtitle-style")
             }
             SettingsSectionGroup("Live TV subtitle style") {
-                SettingsDescribedControl {
-                    Toggle("Use a separate style for Live TV", isOn: $style.usesSeparateLiveTVStyle)
-                } description: {
-                    Text("Use the same subtitle appearance everywhere, or choose a separate look for Live TV.")
-                }
-                .settingsSearchAnchor("live-subtitle-style")
+                Toggle("Use a separate style for Live TV", isOn: $style.usesSeparateLiveTVStyle)
+                    .settingsSearchAnchor("live-subtitle-style")
                 if style.usesSeparateLiveTVStyle {
                     Button { showsLiveSubtitleStyle = true } label: {
                         SettingsDisclosureLabel { Text("Customize Live TV subtitles") }
@@ -2800,6 +2821,8 @@ private struct PlozziOSSubtitleSettingsView: View {
                         .settingsSearchAnchor(category == .other ? "subtitle-default" : "subtitle-default-\(category)")
                     }
                 }
+                Toggle("Remember subtitles per series", isOn: $playback.settings.rememberSubtitleTrackPerSeries)
+                    .settingsSearchAnchor("subtitle-remember")
                 Toggle(
                     "Download subtitles automatically",
                     isOn: $behavior.settings.autoDownloadSubtitles
@@ -2838,7 +2861,7 @@ private struct PlozziOSSubtitleSettingsView: View {
                 .settingsSearchAnchor("subtitle-sdh")
             }
             .settingsSearchGroup(
-                ["subtitle-default", "subtitle-separate", "subtitle-download", "subtitle-language", "subtitle-sdh"]
+                ["subtitle-default", "subtitle-separate", "subtitle-remember", "subtitle-download", "subtitle-language", "subtitle-sdh"]
                     + Self.policyCategories.map { "subtitle-default-\($0.rawValue)" }
             )
 

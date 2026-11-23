@@ -19,7 +19,23 @@ struct PlozziOSTrackerSettingsView: View {
     }
 
     var body: some View {
+        @Bindable var playback = appModel.settings.playback
         List {
+            SettingsSectionGroup {
+                Toggle(isOn: $playback.settings.syncWatchAcrossServers) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Sync across servers")
+                        Text("Keep watched status and playback progress in sync.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .accessibilityIdentifier("cross-server-watch-sync")
+                .settingsSearchAnchor("cross-server-watch-sync")
+            }
+            .settingsSearchGroup(["cross-server-watch-sync"])
+
             SettingsSectionGroup {
                 ForEach(pages, id: \.self) { page in
                     if let account = page.trackerAccount {

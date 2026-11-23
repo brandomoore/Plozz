@@ -16,13 +16,21 @@ public struct VideoUpscalingControl: View {
             SettingsMenuRow(title: "Video upscaling", value: Text(selection.title)) {
                 picker
             }
+            .accessibilityIdentifier("video-upscaling")
             #else
             picker
+                .accessibilityIdentifier("video-upscaling")
+                .settingsSearchAnchor("video-upscaling")
             #endif
         } description: {
-            Text("Automatic selects Animation for anime or animation metadata, otherwise Standard. Standard enhances 8-bit SDR below 1080p; Animation enhances drawn SDR up to 1080p. Requires AetherEngine, supported hardware and a larger display. No HDR or 4K enhancement. Applies to new playback.")
+            help
         }
-        .accessibilityIdentifier("video-upscaling")
+    }
+
+    @ViewBuilder private var help: some View {
+        if selection == .automatic {
+            Text("Uses Animation for titles marked as animated, and Standard otherwise.")
+        }
     }
 
     private var picker: some View {
@@ -30,6 +38,20 @@ public struct VideoUpscalingControl: View {
             ForEach(VideoUpscaling.allCases, id: \.self) {
                 Text($0.title).tag($0)
             }
+        }
+    }
+}
+
+public struct DolbyVisionFELConversionControl: View {
+    @Binding private var isOn: Bool
+
+    public init(isOn: Binding<Bool>) { _isOn = isOn }
+
+    public var body: some View {
+        SettingsDescribedControl {
+            Toggle("P7 FEL → P8.1 conversion", isOn: $isOn)
+        } description: {
+            Text("Approximates enhancement-layer brightness without full FEL reconstruction. Turn off to use HDR10.")
         }
     }
 }

@@ -55,6 +55,11 @@ public struct MediaTrack: Hashable, Identifiable, Sendable {
     /// text. Managed-provider credentials are resolved only when the engine or
     /// overlay begins I/O; local share sidecars reference their temporary file.
     public var deliverySource: SubtitleDeliverySource?
+    /// A server extraction of this exact stream in the playing original file.
+    /// Not the provider's inventory index; never valid for a server remux.
+    public var originalSubtitleStreamIndex: Int?
+    /// Provider inventory identity for the same file across playback renditions.
+    public var providerSubtitleID: String?
     /// `true` for image-based subtitles (PGS/VOBSUB/DVDSUB) that no on-device
     /// engine can render — only a server burn-in transcode shows them. A *text*
     /// subtitle embedded in the container (so it has no delivery source) is **not**

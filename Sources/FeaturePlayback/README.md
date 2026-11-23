@@ -621,6 +621,17 @@ omits them. Its generated language/codec and numbered fallback labels are not
 treated as authored names. Real-world metadata regression cases cover release
 groups, translation credits, regional/script variants, colored SDH and commentary;
 names never change automatic selection or forced-subtitle disposition.
+`Full` is displayed only when authored. A regional subtitle name does not repeat
+the language or an already-displayed SDH/Forced flag. Compact `DDP5.1` audio
+names do not repeat a confirmed Dolby Digital+ layout or its `BTM` prefix in
+the picker, even alongside a named mix. The original track metadata is unchanged.
+For original-file Silo playback, an embedded subtitle's extraction URL and its
+demuxed stream share one row, keyed by the absolute stream index, not the
+inventory position or language. Standalone sidecars remain separate.
+After a quality change that renews sidecar URLs, both subtitle picks restore
+their named track rather than the first track in the same language.
+Silo's inventory track ID keeps the selection even when changing quality moves
+the same subtitle between a server sidecar and an embedded stream.
 Colliding subtitle labels first expose known format differences, such as SRT,
 ASS or WebVTT. Codec aliases normalize to the same format, and missing/unknown
 formats are not invented. Labels still identical after that gain a localized
@@ -1641,7 +1652,7 @@ back to coded dimensions.
 Authored bitmap clearance maps the image, lower-region envelope, and protected
 artwork boundary through that same zoom/stretch geometry before moving a region.
 
-The profile's Default zoom is stored separately for iPhone, iPad and Apple TV.
+The profile's **Default player zoom** is stored separately for iPhone, iPad and Apple TV.
 It applies to movies, episodes, extras, trailers and Live TV; each platform starts
 with Normal. Older saved Auto-crop defaults and title choices reset to Normal once;
 other modes, Custom percentages and cutout-safe preferences remain intact.

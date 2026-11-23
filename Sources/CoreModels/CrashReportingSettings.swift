@@ -1,11 +1,8 @@
 import Foundation
 import Observation
+import Synchronization
 
-/// The release channel used to label diagnostic reports after explicit consent.
-///
-/// Mirrors the environment detection in `CrashReporting.detectEnvironment()`,
-/// duplicated here because CoreModels sits below the CrashReporting module and
-/// cannot depend on it. Keep the two in sync.
+/// The channel of the installed app, shared by feature gates and diagnostics.
 public enum AppReleaseChannel: Sendable {
     case debug
     case testflight
@@ -32,22 +29,18 @@ public enum AppReleaseChannel: Sendable {
         }
     }
 
-    public static var current: AppReleaseChannel {
+    package static let installation: InstallChannel = {
         #if DEBUG
-        return .debug
+        InstallChannel(initial: .debug)
         #else
-        // A baked answer beats sniffing. `appStoreReceiptURL` is only a *hint*:
-        // on tvOS it can be nil (a receipt is written after a purchase, not at
-        // install), which used to make a TestFlight build read as production and
-        // silently default crash reporting OFF for every tester.
-        if let baked = baked() { return baked }
-        if let receiptURL = Bundle.main.appStoreReceiptURL,
-           receiptURL.lastPathComponent == "sandboxReceipt" {
-            return .testflight
+        let receipt = Bundle.main.appStoreReceiptURL.flatMap {
+            FileManager.default.fileExists(atPath: $0.path) ? $0.lastPathComponent : nil
         }
-        return .production
+        return InstallChannel(archive: baked(), receipt: receipt)
         #endif
-    }
+    }()
+
+    public static var current: AppReleaseChannel { installation.resolved ?? .production }
 
     /// Debug + TestFlight are "beta": builds still under active testing. The App
     /// Store / production build is not.
@@ -60,6 +53,29 @@ public enum AppReleaseChannel: Sendable {
         case .testflight: "testflight"
         case .production: "production"
         }
+    }
+}
+
+/// Process-local: a store update can replace a TestFlight installation while
+/// keeping both its build number and its preferences.
+package final class InstallChannel: Sendable {
+    private let value: Mutex<AppReleaseChannel?>
+    package var resolved: AppReleaseChannel? { value.withLock { $0 } }
+
+    init(initial: AppReleaseChannel?) { value = Mutex(initial) }
+
+    convenience init(archive: AppReleaseChannel?, receipt: String?) {
+        switch receipt {
+        case "receipt": self.init(initial: .production)
+        case "sandboxReceipt": self.init(initial: .testflight)
+        default:
+            // Only distribution archives need StoreKit when the receipt is absent.
+            self.init(initial: archive == .testflight || archive == .production ? nil : .production)
+        }
+    }
+
+    package func finish(verifiedChannel: AppReleaseChannel?) {
+        value.withLock { if $0 == nil { $0 = verifiedChannel ?? .production } }
     }
 }
 
@@ -101,7 +117,7 @@ public struct CrashReportingSettings: Codable, Equatable, Sendable {
 public protocol CrashReportingSettingsStoring: Sendable {
     func load() -> CrashReportingSettings
     /// The persisted value, or `nil` when the user has never made a choice. Lets
-    /// callers distinguish "unset" (apply the channel default) from an explicit
+    /// callers distinguish "unset" (ask for consent) from an explicit
     /// opt-out that must be respected.
     func loadStored() -> CrashReportingSettings?
     func save(_ settings: CrashReportingSettings)

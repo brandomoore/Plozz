@@ -203,7 +203,18 @@ or paused** also clears the paused picture after four idle seconds without
 resuming playback. **Never** leaves dismissal to the viewer. VoiceOver and
 Switch Control suspend automatic dismissal regardless of the profile setting.
 
-Playback's **Default zoom** uses the shared native menu on TV and mobile.
+Playback starts with **Autoplay & Up Next**, **Intros, credits & more**, and
+**Resuming playback** on Apple TV, iPhone and iPad. **Streaming quality** follows on
+mobile only. The remaining order is **Seeking**, **Player**, **Audio**, **Video**,
+**Versions**, **Discs**, **Advanced**. External player stays under **Advanced**.
+
+Playback's **Video** section groups Video upscaling and beta-only Dolby Vision
+conversion in one card, followed by a card for Video buffer
+and Live TV buffer. Apple TV adds a third card for the two display fades. Each
+switch has its own note about the corresponding Apple TV Match Content setting;
+neither switch changes the display format. Dividers separate controls within a
+card; a narrow gap separates topics.
+**Default player zoom** uses the shared native menu on TV and mobile.
 Each profile stores separate iPhone, iPad and Apple TV choices; the current platform's
 control edits only its own choice. Custom exposes the existing 50-200% range.
 Saved movie/series mode overrides take priority. Auto-crop's pinch-selected
@@ -211,6 +222,9 @@ screen-edge/cutout-safe framing instead carries across all videos for that devic
 type and profile. Changing Custom's percentage preserves that shared framing.
 The playback settings payload carries all three defaults through profile switching,
 transfer and sync.
+
+**Resuming playback** groups the resume-or-start-over prompt with the rewind
+interval for returning to a title. Skip intervals apply during playback instead.
 
 Live TV's **Clean channel names** switch is profile-scoped and off by default.
 The shared TV/mobile section previews up to three distinct original names from
@@ -275,10 +289,9 @@ Its helper note explains HDMV-only menus, automatic video playback for BD-J,
 and the watch-progress limitation once on both platforms; disc action menus
 and video pickers do not repeat it.
 
-Controls with supporting text use CoreUI's `SettingsDescribedControl` on both
-platforms. It owns helper typography and spacing, keeps the native control's
-normal clearance, and places group separators after the complete row. Settings
-summaries use `SettingsRowMetrics.descriptionFont`, not per-page caption sizes.
+Follow [Settings copy and placement](../../docs/swiftui-guidelines.md#settings-copy-and-placement)
+when choosing between a plain control, a group footer, and `SettingsDescribedControl`.
+The shared components own helper typography, spacing, and separators.
 Seerr appears in the active profile's category list, not Manage Plozz. It edits only
 that profile's connections; the existing Kids-profile restrictions still apply.
 Downloads follows Libraries in the mobile profile card and uses that profile's
@@ -289,21 +302,17 @@ under Manage Plozz. The shared section has no scope footer; device and sync
 details belong inside the relevant settings. The profile card has no repeated
 scope footer.
 
-Playback groups its five optional **Player tabs** in one shared control surface
-on TV and mobile. Labels match the player tabs, Info stays always available, and
+The last row in **Player** opens **Player tabs**. All five switches are on that
+child page on TV and mobile; Settings search opens the requested switch directly.
+Labels match the player tabs, Info stays always available, and
 visibility preferences are independent of autoplay and Up Next behavior.
 
 Playback's **Video upscaling** control is shared by TV and mobile and is
 profile-scoped. Automatic is the default, including profiles saved before the
 setting existed; Off, Standard and Animation are explicit alternatives.
-Automatic chooses Animation from anime identities or animation genres/tags,
-otherwise Standard. Standard enhances supported 8-bit SDR below 1920x1080 in
-both dimensions; Animation accepts drawn 8/10-bit SDR up to 1920x1080 inclusive.
-Both require a larger display and exclude HDR/Dolby Vision and 4K.
-The description distinguishes these limits and metadata-based selection.
-The setting applies to new playback through AetherEngine, including Live TV;
-native and external players
-are unchanged. Engine eligibility and performance fallbacks still apply.
+Only Automatic needs a hint: it chooses Animation for titles identified as anime
+or tagged as animation, otherwise Standard. Keep engine and format limits in the
+[playback reference](../../docs/playback-engines.md), not in the row.
 
 Movie & show details → Trailers & music is the shared destination for trailer
 availability, independent Home autoplay and detail background playback. Home →

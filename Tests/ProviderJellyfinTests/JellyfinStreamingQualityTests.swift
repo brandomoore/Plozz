@@ -173,6 +173,26 @@ final class JellyfinStreamingQualityTests: XCTestCase {
         }
     }
 
+    func testNegotiatedExternalBitmapKeepsItsBurnInSelection() async throws {
+        for kind in [ProviderKind.jellyfin, .emby] {
+            let (provider, http) = fixture(kind: kind, rendition: true)
+            http.stubSequence(pathSuffix: "/Items/movie/PlaybackInfo", jsons: ["""
+            {"PlaySessionId":"session","MediaSources":[{"Id":"version","Container":"mkv",
+             "TranscodingUrl":"/Videos/movie/master.m3u8?VideoCodec=h264",
+             "MediaStreams":[{"Index":0,"Type":"Video","Codec":"hevc","Width":3840,"Height":2160},
+             {"Index":3,"Type":"Subtitle","Title":"Signs","Language":"eng","Codec":"pgssub",
+              "IsTextSubtitleStream":false,"IsExternal":true}]}]}
+            """])
+            var options = StreamingPlaybackOptions(quality: .low)
+            options.subtitleTrack = .init(id: 3, kind: .subtitle, displayTitle: "English", sourceTitle: "Signs",
+                                          language: "eng", codec: "pgssub", isImageBasedSubtitle: true, isExternal: true)
+            let request = try await provider.playbackInfo(for: "movie", mediaSourceID: "version",
+                                                         forceTranscode: false, streaming: options)
+            XCTAssertEqual(request.streamingOptions?.subtitleTrack?.isExternal, true)
+            XCTAssertEqual(request.burnedInSubtitleTrackID, 3)
+        }
+    }
+
     func testCustom1080pAt2000KbpsConstrainsJellyfinAndEmbyWithoutForcingCodec() async throws {
         let quality = try StreamingQuality.custom(maximumHeight: 1080, bitrateKbps: 2_000)
         for kind in [ProviderKind.jellyfin, .emby] {

@@ -63,8 +63,7 @@ public struct MediaRowHeader: View {
         Group {
             if let onSeeAll {
                 HStack {
-                    heading
-                    MediaRowRefreshIndicator()
+                    headingWithStatus
                     Spacer()
                     Button("See all", action: onSeeAll)
                         .font(.callout)
@@ -76,15 +75,19 @@ public struct MediaRowHeader: View {
                 }
                 .padding(.trailing, leadingInset + trailingInset)
             } else {
-                HStack {
-                    heading
-                    MediaRowRefreshIndicator()
-                }
+                headingWithStatus
             }
         }
         .accessibilityIdentifier("media-row-title")
         .padding(.leading, leadingInset + navigationContentInset)
         .modifier(PlozzRowTitlePosition())
+    }
+
+    private var headingWithStatus: some View {
+        HStack(spacing: MediaRowRefreshIndicator.headingSpacing) {
+            heading
+            MediaRowRefreshIndicator()
+        }
     }
 
     private var heading: some View {

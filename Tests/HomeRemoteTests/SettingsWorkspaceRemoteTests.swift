@@ -1349,22 +1349,22 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         try focus(audio, in: app)
         XCTAssertTrue(hasFocus(audio))
         XCTAssertEqual(audio.frame.width, menuWidth, accuracy: 1)
-        XCTAssertEqual(audio.value as? String, "Original")
+        XCTAssertEqual(audio.value as? String, "Original language")
         capture("settings-audio-whole-row", in: app)
         XCUIRemote.shared.press(.select)
-        let device = app.cells.containing(.any, identifier: "Device").firstMatch
+        let device = app.cells.containing(.any, identifier: "Device language").firstMatch
         XCTAssertTrue(device.waitForExistence(timeout: 5), app.debugDescription)
         try focus(device, in: app)
         XCUIRemote.shared.press(.select)
         let changed = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in audio.value as? String == "Device" }, object: nil
+            predicate: NSPredicate { _, _ in audio.value as? String == "Device language" }, object: nil
         )
         XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 5), .completed)
         XCTAssertTrue(hasFocus(audio), "Selecting a menu value must restore the full row's focus.")
         XCUIRemote.shared.press(.select)
-        try focus(app.cells.containing(.any, identifier: "Original").firstMatch, in: app)
+        try focus(app.cells.containing(.any, identifier: "Original language").firstMatch, in: app)
         XCUIRemote.shared.press(.select)
-        XCTAssertEqual(audio.value as? String, "Original")
+        XCTAssertEqual(audio.value as? String, "Original language")
 
         let separate = app.switches["Set separately for movies, TV shows & anime"]
         try focus(separate, in: app)
@@ -1437,18 +1437,17 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         }
         try focus(section("playback", in: app), in: app)
         XCUIRemote.shared.press(.select)
-        XCTAssertTrue(app.staticTexts["Audio"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Autoplay & Up Next"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(app.buttons["settings-page-subtitles"].exists)
         XCTAssertFalse(app.staticTexts["Show subtitles"].exists)
         capture("19-playback-entered", in: app)
-        let audioKeyline = app.staticTexts["Audio"].frame.minX
+        let headingKeyline = app.staticTexts["Autoplay & Up Next"].frame.minX
         for label in [
-            "Preferred audio language", "Set separately for movies, TV shows & anime",
-            "Remember audio language per series", "Spatial audio", "Autoplay & Up Next"
+            "Autoplay next episode", "Autoplay next playlist item", "Show Up Next card"
         ] {
             let text = app.staticTexts[label].firstMatch
             XCTAssertTrue(text.exists, label)
-            XCTAssertEqual(text.frame.minX, audioKeyline, accuracy: 1,
+            XCTAssertEqual(text.frame.minX, headingKeyline, accuracy: 1,
                            "\(label) must share the section-heading keyline.")
         }
         let helper = app.staticTexts.matching(
@@ -3494,7 +3493,7 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
         try focus(section("playback", in: app), in: app)
         XCUIRemote.shared.press(.select)
         var trailingEdge: CGFloat?
-        for label in ["Time before the end", "Backward", "Forward", "Rewind on resume"] {
+        for label in ["Time before the end", "Skip backward", "Skip forward", "Rewind on resume"] {
             let stepper = app.buttons[label]
             XCTAssertTrue(stepper.waitForExistence(timeout: 5), app.debugDescription)
             try focus(stepper, in: app)
@@ -3534,7 +3533,7 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
             XCTAssertFalse(hasFocus(stepper), "Up must remain native navigation.")
         }
         XCTAssertEqual(
-            app.staticTexts["Backward"].firstMatch.frame.height,
+            app.staticTexts["Skip backward"].firstMatch.frame.height,
             app.staticTexts["Rewind on resume"].firstMatch.frame.height, accuracy: 1
         )
         #else

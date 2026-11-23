@@ -1,5 +1,7 @@
 import CoreModels
+import CoreSecureStore
 import CoreUI
+import FeatureAuth
 import AVFoundation
 import notify
 @testable import FeatureHome
@@ -26,6 +28,46 @@ private actor HeldHomeArtworkLoader: ArtworkNetworkFileLoading {
         try await Task.sleep(for: .seconds(300))
         await MainActor.run { HeldHomeArtworkState.shared.completed += 1 }
         return Data()
+    }
+}
+
+/// Only the account and its catalog are fixtures. RootView owns the title push,
+/// native sidebar, destination handoff and Settings navigation.
+struct NativeSidebarDetailFixture: View {
+    @State private var app: AppState?
+
+    var body: some View {
+        Group {
+            if let app { RootView(appState: app) } else { ProgressView() }
+        }
+        .task {
+            guard app == nil else { return }
+            let art = await ProductionHomeState.artwork(name: "sidebar-detail", size: CGSize(width: 240, height: 360), color: .systemIndigo)
+            let provider = ProductionHomeProvider(poster: art, backdrop: art, logo: art)
+            let registry = ProviderRegistry()
+            registry.register(.jellyfin) { _ in provider }
+            let accounts = AccountStore(secureStore: InMemorySecureStore())
+            let account = Account(id: "home-fixture", from: provider.session)
+            try! accounts.add(account, token: "fixture")
+            let suite = "NativeSidebarDetailFixture"
+            let defaults = UserDefaults(suiteName: suite)!
+            defaults.removePersistentDomain(forName: suite)
+            let profiles = ProfilesModel(store: ProfileStore(defaults: defaults))
+            profiles.setActiveAccountIDs([account.id], for: profiles.activeProfileID)
+            profiles.markFirstRunProfileSetupComplete()
+            let state = AppState(accountStore: accounts, registry: registry, profilesModel: profiles)
+            state.profileFlow.setAutomaticallySignIn(true)
+            state.crashReportingModel.isEnabled = false
+            FeatureIntroductionStore().markCompleted(.navigationStyles)
+            FeatureIntroductionStore().markCompleted(.homeLayout)
+            let settings = state.profileSettings
+            settings.navigationStyleModel.style = .sidebar
+            settings.heroSettingsModel.settings.isEnabled = false
+            settings.heroBackgroundModel.settings.detailMode = .off
+            settings.homeLibraryVisibilityModel.setGlobalRowEnabled(true, for: .continueWatching)
+            settings.homeLibraryVisibilityModel.setContinueWatchingAction(.openDetails)
+            app = state
+        }
     }
 }
 
@@ -1458,7 +1500,7 @@ private final class ProductionHomeState {
         return url
     }
 
-    private static func artwork(name: String, size: CGSize, color: UIColor) async -> URL {
+    fileprivate static func artwork(name: String, size: CGSize, color: UIColor) async -> URL {
         let url = URL(string: "https://production-home.example.test/\(name).png")!
         let complex = ProcessInfo.processInfo.arguments.contains("--complex-home-artwork")
         let image = UIGraphicsImageRenderer(size: size).image { context in
@@ -1635,6 +1677,9 @@ private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
     }
 
     func libraries() async throws -> [MediaLibrary] {
+        if ProcessInfo.processInfo.arguments.contains("--native-sidebar-detail-fixture") {
+            return [MediaLibrary(id: "detail-sequence-library", title: "Fixture movies", kind: .movie)]
+        }
         let shortRows = ProcessInfo.processInfo.arguments.contains("--short-showcase-rows")
         guard shortRows || ProcessInfo.processInfo.arguments.contains("--progressive-library-rows") else { return [] }
         let count = shortRows ? 7 : ProcessInfo.processInfo.arguments.contains("--populated-home-return") ? 8 : 20

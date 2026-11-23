@@ -185411,6 +185411,7 @@
       }
     },
     "Automatic selects Animation for anime or animation metadata, otherwise Standard. Standard enhances 8-bit SDR below 1080p; Animation enhances drawn SDR up to 1080p. Requires AetherEngine, supported hardware and a larger display. No HDR or 4K enhancement. Applies to new playback." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -194477,6 +194478,7 @@
       }
     },
     "Background downloads pause or run at full speed." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -194943,6 +194945,7 @@
     },
     "Backward" : {
       "comment" : "Label in Playback settings for the skip-back interval controlled by the remote's left jump action.",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -328507,7 +328510,240 @@
         }
       }
     },
+    "Default player zoom" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "التكبير الافتراضي للمشغّل"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Мащабиране на плейъра по подразбиране"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "প্লেয়ারের ডিফল্ট জুম"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom per defecte del reproductor"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Výchozí přiblížení přehrávače"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Afspillerens standardzoom"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standardzoom des Players"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Προεπιλεγμένο ζουμ του προγράμματος αναπαραγωγής"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom predeterminado del reproductor"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "بزرگ‌نمایی پیش‌فرض پخش‌کننده"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Soittimen oletuszoomaus"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom par défaut du lecteur"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הגדלה כברירת מחדל בנגן"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "प्लेयर का डिफ़ॉल्ट ज़ूम"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zadano zumiranje reproduktora"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A lejátszó alapértelmezett nagyítása"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom default pemutar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom predefinito del lettore"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "プレーヤーのデフォルトズーム"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "플레이어 기본 확대/축소"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zum lalai pemain media"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standardzoom i avspilleren"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standaardzoom van de speler"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Domyślne powiększenie odtwarzacza"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom padrão do reprodutor"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zoom implicit al playerului"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Масштаб плеера по умолчанию"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Predvolené priblíženie prehrávača"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Privzeta povečava predvajalnika"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Podrazumevano uvećanje plejera"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Standardzoom i spelaren"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "การซูมเริ่มต้นของเครื่องเล่น"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Oynatıcının varsayılan yakınlaştırması"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Типовий масштаб програвача"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "پلیئر کا طے شدہ زوم"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Thu phóng mặc định của trình phát"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "播放器默认缩放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "播放器預設縮放"
+          }
+        }
+      }
+    },
     "Default zoom" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -335953,6 +336189,7 @@
     },
     "Device" : {
       "comment" : "Audio-language option meaning use the device language.",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -403566,6 +403803,470 @@
         }
       }
     },
+    "Fade when switching between SDR, HDR, and Dolby Vision" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "التلاشي عند التبديل بين SDR وHDR وDolby Vision"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Затъмняване при смяна между SDR, HDR и Dolby Vision"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "SDR, HDR ও Dolby Vision-এর মধ্যে পরিবর্তনের সময় ফেড"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Esvaïment en canviar entre SDR, HDR i Dolby Vision"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prolnutí při přepínání mezi SDR, HDR a Dolby Vision"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nedtoning ved skift mellem SDR, HDR og Dolby Vision"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Überblendung beim Wechsel zwischen SDR, HDR und Dolby Vision"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Σταδιακό σβήσιμο κατά την εναλλαγή μεταξύ SDR, HDR και Dolby Vision"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fundido al cambiar entre SDR, HDR y Dolby Vision"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "محو شدن هنگام جابه‌جایی بین SDR، HDR و Dolby Vision"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Häivytys vaihdettaessa SDR:n, HDR:n ja Dolby Visionin välillä"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fondu lors du passage entre SDR, HDR et Dolby Vision"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "עמעום במעבר בין SDR, HDR ו-Dolby Vision"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "SDR, HDR और Dolby Vision के बीच बदलते समय फ़ेड"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zatamnjenje pri prebacivanju između formata SDR, HDR i Dolby Vision"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Áttűnés SDR, HDR és Dolby Vision közötti váltáskor"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Efek pudar saat beralih antara SDR, HDR, dan Dolby Vision"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dissolvenza nel passaggio tra SDR, HDR e Dolby Vision"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "SDR、HDR、Dolby Visionの切り替え時にフェード"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "SDR, HDR, Dolby Vision 전환 시 페이드"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kesan pudar semasa bertukar antara SDR, HDR dan Dolby Vision"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uttoning ved bytte mellom SDR, HDR og Dolby Vision"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uitfaden bij wisselen tussen SDR, HDR en Dolby Vision"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wygaszanie przy przełączaniu między SDR, HDR i Dolby Vision"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Escurecer ao alternar entre SDR, HDR e Dolby Vision"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Estompare la trecerea între SDR, HDR și Dolby Vision"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Затемнение при переключении между SDR, HDR и Dolby Vision"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stmavenie pri prepínaní medzi SDR, HDR a Dolby Vision"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zatemnitev ob preklopu med SDR, HDR in Dolby Vision"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zatamnjenje pri prelasku između SDR, HDR i Dolby Vision"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tona till svart vid växling mellan SDR, HDR och Dolby Vision"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เฟดภาพเมื่อสลับระหว่าง SDR, HDR และ Dolby Vision"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "SDR, HDR ve Dolby Vision arasında geçişte karart"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Затемнення під час перемикання між SDR, HDR і Dolby Vision"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "SDR، HDR اور Dolby Vision کے درمیان تبدیلی پر تصویر کو بتدریج مدھم کریں"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mờ dần khi chuyển giữa SDR, HDR và Dolby Vision"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在 SDR、HDR 和 Dolby Vision 之间切换时淡入淡出"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在 SDR、HDR 與 Dolby Vision 之間切換時淡入淡出"
+          }
+        }
+      }
+    },
+    "Fade when switching frame rates" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "التلاشي عند تغيير معدل الإطارات"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Затъмняване при смяна на кадровата честота"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ফ্রেম রেট বদলানোর সময় ফেড"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Esvaïment en canviar la taxa de fotogrames"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prolnutí při změně snímkové frekvence"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nedtoning ved skift af billedfrekvens"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Überblendung beim Wechsel der Bildrate"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Σταδιακό σβήσιμο κατά την αλλαγή ρυθμού καρέ"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fundido al cambiar la frecuencia de fotogramas"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "محو شدن هنگام تغییر نرخ فریم"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Häivytys kuvataajuutta vaihdettaessa"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fondu lors du changement de fréquence d’images"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "עמעום בעת שינוי קצב הפריימים"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "फ़्रेम दर बदलते समय फ़ेड"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zatamnjenje pri promjeni broja sličica u sekundi"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Áttűnés a képkockasebesség változásakor"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Efek pudar saat laju bingkai berubah"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dissolvenza al cambio della frequenza dei fotogrammi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "フレームレートの切り替え時にフェード"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "프레임 속도 전환 시 페이드"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kesan pudar semasa kadar bingkai berubah"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uttoning ved bytte av bildefrekvens"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uitfaden bij wisselen van beeldsnelheid"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wygaszanie przy zmianie liczby klatek na sekundę"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Escurecer ao mudar a taxa de quadros"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Estompare la schimbarea frecvenței cadrelor"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Затемнение при смене частоты кадров"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stmavenie pri zmene snímkovej frekvencie"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zatemnitev ob spremembi hitrosti sličic"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zatamnjenje pri promeni broja kadrova u sekundi"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tona till svart vid byte av bildfrekvens"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เฟดภาพเมื่อเปลี่ยนอัตราเฟรม"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kare hızı değiştiğinde karart"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Затемнення під час зміни частоти кадрів"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "فریم ریٹ کی تبدیلی پر تصویر کو بتدریج مدھم کریں"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mờ dần khi đổi tốc độ khung hình"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "切换帧率时淡入淡出"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "切換影格率時淡入淡出"
+          }
+        }
+      }
+    },
     "Failed" : {
       "comment" : "Generic failure status used in playback diagnostics, download status rows, and season request states when the action did not succeed.",
       "localizations" : {
@@ -423924,6 +424625,7 @@
     },
     "Forward" : {
       "comment" : "Label for the skip-forward interval control in tvOS Settings > Playback > Remote.",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -425161,6 +425863,7 @@
       }
     },
     "Frame rate" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -442199,6 +442902,7 @@
       }
     },
     "HDR & Dolby Vision" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -463370,6 +464074,470 @@
         }
       }
     },
+    "If Match Dynamic Range is off, turn this off for faster transitions." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "إذا كانت «مطابقة النطاق الديناميكي» متوقفة، فأوقف هذا الخيار لانتقالات أسرع."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ако „Съгласуване на динамичния диапазон“ е изключено, изключете тази опция за по-бързи преходи."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Match Dynamic Range বন্ধ থাকলে, দ্রুত ট্রানজিশনের জন্য এই বিকল্পটি বন্ধ করুন।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Si «Ajusta el rang dinàmic» està desactivat, desactiva aquesta opció per fer transicions més ràpides."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pokud je „Přizpůsobení dynamického rozsahu“ vypnuté, vypněte tuto volbu pro rychlejší přechody."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hvis Tilpas dynamisk område er slået fra, så slå denne indstilling fra for hurtigere overgange."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wenn „An Dynamikbereich anpassen“ deaktiviert ist, deaktiviere diese Option für schnellere Übergänge."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Αν η «Αντιστοίχιση δυναμικού εύρους» είναι απενεργοποιημένη, απενεργοποιήστε αυτή την επιλογή για ταχύτερες μεταβάσεις."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Si «Ajustar rango dinámico» está desactivado, desactiva esta opción para lograr transiciones más rápidas."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اگر «تطبیق دامنهٔ پویا» خاموش است، این گزینه را برای گذارهای سریع‌تر خاموش کنید."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jos ”Sovita dynaaminen alue” ei ole käytössä, poista tämä käytöstä nopeampia siirtymiä varten."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Si « Adapter à la plage dynamique » est désactivé, désactivez cette option pour des transitions plus rapides."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "אם “התאמת טווח דינמי” כבויה, יש לכבות אפשרות זו למעברים מהירים יותר."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "अगर “डायनैमिक रेंज का मिलान” बंद है, तो तेज़ ट्रांज़िशन के लिए इसे बंद करें।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ako je usklađivanje dinamičkog raspona isključeno, isključite ovu opciju za brže prijelaze."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ha a Dinamikatartomány egyeztetése ki van kapcsolva, a gyorsabb átmenetekhez kapcsolja ki ezt is."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jika Cocokkan Rentang Dinamis nonaktif, nonaktifkan opsi ini agar transisi lebih cepat."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Se Adatta all’intervallo dinamico è disattivato, disattiva questa opzione per transizioni più rapide."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "「ダイナミックレンジに合わせる」がオフの場合は、この設定をオフにすると切り替えが速くなります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "‘다이내믹 레인지에 맞추기’가 꺼져 있다면 이 설정을 끄면 더 빠르게 전환됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jika Padankan Julat Dinamik dimatikan, matikan tetapan ini untuk peralihan lebih pantas."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Slå av dette for raskere overganger hvis «Tilpass dynamisk område» er av."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Als ‘Pas dynamisch bereik aan’ uitstaat, schakel dit dan uit voor snellere overgangen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jeśli opcja „Dopasuj zakres dynamiczny” jest wyłączona, wyłącz tę opcję, aby przyspieszyć przejścia."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Se “Ajustar ao Intervalo Dinâmico” estiver desativado, desative esta opção para transições mais rápidas."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dacă „Potrivire interval dinamic” este dezactivată, dezactivează această opțiune pentru tranziții mai rapide."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Если «Согласование динамического диапазона» выключено, отключите эту опцию для более быстрых переходов."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ak je „Prispôsobenie dynamického rozsahu“ vypnuté, vypnite túto voľbu pre rýchlejšie prechody."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Če je »Prilagajanje dinamičnega razpona« izklopljeno, izklopite to možnost za hitrejše prehode."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ako je „Usklađivanje dinamičkog opsega“ isključeno, isključite ovu opciju za brže prelaze."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stäng av detta för snabbare övergångar om ”Matcha dynamiskt omfång” är avstängt."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "หากปิด “ปรับช่วงแสงให้ตรงกัน” ไว้ ให้ปิดตัวเลือกนี้เพื่อให้การเปลี่ยนภาพเร็วขึ้น"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "“Dinamik Aralıkla Eşle” kapalıysa daha hızlı geçişler için bu seçeneği kapatın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Якщо узгодження динамічного діапазону вимкнено, вимкніть і цю опцію для швидших переходів."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اگر «Match Dynamic Range» بند ہے تو تیز تر تبدیلیوں کے لیے یہ اختیار بھی بند کریں۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nếu “Khớp dải động” đang tắt, hãy tắt cả tùy chọn này để chuyển đổi nhanh hơn."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "如果“匹配动态范围”已关闭，关闭淡入淡出可加快切换。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "若已關閉「符合動態範圍」，關閉淡入淡出可加快切換。"
+          }
+        }
+      }
+    },
+    "If Match Frame Rate is off, turn this off for faster transitions." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "إذا كانت «مطابقة معدل الإطارات» متوقفة، فأوقف هذا الخيار لانتقالات أسرع."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ако „Съгласуване на кадровата честота“ е изключено, изключете тази опция за по-бързи преходи."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Match Frame Rate বন্ধ থাকলে, দ্রুত ট্রানজিশনের জন্য এই বিকল্পটি বন্ধ করুন।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Si «Ajusta la taxa de fotogrames» està desactivat, desactiva aquesta opció per fer transicions més ràpides."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pokud je „Přizpůsobení snímkové frekvence“ vypnuté, vypněte tuto volbu pro rychlejší přechody."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hvis Tilpas billedfrekvens er slået fra, så slå denne indstilling fra for hurtigere overgange."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wenn „An Bildrate anpassen“ deaktiviert ist, deaktiviere diese Option für schnellere Übergänge."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Αν η «Αντιστοίχιση ρυθμού καρέ» είναι απενεργοποιημένη, απενεργοποιήστε αυτή την επιλογή για ταχύτερες μεταβάσεις."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Si «Ajustar frecuencia de fotogramas» está desactivado, desactiva esta opción para lograr transiciones más rápidas."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اگر «تطبیق نرخ فریم» خاموش است، این گزینه را برای گذارهای سریع‌تر خاموش کنید."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jos ”Sovita kuvataajuus” ei ole käytössä, poista tämä käytöstä nopeampia siirtymiä varten."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Si « Adapter à la fréquence d’images » est désactivé, désactivez cette option pour des transitions plus rapides."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "אם “התאמת קצב פריימים” כבויה, יש לכבות אפשרות זו למעברים מהירים יותר."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "अगर “फ़्रेम दर का मिलान” बंद है, तो तेज़ ट्रांज़िशन के लिए इसे बंद करें।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ako je usklađivanje broja sličica u sekundi isključeno, isključite ovu opciju za brže prijelaze."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ha a Képkockasebesség egyeztetése ki van kapcsolva, a gyorsabb átmenetekhez kapcsolja ki ezt is."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jika Cocokkan Laju Bingkai nonaktif, nonaktifkan opsi ini agar transisi lebih cepat."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Se Adatta alla frequenza dei fotogrammi è disattivato, disattiva questa opzione per transizioni più rapide."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "「フレームレートに合わせる」がオフの場合は、この設定をオフにすると切り替えが速くなります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "‘프레임률에 맞추기’가 꺼져 있다면 이 설정을 끄면 더 빠르게 전환됩니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jika Padankan Kadar Bingkai dimatikan, matikan tetapan ini untuk peralihan lebih pantas."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Slå av dette for raskere overganger hvis «Tilpass bildefrekvens» er av."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Als ‘Pas beeldsnelheid aan’ uitstaat, schakel dit dan uit voor snellere overgangen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jeśli opcja „Dopasuj liczbę klatek” jest wyłączona, wyłącz tę opcję, aby przyspieszyć przejścia."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Se “Ajustar à Taxa de Quadros” estiver desativado, desative esta opção para transições mais rápidas."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dacă „Potrivire frecvență cadre” este dezactivată, dezactivează această opțiune pentru tranziții mai rapide."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Если «Согласование частоты кадров» выключено, отключите эту опцию для более быстрых переходов."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ak je „Prispôsobenie snímkovej frekvencie“ vypnuté, vypnite túto voľbu pre rýchlejšie prechody."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Če je »Prilagajanje hitrosti sličic« izklopljeno, izklopite to možnost za hitrejše prehode."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ako je „Usklađivanje broja kadrova u sekundi“ isključeno, isključite ovu opciju za brže prelaze."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stäng av detta för snabbare övergångar om ”Matcha bildfrekvens” är avstängt."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "หากปิด “ปรับอัตราเฟรมให้ตรงกัน” ไว้ ให้ปิดตัวเลือกนี้เพื่อให้การเปลี่ยนภาพเร็วขึ้น"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "“Kare Hızıyla Eşle” kapalıysa daha hızlı geçişler için bu seçeneği kapatın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Якщо узгодження частоти кадрів вимкнено, вимкніть і цю опцію для швидших переходів."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اگر «Match Frame Rate» بند ہے تو تیز تر تبدیلیوں کے لیے یہ اختیار بھی بند کریں۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nếu “Khớp tốc độ khung hình” đang tắt, hãy tắt cả tùy chọn này để chuyển đổi nhanh hơn."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "如果“匹配帧速率”已关闭，关闭淡入淡出可加快切换。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "若已關閉「符合影格率」，關閉淡入淡出可加快切換。"
+          }
+        }
+      }
+    },
     "If a remembered version isn't available, we'll ask again. Change this any time in Settings > Playback > Version selection." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -464068,6 +465236,7 @@
       }
     },
     "If you don't match dynamic range or frame rate on your Apple TV, turn these off for faster transitions." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -743062,6 +744231,7 @@
       }
     },
     "Remember per series" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -782406,6 +783576,7 @@
     },
     "Resume rewind" : {
       "comment" : "Picker label in iOS Playback settings for how far to rewind before resuming a partially watched title.",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -783098,6 +784269,238 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "從目前位置繼續播放。不同剪輯版本的時間點可能不同。"
+          }
+        }
+      }
+    },
+    "Resuming playback" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "استئناف التشغيل"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Подновяване на възпроизвеждането"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "প্লেব্যাক চালিয়ে যাওয়া"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Represa de la reproducció"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Obnovení přehrávání"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Genoptagelse af afspilning"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fortsetzen der Wiedergabe"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Συνέχιση αναπαραγωγής"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Reanudación de la reproducción"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ازسرگیری پخش"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Toiston jatkaminen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Reprise de la lecture"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "המשך הניגון"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "प्लेबैक फिर से शुरू करना"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nastavak reprodukcije"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lejátszás folytatása"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Melanjutkan pemutaran"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ripresa della riproduzione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "再生の再開"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이어 재생"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Menyambung main balik"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gjenoppta avspilling"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Afspelen hervatten"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wznawianie odtwarzania"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Retomada da reprodução"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Reluarea redării"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Возобновление воспроизведения"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Obnovenie prehrávania"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nadaljevanje predvajanja"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nastavak reprodukcije"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Återuppta uppspelning"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "การเล่นต่อ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Oynatmaya devam"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Відновлення відтворення"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "پلے بیک جاری رکھنا"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tiếp tục phát"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "继续播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "繼續播放"
           }
         }
       }
@@ -786822,6 +788225,7 @@
       }
     },
     "Reuse the subtitle you pick for the rest of a series." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -787054,6 +788458,7 @@
       }
     },
     "Reuse the version type you pick for later episodes. When choosing automatically, use the best available version if that type is missing." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -904777,6 +906182,7 @@
     },
     "Skipping" : {
       "comment" : "Section header in iOS Playback settings above intro-skipping and skip-interval controls.",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -938461,6 +939867,7 @@
       }
     },
     "Swipe to scrub while a title is playing and it resumes the moment you land — faster, but a stray swipe can move your position." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -1002815,6 +1004222,238 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "來源未儲存，但無法移除其加密的本機副本。"
+          }
+        }
+      }
+    },
+    "The speed limit doesn’t apply to background downloads." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "لا ينطبق حد السرعة على التنزيلات في الخلفية."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ограничението на скоростта не важи за изтегляния във фонов режим."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "গতিসীমা ব্যাকগ্রাউন্ড ডাউনলোডের ক্ষেত্রে প্রযোজ্য নয়।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El límit de velocitat no s'aplica a les descàrregues en segon pla."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Omezení rychlosti se nevztahuje na stahování na pozadí."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hastighedsgrænsen gælder ikke for downloads i baggrunden."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Die Geschwindigkeitsbegrenzung gilt nicht für Downloads im Hintergrund."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Το όριο ταχύτητας δεν ισχύει για λήψεις στο παρασκήνιο."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El límite de velocidad no se aplica a las descargas en segundo plano."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "محدودیت سرعت برای دانلودهای پس‌زمینه اعمال نمی‌شود."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nopeusrajoitus ei koske taustalatauksia."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La limite de vitesse ne s’applique pas aux téléchargements en arrière-plan."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "מגבלת המהירות אינה חלה על הורדות ברקע."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "गति सीमा बैकग्राउंड डाउनलोड पर लागू नहीं होती।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ograničenje brzine ne primjenjuje se na preuzimanja u pozadini."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A sebességkorlát nem vonatkozik a háttérben történő letöltésekre."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Batas kecepatan tidak berlaku untuk unduhan di latar belakang."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Il limite di velocità non si applica ai download in background."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "速度制限はバックグラウンドでのダウンロードには適用されません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "속도 제한은 백그라운드 다운로드에 적용되지 않습니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Had kelajuan tidak dikenakan pada muat turun di latar belakang."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hastighetsgrensen gjelder ikke nedlastinger i bakgrunnen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De snelheidslimiet geldt niet voor downloads op de achtergrond."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Limit prędkości nie dotyczy pobierania w tle."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O limite de velocidade não se aplica aos downloads em segundo plano."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Limita de viteză nu se aplică descărcărilor în fundal."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ограничение скорости не действует на фоновые загрузки."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Limit rýchlosti sa nevzťahuje na sťahovanie na pozadí."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Omejitev hitrosti ne velja za prenose v ozadju."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ograničenje brzine ne važi za preuzimanja u pozadini."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hastighetsgränsen gäller inte nedladdningar i bakgrunden."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "การจำกัดความเร็วไม่มีผลกับการดาวน์โหลดในเบื้องหลัง"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hız sınırı arka plandaki indirmelere uygulanmaz."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Обмеження швидкості не діє для фонових завантажень."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "رفتار کی حد پس منظر کے ڈاؤن لوڈز پر لاگو نہیں ہوتی۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Giới hạn tốc độ không áp dụng cho việc tải xuống trong nền."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "速度限制不适用于后台下载。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "速度限制不適用於背景下載。"
           }
         }
       }
@@ -1083949,6 +1085588,7 @@
       }
     },
     "Up Next lead time" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -1101235,6 +1102875,7 @@
       }
     },
     "Use the same subtitle appearance everywhere, or choose a separate look for Live TV." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -1104253,6 +1105894,238 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "使用者名稱與密碼"
+          }
+        }
+      }
+    },
+    "Uses Animation for titles marked as animated, and Standard otherwise." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يستخدم «رسوم متحركة» للعناوين المصنّفة كرسوم متحركة، و«قياسي» لغيرها."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Използва „Анимация“ за заглавия, отбелязани като анимационни, и „Стандартно“ за останалите."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "অ্যানিমেটেড হিসেবে চিহ্নিত ভিডিওতে “অ্যানিমেশন”, আর অন্যগুলোতে “মানক” ব্যবহার করে।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fa servir «Animació» per als títols marcats com a animats, i «Estàndard» per a la resta."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pro tituly označené jako animované používá režim „Animace“, jinak režim „Standardní“."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bruger Animation til titler markeret som animerede og ellers Standard."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verwendet den Modus „Animation“ für als Animation gekennzeichnete Titel, sonst „Standard“."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Χρησιμοποιεί «Κινούμενα σχέδια» για τίτλους που έχουν επισημανθεί ως κινούμενα σχέδια και «Τυπικό» για τους υπόλοιπους."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Usa «Animación» para los títulos marcados como animados y «Estándar» para los demás."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "برای عنوان‌های مشخص‌شده به‌عنوان پویانمایی از «پویانمایی» و در غیر این صورت از «استاندارد» استفاده می‌کند."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Käyttää Animaatio-tilaa animaatioiksi merkityille nimikkeille ja muuten Vakio-tilaa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Utilise le mode « Animation » pour les titres classés comme animations, et « Standard » pour les autres."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "משתמש במצב אנימציה לתכנים שמסומנים כמונפשים, ובמצב רגיל לשאר התכנים."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "एनिमेटेड के रूप में चिह्नित सामग्री के लिए एनिमेशन मोड और बाकी के लिए मानक मोड का उपयोग करता है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Za naslove označene kao animirani koristi način „Animacija”, a za ostale „Standardno”."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Az animációként megjelölt címekhez az Animáció beállítást használja, a többihez a Normál beállítást."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Menggunakan mode Animasi untuk judul yang ditandai sebagai animasi, dan mode Standar untuk judul lainnya."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Usa Animazione per i titoli contrassegnati come animati e Standard per gli altri."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "アニメーションに分類された作品には「アニメーション」、それ以外には「標準」を使用します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "애니메이션으로 표시된 작품에는 ‘애니메이션’을, 그 외에는 ‘표준’을 사용합니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Menggunakan Animasi untuk tajuk yang ditandai sebagai animasi, dan Standard untuk yang lain."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bruker Animasjon for titler merket som animerte, og ellers Standard."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gebruikt ‘Animatie’ voor titels die als animatie zijn gemarkeerd, en anders ‘Standaard’."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dla tytułów oznaczonych jako animowane używa trybu „Animacja”, a dla pozostałych — „Standardowy”."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Usa “Animação” para títulos marcados como animados e “Padrão” para os demais."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Folosește modul „Animație” pentru titlurile marcate ca animate, iar „Standard” în rest."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Использует режим «Анимация» для контента, отмеченного как анимационный, иначе — «Стандартный»."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pre tituly označené ako animované použije režim „Animácia“, inak „Štandardný“."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Za vsebine, označene kot animirane, uporabi način »Animacija«, sicer pa »Standardno«."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Za naslove označene kao animirane koristi režim „Animacija“, a inače „Standardni“."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Använder ”Animerat” för titlar märkta som animerade, annars ”Standard”."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ใช้ “แอนิเมชัน” กับเรื่องที่ระบุว่าเป็นแอนิเมชัน และใช้ “มาตรฐาน” กับเรื่องอื่น"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Animasyon olarak işaretlenen içeriklerde “Animasyon”, diğerlerinde “Standart” kullanılır."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Для відео, позначених як анімація, використовується режим «Анімація», в інших випадках — «Стандартний»."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اینیمیشن کے طور پر نشان زد مواد کے لیے «اینیمیشن» اور باقی مواد کے لیے «معیاری» پری سیٹ استعمال ہوتا ہے۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dùng “Hoạt hình” cho nội dung được đánh dấu là hoạt hình, còn lại dùng “Tiêu chuẩn”."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "标记为动画的内容使用“动画”预设，其他内容使用“标准”预设。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "標記為動畫的內容使用「動畫」預設，其他內容使用「標準」預設。"
           }
         }
       }
@@ -1211487,6 +1213360,470 @@
         }
       }
     },
+    "match dynamic range black screen transitions video player playback" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "مطابقة النطاق الديناميكي شاشة سوداء انتقالات فيديو مشغّل تشغيل"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "съгласуване динамичен диапазон черен екран преходи видео плейър възпроизвеждане"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Match Dynamic Range ডায়নামিক রেঞ্জ ম্যাচিং কালো স্ক্রিন ট্রানজিশন ভিডিও প্লেয়ার প্লেব্যাক"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ajusta rang dinàmic pantalla negra transicions vídeo reproductor reproducció"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "přizpůsobení dynamického rozsahu černá obrazovka přechody video přehrávač přehrávání"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "tilpas dynamisk område sort skærm overgange video afspiller afspilning"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dynamikbereich anpassen schwarzer Bildschirm Übergänge Video Player Wiedergabe"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "αντιστοίχιση δυναμικού εύρους μαύρη οθόνη μεταβάσεις βίντεο πρόγραμμα αναπαραγωγής αναπαραγωγή"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ajustar rango dinámico pantalla negra transiciones vídeo reproductor reproducción"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تطبیق دامنهٔ پویا صفحهٔ سیاه گذارها ویدیو پخش‌کننده پخش"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sovita dynaaminen alue dynaamisen alueen sovitus musta näyttö siirtymät video soitin toisto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "adapter la plage dynamique écran noir transitions vidéo lecteur lecture"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "התאמת טווח דינמי מסך שחור מעברים וידאו נגן ניגון"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "डायनैमिक रेंज का मिलान काली स्क्रीन ट्रांज़िशन वीडियो प्लेयर प्लेबैक"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "usklađivanje dinamičkog raspona crni zaslon prijelazi video reproduktor reprodukcija"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dinamikatartomány egyeztetése fekete képernyő átmenetek videó lejátszó lejátszás"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "cocokkan rentang dinamis layar hitam transisi video pemutar pemutaran"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "adatta all’intervallo dinamico schermo nero transizioni video lettore riproduzione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ダイナミックレンジに合わせる 黒画面 切り替え ビデオ プレーヤー 再生"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다이내믹 레인지에 맞추기 검은 화면 전환 비디오 플레이어 재생"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "padankan julat dinamik skrin hitam peralihan video pemain media main balik"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "tilpass dynamisk område svart skjerm overganger video avspiller avspilling"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "pas dynamisch bereik aan zwart scherm overgangen video speler afspelen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dopasuj zakres dynamiczny czarny ekran przejścia wideo odtwarzacz odtwarzanie"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ajustar intervalo dinâmico tela preta transições vídeo reprodutor reprodução"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "potrivire interval dinamic ecran negru tranziții video player redare"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "согласование динамического диапазона чёрный экран переходы видео плеер воспроизведение"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "prispôsobenie dynamického rozsahu čierna obrazovka prechody video prehrávač prehrávanie"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "prilagajanje dinamičnega razpona črn zaslon prehodi video predvajalnik predvajanje"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "usklađivanje dinamičkog opsega crni ekran prelazi video plejer reprodukcija"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "matcha dynamiskt omfång svart skärm övergångar video spelare videospelare uppspelning"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ปรับช่วงแสงให้ตรงกัน จับคู่ช่วงไดนามิก หน้าจอดำ การเปลี่ยนภาพ วิดีโอ เครื่องเล่น การเล่น"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dinamik aralıkla eşle siyah ekran geçişler video oynatıcı oynatma"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "узгодження динамічного діапазону чорний екран переходи відео програвач відтворення"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Match Dynamic Range ڈائنامک رینج ملانا سیاہ اسکرین تبدیلیاں ویڈیو پلیئر پلے بیک"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "khớp dải động màn hình đen chuyển đổi phát video trình phát"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "匹配动态范围 黑屏 过渡 视频 播放器 播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "符合動態範圍 黑畫面 轉場 影片 播放器 播放"
+          }
+        }
+      }
+    },
+    "match frame rate black screen transitions video player playback" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "مطابقة معدل الإطارات شاشة سوداء انتقالات فيديو مشغّل تشغيل"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "съгласуване кадрова честота черен екран преходи видео плейър възпроизвеждане"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Match Frame Rate ফ্রেম রেট ম্যাচিং কালো স্ক্রিন ট্রানজিশন ভিডিও প্লেয়ার প্লেব্যাক"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ajusta taxa de fotogrames pantalla negra transicions vídeo reproductor reproducció"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "přizpůsobení snímkové frekvence černá obrazovka přechody video přehrávač přehrávání"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "tilpas billedfrekvens sort skærm overgange video afspiller afspilning"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bildrate anpassen schwarzer Bildschirm Übergänge Video Player Wiedergabe"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "αντιστοίχιση ρυθμού καρέ μαύρη οθόνη μεταβάσεις βίντεο πρόγραμμα αναπαραγωγής αναπαραγωγή"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ajustar frecuencia de fotogramas pantalla negra transiciones vídeo reproductor reproducción"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تطبیق نرخ فریم صفحهٔ سیاه گذارها ویدیو پخش‌کننده پخش"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sovita kuvataajuus kuvataajuuden sovitus musta näyttö siirtymät video soitin toisto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "adapter la fréquence d’images écran noir transitions vidéo lecteur lecture"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "התאמת קצב פריימים מסך שחור מעברים וידאו נגן ניגון"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "फ़्रेम दर का मिलान काली स्क्रीन ट्रांज़िशन वीडियो प्लेयर प्लेबैक"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "usklađivanje broja sličica u sekundi crni zaslon prijelazi video reproduktor reprodukcija"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "képkockasebesség egyeztetése fekete képernyő átmenetek videó lejátszó lejátszás"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "cocokkan laju bingkai layar hitam transisi video pemutar pemutaran"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "adatta alla frequenza dei fotogrammi schermo nero transizioni video lettore riproduzione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "フレームレートに合わせる 黒画面 切り替え ビデオ プレーヤー 再生"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "프레임률에 맞추기 프레임 속도 검은 화면 전환 비디오 플레이어 재생"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "padankan kadar bingkai skrin hitam peralihan video pemain media main balik"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "tilpass bildefrekvens svart skjerm overganger video avspiller avspilling"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "pas beeldsnelheid aan framerate zwart scherm overgangen video speler afspelen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dopasuj liczbę klatek częstotliwość klatek czarny ekran przejścia wideo odtwarzacz odtwarzanie"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ajustar taxa de quadros tela preta transições vídeo reprodutor reprodução"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "potrivire frecvență cadre ecran negru tranziții video player redare"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "согласование частоты кадров чёрный экран переходы видео плеер воспроизведение"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "prispôsobenie snímkovej frekvencie čierna obrazovka prechody video prehrávač prehrávanie"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "prilagajanje hitrosti sličic črn zaslon prehodi video predvajalnik predvajanje"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "usklađivanje broja kadrova u sekundi crni ekran prelazi video plejer reprodukcija"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "matcha bildfrekvens svart skärm övergångar video spelare videospelare uppspelning"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ปรับอัตราเฟรมให้ตรงกัน จับคู่อัตราเฟรม หน้าจอดำ การเปลี่ยนภาพ วิดีโอ เครื่องเล่น การเล่น"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "kare hızıyla eşle siyah ekran geçişler video oynatıcı oynatma"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "узгодження частоти кадрів чорний екран переходи відео програвач відтворення"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Match Frame Rate فریم ریٹ ملانا سیاہ اسکرین تبدیلیاں ویڈیو پلیئر پلے بیک"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "khớp tốc độ khung hình màn hình đen chuyển đổi phát video trình phát"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "匹配帧速率 黑屏 过渡 视频 播放器 播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "符合影格率 黑畫面 轉場 影片 播放器 播放"
+          }
+        }
+      }
+    },
     "mediaAction.addToWatchlist" : {
       "comment" : "Context-menu action adding an item to the user's watchlist.",
       "localizations" : {
@@ -1266728,7 +1269065,7 @@
     },
     "settings.section.tracks" : {
       "comment" : "Settings section for default audio and subtitle track selection. Media streams inside a video file, not music tracks.",
-      "extractionState" : "extracted_with_value",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -1297660,6 +1299997,238 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "無法使用"
+          }
+        }
+      }
+    },
+    "up next lead time credits countdown video player playback" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "التالي الوقت قبل النهاية شارة النهاية عد تنازلي فيديو مشغّل تشغيل"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "следващо време преди края финални надписи обратно броене видео плейър възпроизвеждане"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "এরপর শেষ হওয়ার আগের সময় ক্রেডিটস কাউন্টডাউন ভিডিও প্লেয়ার প্লেব্যাক"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "a continuació temps d'antelació crèdits compte enrere vídeo reproductor reproducció"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "následuje předstih čas závěrečné titulky odpočet video přehrávač přehrávání"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "op næste næste afsnit tid før slutningen rulletekster nedtælling video afspiller afspilning"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "als Nächstes Vorlaufzeit Abspann Countdown Video Player Wiedergabe"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "επόμενο χρόνος πριν το τέλος τίτλοι τέλους αντίστροφη μέτρηση βίντεο πρόγραμμα αναπαραγωγής αναπαραγωγή"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "a continuación tiempo de antelación créditos cuenta atrás vídeo reproductor reproducción"
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "بعدی زمان پیش از پایان تیتراژ شمارش معکوس ویدیو پخش‌کننده پخش"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "seuraavaksi ennakkoaika lopputekstit lähtölaskenta video soitin toisto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "à suivre délai avant la fin générique compte à rebours vidéo lecteur lecture"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "בהמשך זמן לפני הסיום כתוביות סיום ספירה לאחור וידאו נגן ניגון"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "आगे अंत से पहले का समय क्रेडिट उलटी गिनती वीडियो प्लेयर प्लेबैक"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "slijedi vrijeme najave odjavna špica odbrojavanje video reproduktor reprodukcija"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "következő vég előtti idő stáblista visszaszámlálás videó lejátszó lejátszás"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "berikutnya waktu sebelum akhir kredit penutup hitung mundur video pemutar pemutaran"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "in coda anticipo titoli di coda conto alla rovescia video lettore riproduzione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "次に再生 表示タイミング エンドクレジット カウントダウン ビデオ プレーヤー 再生"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다음에 재생 표시 시점 엔딩 크레딧 카운트다운 비디오 플레이어 재생"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "seterusnya masa sebelum tamat kredit penutup kira detik video pemain media main balik"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "neste visningstidspunkt rulletekst nedtelling video avspiller avspilling"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "volgende voorlooptijd aftiteling aftellen video speler afspelen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "następne wyprzedzenie napisy końcowe odliczanie wideo odtwarzacz odtwarzanie"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "a seguir antecedência créditos contagem regressiva vídeo reprodutor reprodução"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "următorul timp de anticipare generic numărătoare inversă video player redare"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "далее следующая серия время показа заранее титры обратный отсчёт видео плеер воспроизведение"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "nasleduje predstih záverečné titulky odpočítavanie video prehrávač prehrávanie"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sledi naslednja epizoda čas prikaza pred koncem odjavna špica odštevanje video predvajalnik predvajanje"
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sledeće sledeća epizoda vreme ranijeg prikaza odjavna špica odbrojavanje video plejer reprodukcija"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "härnäst framförhållning tid före slutet eftertexter nedräkning video spelare videospelare uppspelning"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ถัดไป เวลาแสดงล่วงหน้า เครดิตท้ายเรื่อง นับถอยหลัง วิดีโอ เครื่องเล่น การเล่น"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sıradaki önceden gösterme jenerik geri sayım video oynatıcı oynatma"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "далі завчасний показ титри зворотний відлік відео програвач відтворення"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اگلا پیشگی وقت اختتام سے پہلے کا وقت کریڈٹس الٹی گنتی ویڈیو پلیئر پلے بیک"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "tiếp theo thời gian báo trước danh đề cuối phim đếm ngược phát video trình phát"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "接下来播放 提前时间 片尾字幕 倒计时 视频 播放器 播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "接下來 提前時間 片尾字幕 倒數 影片 播放器 播放"
           }
         }
       }

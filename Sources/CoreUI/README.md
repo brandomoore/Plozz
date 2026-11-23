@@ -89,11 +89,14 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 Mobile Settings roots and detail pages share `MobileSettingsMetrics`: 16-point
 page/row insets, 28-point section gaps, 52-point minimum rows and 26-point
 continuous group corners. Rows grow with their content and Dynamic Type.
+[Settings copy and placement](../../docs/swiftui-guidelines.md#settings-copy-and-placement)
+explains when a row needs a helper instead of a group footer.
 `SettingsDescribedControl` keeps a control and its helper in one row, so the
 separator follows the description rather than splitting it from the control.
-The control keeps the same top clearance as a plain row, and the helper retains
-the matching bottom inset. On mobile, no extra gap separates the control's
-minimum-height area from its helper. Supporting copy uses `SettingsRowMetrics.descriptionFont`
+On Apple TV, leave slightly less space below the last line of help than between
+the title and the help. Rows without help keep their normal height. On mobile,
+no extra gap separates the control's minimum-height area from its helper.
+Supporting copy uses `SettingsRowMetrics.descriptionFont`
 through `settingsHelperText()` (including group footers); do not add local font
 sizes or manually spaced control/description stacks.
 `SettingsIconLabelStyle` supplies title anchors for one-pixel group separators:
@@ -883,7 +886,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   a control and its helper in one child view; the divider belongs after both.
   Conditional rows keep their SwiftUI identity, and separators add no focus or
   accessibility stops. Focus fills stay within row bounds, with the shared
-  8pt `dividerFocusClearance` on each side of the line. Icon-led category lists
+  8pt `dividerFocusClearance` on each side of the line. In TV form cards,
+  `SettingsDescribedControl` leaves one 28pt gap from the description to the
+  next divider or the card bottom, counting the inset already supplied there.
+  Settings screens should not add padding below descriptions. Icon-led category lists
   start their dividers at `SettingsRowMetrics.iconTitleInset`, sharing the actual
   row icon width, gap and content padding; leading alignment also follows RTL.
   Illustrated Settings groups instead use a 16pt gap and 16pt padding without

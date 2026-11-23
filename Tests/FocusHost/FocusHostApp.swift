@@ -204,6 +204,8 @@ struct FocusHostApp: App {
                 }
             } else if ProcessInfo.processInfo.arguments.contains("--live-jellyfin-home") {
                 LiveJellyfinHomeFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--native-sidebar-detail-fixture") {
+                NativeSidebarDetailFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--production-home-fixture") {
                 ProductionHomeFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--native-artwork-focus-comparison") {

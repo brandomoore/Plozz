@@ -48,6 +48,7 @@ public final class AccountsProvidersModel {
     public private(set) var activeAccountIDs: Set<String> = []
     /// Snapshot on reload so rendering picker badges never reads the Keychain.
     private var householdActiveAccountIDs: [String] = []
+    @ObservationIgnored private var lastReloadedViewer: AutomaticSignInStore.Session.ProfileAccess?
 
     /// An explicit selection has no locally available accounts, including when
     /// its selected accounts were removed. Never substitute an excluded account.
@@ -666,7 +667,7 @@ public final class AccountsProvidersModel {
     }
 
     /// Reloads accounts from the store and recomputes the active set for the
-    /// active profile. Invalidates the provider cache first, then fires
+    /// active profile. Reconciles the provider cache first, then fires
     /// `onActiveAccountsChanged` so the media-share runtime can update its
     /// preferred-account keys.
     public func reloadAccounts(updatingServerAddressesFor addressAccountID: String? = nil) {
@@ -680,7 +681,12 @@ public final class AccountsProvidersModel {
         // Receipt of a household revocation denies use even if Keychain deletion
         // must be retried on a later reload.
         let updated = accountStore.loadAccounts().filter { !removed.contains($0.id) }
+        let viewer = AutomaticSignInStore.Session.ProfileAccess(profilesModel.activeProfile)
+        let householdIDs = accountStore.activeAccountIDs()
+        let selectedIDs = Set(profilesModel.storedActiveAccountIDs(for: viewer.id) ?? householdIDs)
         if let addressAccountID,
+           viewer == lastReloadedViewer, !accountSelectionIsUnavailable,
+           activeAccountIDs == selectedIDs.intersection(updated.map(\.id)),
            let account = updated.first(where: { $0.id == addressAccountID }),
            accounts.map({ old in
                var expected = old
@@ -692,12 +698,22 @@ public final class AccountsProvidersModel {
             registry.updateServerAddresses(accountID: addressAccountID,
                                            alternatives: account.server.alternateConnectionURLs ?? [])
         } else {
-            registry.invalidateCache()
+            // Silo locators refer to grants owned by the instance that negotiated
+            // them. An unchanged login must survive refreshes on either side of start.
+            let retained = updated.compactMap { account -> ProviderResolutionContext? in
+                guard account.server.provider == .silo, viewer == lastReloadedViewer,
+                      localProviders == nil, !accountSelectionIsUnavailable,
+                      activeAccountIDs.contains(account.id), selectedIDs.contains(account.id),
+                      let token = tokenResolver(account.id), !token.isEmpty else { return nil }
+                return providerResolutionContext(for: account, token: token)
+            }
+            registry.invalidateCache(preserving: retained)
         }
+        lastReloadedViewer = viewer
         onAccountsInvalidated()
         accounts = updated
         hasResolvedAccounts = true
-        householdActiveAccountIDs = accountStore.activeAccountIDs()
+        householdActiveAccountIDs = householdIDs
         publishActiveAccountSelection()
     }
 

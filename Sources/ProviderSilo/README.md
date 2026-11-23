@@ -95,6 +95,9 @@ not silently rewrite it or move an already-playing stream.
 Address-only edits preserve the existing provider's login-revision-bound playback
 and subtitle grants while updating its API routes. They do not invalidate other
 accounts' providers; a new credential revision still receives a new session store.
+Routine account reloads also preserve an active Silo login's grants for the same
+viewer, so resuming from a retained Home row can open the stream it negotiated.
+Changing profiles or disabling the account does not carry those grants over.
 
 ## Server Home
 

@@ -157,6 +157,22 @@ struct SettingsFormGroup<Content: View>: View {
     }
 }
 
+extension SettingsSplitRow {
+    @ViewBuilder var detailWithInlineDescription: some View {
+        if let description {
+            SettingsDescribedControl(control: detail) {
+                if let descriptionAccessory {
+                    SettingsRowDescription(text: description, accessory: descriptionAccessory)
+                } else {
+                    description
+                }
+            }
+        } else {
+            detail()
+        }
+    }
+}
+
 struct SettingsControlGroup<Content: View>: View {
     var illustrated = false
     var dividerLeadingInset: CGFloat? = nil
@@ -177,7 +193,7 @@ struct SettingsControlGroup<Content: View>: View {
             }
         }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(SettingsFormMetrics.groupInset)
+            .settingsControlGroupPadding()
             .settingsGroupSurface(cornerRadii: cornerRadii)
             .toggleStyle(SettingsSwitchToggleStyle(flushLeading: false))
             .environment(\.settingsFormRowsFlushLeading, false)
@@ -192,15 +208,9 @@ struct SettingsConnectedControlGroups<Content: View>: View {
         VStack(alignment: .leading, spacing: SettingsFormMetrics.connectedGroupSpacing) {
             Group(subviews: content()) { groups in
                 ForEach(groups) { group in
-                    SettingsControlGroup(cornerRadii: .init(
-                        topLeading: group.id == groups.first?.id
-                            ? SettingsFormMetrics.groupCornerRadius : SettingsFormMetrics.connectedGroupInnerCornerRadius,
-                        bottomLeading: group.id == groups.last?.id
-                            ? SettingsFormMetrics.groupCornerRadius : SettingsFormMetrics.connectedGroupInnerCornerRadius,
-                        bottomTrailing: group.id == groups.last?.id
-                            ? SettingsFormMetrics.groupCornerRadius : SettingsFormMetrics.connectedGroupInnerCornerRadius,
-                        topTrailing: group.id == groups.first?.id
-                            ? SettingsFormMetrics.groupCornerRadius : SettingsFormMetrics.connectedGroupInnerCornerRadius
+                    SettingsControlGroup(cornerRadii: SettingsFormMetrics.rowCornerRadii(
+                        first: group.id == groups.first?.id, last: group.id == groups.last?.id,
+                        outer: SettingsFormMetrics.groupCornerRadius
                     )) {
                         group
                     }

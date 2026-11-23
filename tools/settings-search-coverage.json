@@ -74,6 +74,7 @@
     "NightShiftScheduleControl",
     "PlaybackAdvancedSettingsView",
     "PlaybackDetailView",
+    "PlayerTabSettingsView",
     "PlexLinkedUserDetailView",
     "PlozziOSAdvancedStreamingSettings",
     "PlozziOSAllScreensSettingsView",
@@ -308,7 +309,7 @@
       "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
       "controls": {
         "Sources/FeatureSettings/PlaybackReadAheadControl.swift|LivePlaybackBufferControl|body|SettingsMenuRow|\"Live TV buffer\"": 1,
-        "Sources/FeatureSettings/PlaybackReadAheadControl.swift|LivePlaybackBufferControl|body|Picker|\"Live TV buffer\"": 2
+        "Sources/FeatureSettings/PlaybackReadAheadControl.swift|LivePlaybackBufferControl|picker|Picker|\"Live TV buffer\"": 1
       }
     },
     "PlaybackReadAheadControl": {
@@ -316,7 +317,7 @@
       "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
       "controls": {
         "Sources/FeatureSettings/PlaybackReadAheadControl.swift|PlaybackReadAheadControl|body|SettingsMenuRow|\"Video buffer\"": 1,
-        "Sources/FeatureSettings/PlaybackReadAheadControl.swift|PlaybackReadAheadControl|body|Picker|\"Video buffer\"": 2
+        "Sources/FeatureSettings/PlaybackReadAheadControl.swift|PlaybackReadAheadControl|picker|Picker|\"Video buffer\"": 1
       }
     },
     "DescribedSegmentedPicker": {
@@ -1669,32 +1670,30 @@
       "reason": "preview_action: Does not configure schedule.",
       "covered_by": []
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Toggle|\"Volume and brightness gestures\"": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|sectionView|Toggle|\"Volume and brightness gestures\"": {
       "count": 1,
-      "reason": "Reviewed setting; behavior is covered by its owning component tests.",
-      "covered_by": []
+      "reason": "The described row owns the gesture anchor.",
+      "covered_by": ["volume-brightness"]
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Toggle|\"Identify songs\"": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|sectionView|Toggle|\"Identify songs\"": {
       "count": 1,
-      "reason": "Reviewed setting; behavior is covered by its owning component tests.",
-      "covered_by": []
+      "reason": "The described row owns the song identification anchor.",
+      "covered_by": ["identify-songs"]
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Toggle|\"P7 FEL → P8.1 conversion\"": {
-      "count": 1,
-      "reason": "Reviewed setting; behavior is covered by its owning component tests.",
-      "covered_by": []
-    },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Picker|\"Disc playback\"": {
-      "count": 1,
-      "reason": "The containing stack owns the disc-playback anchor, keeping its compatibility notice with the picker.",
-      "covered_by": [
-        "disc-playback"
-      ]
-    },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Button|SettingsDisclosureLabel { Text(\"Advanced\") }": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|sectionView|Button|SettingsDisclosureLabel { Text(\"Advanced\") }": {
       "count": 1,
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "covered_by": []
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|sectionView|Button|SettingsDisclosureLabel { Text(\"Player tabs\") }": {
+      "count": 1,
+      "reason": "Navigation to independently searchable tab visibility switches.",
+      "covered_by": ["player-tab-chapters", "player-tab-cast", "player-tab-episodes", "player-tab-playlist", "continue-watching-in-player"]
+    },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|playerTabsLink|SettingsPageLink|SettingsDisclosureLabel { Text(\"Player tabs\") }": {
+      "count": 1,
+      "reason": "Navigation to independently searchable tab visibility switches.",
+      "covered_by": ["player-tab-chapters", "player-tab-cast", "player-tab-episodes", "player-tab-playlist", "continue-watching-in-player"]
     },
     "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSProfilesView|body|Button|HStack { PlozziOSProfileAvatar( profile: profile, size: 34 ) Text(profile.name) Spacer() // Glance the access state so the list answers // \"who's locked?\" without opening each one. if profile.isKids { Image(systemName: \"figure.and.child.holdinghands\") .plozzForeground(.secondary) } if profile.isLocked { Image(systemName: \"lock.fill\") .plozzForeground(.secondary) } if isEditingProfiles { Image(systemName: \"chevron.right\") .font(.caption.weight(.semibold)) .plozzForeground(.tertiary) } } .frame(maxWidth: .infinity, alignment: .leading) .contentShape(Rectangle())": {
       "count": 1,
@@ -1889,11 +1888,6 @@
     "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSubtitleSettingsView|body|Button|SettingsDisclosureLabel { Text(\"Customize subtitle style\") }": {
       "count": 1,
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
-      "covered_by": []
-    },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSubtitleSettingsView|body|Toggle|\"Use a separate style for Live TV\"": {
-      "count": 1,
-      "reason": "Reviewed setting; behavior is covered by its owning component tests.",
       "covered_by": []
     },
     "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSubtitleSettingsView|body|Button|SettingsDisclosureLabel { Text(\"Customize Live TV subtitles\") }": {
@@ -2844,7 +2838,7 @@
         "episode-count-style"
       ]
     },
-    "Sources/FeatureSettings/CardAppearanceControls.swift|CardCaptionSettingsLink|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Customize labels\") } .settingsFormRowLayout()": {
+    "Sources/FeatureSettings/CardAppearanceControls.swift|CardCaptionSettingsLink|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Customize labels\") }": {
       "count": 1,
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "covered_by": []
@@ -3605,7 +3599,7 @@
       "reason": "Reviewed setting; behavior is covered by its owning component tests.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|audioRows|Toggle|\"P7 FEL → P8.1 conversion\"": {
+    "Sources/FeatureSettings/VideoUpscalingControl.swift|DolbyVisionFELConversionControl|body|Toggle|\"P7 FEL \u2192 P8.1 conversion\"": {
       "count": 1,
       "reason": "Reviewed setting; behavior is covered by its owning component tests.",
       "covered_by": []
@@ -3992,7 +3986,7 @@
       "reason": "Reviewed setting; behavior is covered by its owning component tests.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsControl|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Customize\") } .settingsFormRowLayout()": {
+    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsControl|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Customize\") }": {
       "count": 1,
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "covered_by": []
@@ -4007,7 +4001,7 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsView|rows|SettingsPageLink|SettingsDisclosureLabel { Text(kind.settingsTitle) } .settingsFormRowLayout()": {
+    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsView|rows|SettingsPageLink|SettingsDisclosureLabel { Text(kind.settingsTitle) }": {
       "count": 1,
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "covered_by": []
@@ -4107,7 +4101,7 @@
       "reason": "Opens one named tracker account. Search routes to that account directly.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncNavigationRow|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"2-way sync\") }": {
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncNavigationRow|body|SettingsPageLink|SettingsDisclosureLabel { TrackerTwoWaySyncLabel() }": {
       "count": 1,
       "reason": "Ongoing sync is a destination for one connected tracker with eligible shares or an existing grant. Global search has no account selection.",
       "covered_by": []
@@ -4122,7 +4116,7 @@
       "reason": "Runs the selected tracker grant now; not a scheduling preference.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|controls|Toggle|\"2-way sync\"": {
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|controls|Toggle|<dynamic>": {
       "count": 1,
       "reason": "Enrollment or revocation is bound to this device, profile, tracker connection and eligible media shares; there is no global sync switch.",
       "covered_by": []
@@ -4160,16 +4154,6 @@
     "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|activeLibraries|Toggle|<dynamic>": {
       "count": 1,
       "reason": "Selects one eligible media share in this connection's grant; a share or user name cannot be a global result.",
-      "covered_by": []
-    },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|controls|Button|\"Sync history\"": {
-      "count": 1,
-      "reason": "This action belongs to an eligible tracker connection’s sync settings, not to global search.",
-      "covered_by": []
-    },
-    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|controls|Button|\"Skip\"": {
-      "count": 1,
-      "reason": "This action belongs to an eligible tracker connection’s sync settings, not to global search.",
       "covered_by": []
     }
   }

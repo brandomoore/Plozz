@@ -155,9 +155,10 @@ final class SettingsSearchTests: XCTestCase {
         XCTAssertTrue(tv.contains("card-focus"))
         XCTAssertFalse(phone.contains("card-focus"))
         XCTAssertFalse(phone.contains("navigation-layout"))
-        let remembered = SettingsSearchCatalog.entry(id: "subtitle-remember")
-        XCTAssertEqual(remembered?.destinationPage(on: .phone), .playback)
-        XCTAssertEqual(remembered?.destinationPage(on: .television), .subtitles)
+        for platform: SettingsSearchEntry.Platform in [.phone, .tablet, .television] {
+            XCTAssertEqual(SettingsSearchCatalog.entry(id: "subtitle-remember")?.destinationPage(on: platform), .subtitles)
+            XCTAssertEqual(SettingsSearchCatalog.entry(id: "cross-server-watch-sync")?.destinationPage(on: platform), .trackers)
+        }
     }
 
     func testRowStyleSearchIsSeparateFromHeroAndOnlyAvailableOnTV() {

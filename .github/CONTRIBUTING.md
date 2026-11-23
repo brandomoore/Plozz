@@ -24,6 +24,9 @@ every design will be the right fit. For bigger redesigns, sharing an idea or
 mockup early can help avoid spending time on an approach I might take in a
 different direction.
 
+For settings changes, see [Settings copy and placement](../docs/swiftui-guidelines.md#settings-copy-and-placement)
+for examples of plain rows, group footers, and explanations that belong with a choice.
+
 Hero and tab-navigation continuity rules are part of the UX contract: read the
 [SwiftUI guidelines](../docs/swiftui-guidelines.md#hero-continuity) before
 changing hero artwork, wordmark reveals, action rows, or tab root requests.

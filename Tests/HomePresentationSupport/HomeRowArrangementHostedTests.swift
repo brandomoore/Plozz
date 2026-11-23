@@ -61,6 +61,22 @@ private final class ContentPickerSelectionFixture {
 
 @MainActor
 extension HomeRowArrangementHostedTests {
+    #if os(tvOS)
+    func testContinueWatchingRefreshSlotSitsBesideTitle() {
+        func headerWidth(refreshing: Bool) -> CGFloat {
+            let header = MediaRowHeader(title: Text("Continue Watching"), leadingInset: 0)
+                .environment(\.mediaRowRefreshStatus, refreshing ? MediaRowRefreshStatus(
+                    isRefreshing: true, failure: nil, report: nil, onRetry: {}
+                ) : nil)
+                .fixedSize()
+            return UIHostingController(rootView: header)
+                .sizeThatFits(in: CGSize(width: 1280, height: 720)).width
+        }
+        let gap = headerWidth(refreshing: true) - headerWidth(refreshing: false) - MediaRowRefreshIndicator.size
+        XCTAssertEqual(gap, 8, accuracy: 1)
+    }
+    #endif
+
     func testContinueWatchingStatusDoesNotMoveTheHeadingOrCards() async throws {
         var headingY: CGFloat?
         var cardY: CGFloat?

@@ -33,25 +33,20 @@ public struct DefaultVideoZoomControl: View {
     }
 
     public var body: some View {
-        #if os(tvOS)
         SettingsDescribedControl {
+            #if os(tvOS)
             SettingsControlRows { controls }
+            #else
+            VStack(alignment: .leading) { controls }
+            #endif
         } description: {
             help
         }
-        #else
-        SettingsSectionGroup {
-            controls
-        } footer: {
-            help
-        }
-        .settingsSearchGroup(["default-video-zoom", "custom-video-zoom"])
-        #endif
     }
 
     @ViewBuilder private var controls: some View {
         #if os(tvOS)
-        SettingsMenuRow(title: "Default zoom", value: Text(mode.wrappedValue.title)) {
+        SettingsMenuRow(title: "Default player zoom", value: Text(mode.wrappedValue.title)) {
             modePicker
         }
         .accessibilityIdentifier("default-video-zoom")
@@ -91,7 +86,7 @@ public struct DefaultVideoZoomControl: View {
     }
 
     private var modePicker: some View {
-        Picker("Default zoom", selection: mode) {
+        Picker("Default player zoom", selection: mode) {
             ForEach([VideoZoomPreference.Mode.picture, .fit, .fill, .stretch, .custom], id: \.self) {
                 Text($0.title).tag($0)
             }

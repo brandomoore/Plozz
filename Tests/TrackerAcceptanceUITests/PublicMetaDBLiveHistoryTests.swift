@@ -1147,8 +1147,8 @@ final class PublicMetaDBLiveHistoryTests: XCTestCase {
 
     func testDisableCrossServerWatchSync() throws {
         try openSettings()
-        try tapVisible(app.buttons["settings-category-playback"])
-        let control = app.switches.matching(NSPredicate(format: "label BEGINSWITH %@", "Sync across servers")).firstMatch
+        try tapVisible(app.buttons["settings-category-trackers"])
+        let control = app.switches["cross-server-watch-sync"].firstMatch
         try tapVisible(control, tapping: false)
         if control.value as? String == "1" {
             try tapVisible(control.switches.firstMatch)

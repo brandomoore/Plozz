@@ -39,7 +39,9 @@ struct PlozzApp: App {
             // only way a household can run Plozz in a language other than the
             // device's. See CoreUI.AppLanguageScope.
             AppLanguageScope {
-                if !launchPrepared {
+                if !ReleaseChannelLaunch.shared.isReady {
+                    ProgressView()
+                } else if !launchPrepared {
                     ICloudSetupUnavailableView {
                         launchPrepared = SyncSetupLaunchPreparation.prepare()
                     }
