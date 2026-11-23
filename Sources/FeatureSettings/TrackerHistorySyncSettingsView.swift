@@ -149,7 +149,7 @@ private struct TrackerTwoWaySyncRows: View {
                 } else if !sync.isEnabled {
                     Text("Sync existing and new watch history from \(trackerName) to the libraries you choose in Plozz.")
                 } else {
-                    Text("Changes from \(trackerName) update matching titles in Plozz, not on Plex, Jellyfin, or Emby.")
+                    Text("2-way sync brings watch history from your tracker back to Plozz for media shares. For Plex, Emby, Silo, and Jellyfin libraries, watch history only goes from Plozz to your tracker.")
                 }
                 if sync.isEnabled, sync.supportedCategories.contains(.resume),
                    sync.grant?.categories.contains(.resume) == false {

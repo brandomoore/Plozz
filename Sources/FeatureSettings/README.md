@@ -13,9 +13,10 @@ While a check is running, its current stage and available page counts replace **
 Wrapped errors use the same inner clearance as Settings descriptions; the group owns the horizontal inset.
 **Account** groups connection status and account actions. Every tracker uses a red **Disconnect** button.
 **2-way sync** brings supported
-tracker activity into matching Plozz libraries. Enabling sync imports existing watches
-and supported paused positions without a second confirmation. It does not write to Plex,
-Jellyfin, or Emby.
+tracker activity into matching titles on selected media shares in Plozz. Enabling sync
+imports existing watches and supported paused positions without a second confirmation.
+For Plex, Emby, Silo, and Jellyfin libraries, Plozz can report playback to the tracker,
+but 2-way sync does not import watch history back into those libraries.
 One-time imports and exports, PublicMetaDB watchlists, history management, ratings, contributions,
 discovery, external-ID tools, and the Last.fm listening-history browser are not v1 destinations.
 The implementation notes for those tools below describe deferred code, not shipping entry points.

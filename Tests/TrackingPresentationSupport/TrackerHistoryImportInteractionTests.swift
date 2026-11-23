@@ -149,6 +149,9 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         waitForReport(";sync=true;destinations=cedar;")
         waitForReport("cedar=1,played=true")
         assertReport(jellyfin: 0, plex: 0, cedar: 1, mariner: 0)
+        let footer = "2-way sync brings watch history from your tracker back to Plozz for media shares. "
+            + "For Plex, Emby, Silo, and Jellyfin libraries, watch history only goes from Plozz to your tracker."
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label == %@", footer)).firstMatch.exists)
         activate(app.buttons["tracker-history.sync-now"])
         XCTAssertTrue(app.buttons["tracker-history.sync-now"].wait(for: \.isEnabled, toEqual: true, timeout: 10))
         assertReport(jellyfin: 0, plex: 0, cedar: 1, mariner: 0)
