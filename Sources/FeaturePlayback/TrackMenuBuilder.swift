@@ -53,19 +53,11 @@ enum TrackMenuBuilder {
     ) -> [PlayerTrackOption] {
         let options = tracks.sortedByPreferredLanguage(preferred).map { track in
             let label = presentation(for: TrackLabeling.audioLabel(
-                    displayTitle: track.displayTitle,
-                    sourceTitle: track.sourceTitle,
-                    language: track.language,
-                    codec: track.codec,
-                    profile: track.profile,
-                    channels: track.channels,
-                    isAtmos: track.isAtmos,
-                    isDTSX: track.isDTSX,
-                    isCommentary: track.isCommentary,
-                    isVisualImpaired: track.isVisualImpaired,
-                    trackID: track.id,
-                    locale: locale
-                ), locale: locale)
+                displayTitle: track.displayTitle, sourceTitle: track.sourceTitle, language: track.language,
+                codec: track.codec, profile: track.profile, channels: track.channels,
+                isAtmos: track.isAtmos, isDTSX: track.isDTSX, isCommentary: track.isCommentary,
+                isVisualImpaired: track.isVisualImpaired, trackID: track.id, locale: locale
+            ), locale: locale)
             return PlayerTrackOption(
                 id: track.id, title: label.text,
                 isSelected: track.id == selectedID, nativeTitle: label.nativeTitle

@@ -239,7 +239,7 @@ struct MALClient: Sendable {
         return data
     }
 
-    private func formBody(_ parameters: [String: String]) -> Data? {
+    func formBody(_ parameters: [String: String]) -> Data? {
         var components = URLComponents()
         components.queryItems = parameters
             .sorted(by: { $0.key < $1.key })

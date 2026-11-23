@@ -27,14 +27,13 @@ public struct SkipMarkerSettingsControl: View {
                     SkipMarkerSettingsView(model: model)
                 } label: {
                     SettingsDisclosureLabel { Text("Customize") }
-                        .settingsFormRowLayout()
                 }
                 .buttonStyle(SettingsFormButtonStyle())
                 .accessibilityIdentifier("skip-marker-settings")
             }
         }
         #else
-        SettingsSectionGroup {
+        SettingsSectionGroup(PlaybackFormSection.skipMarkers.title) {
             SkipMarkerEnableControl(model: model)
             if model.settings.skipMarkersEnabled {
                 Button(action: onOpenSettings) {
@@ -157,7 +156,6 @@ public struct SkipMarkerSettingsView: View {
                             SkipMarkerContentSettingsView(model: model, kind: kind)
                         } label: {
                             SettingsDisclosureLabel { Text(kind.settingsTitle) }
-                                .settingsFormRowLayout()
                         }
                         .buttonStyle(SettingsFormButtonStyle())
                         .accessibilityIdentifier("skip-marker-\(kind.rawValue)")

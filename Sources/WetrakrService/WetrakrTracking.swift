@@ -9,10 +9,11 @@ struct WetrakrTrackingBody: Encodable, Sendable {
         var number: Int?
         var status: String?
         var trackedAt: String?
+        var trackedAtUnknown: Bool?
         var seasons: [Item]?
         var episodes: [Item]?
         enum CodingKeys: String, CodingKey {
-            case id, ids, number, status, seasons, episodes, trackedAt = "tracked_at"
+            case id, ids, number, status, seasons, episodes, trackedAt = "tracked_at", trackedAtUnknown = "tracked_at_unknown"
         }
     }
     var movies: [Item]?
@@ -116,17 +117,17 @@ struct WetrakrTrackingResult: Decodable, Sendable {
 extension WetrakrClient {
     func tracking(
         _ body: WetrakrTrackingBody, remove: Bool = false,
-        idempotencyKey: String, accessToken: String
+        idempotencyKey: String, accessToken: String, validateScope: @escaping @Sendable () async throws -> Void = {}
     ) async throws {
         let response = try await trackingResult(
-            body, remove: remove, idempotencyKey: idempotencyKey, accessToken: accessToken
+            body, remove: remove, idempotencyKey: idempotencyKey, accessToken: accessToken, validateScope: validateScope
         )
         try response.validate(allowDuplicateWatch: body.allowRewatch == true, removing: remove)
     }
 
     func trackingResult(
         _ body: WetrakrTrackingBody, remove: Bool = false,
-        idempotencyKey: String, accessToken: String
+        idempotencyKey: String, accessToken: String, validateScope: @escaping @Sendable () async throws -> Void = {}
     ) async throws -> WetrakrTrackingResult {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -136,7 +137,7 @@ extension WetrakrClient {
         ).jsonBody(body, encoder: encoder)
         return try await decode(
             WetrakrTrackingResult.self, endpoint: endpoint, accessToken: accessToken,
-            operation: body.allowRewatch == true ? .historyWrite : .planningWrite
+            operation: body.allowRewatch == true ? .historyWrite : .planningWrite, validateScope: validateScope
         )
     }
 }

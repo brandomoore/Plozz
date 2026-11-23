@@ -1321,6 +1321,10 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
 
     @ViewBuilder
     private func guideContent(_ layout: PrototypePreviewLayout, canvasWidth: CGFloat) -> some View {
+        // Keep one guide mounted from loading through first focus. A disappearing
+        // loading guide can otherwise clear the loaded guide's confirmed focus.
+        let catalogIsEmpty = model.channels.isEmpty && !isInitialCatalogLoading && sources?.hasLoaded != false
+        let showsSourceEmptyState = catalogIsEmpty && libraryIssue == nil && libraryGuideIssue == nil
         ZStack(alignment: .topLeading) {
             if let sources, (!sources.hasLoaded && sources.loadIssue != nil) || sourceApplicationFailed {
                 PrototypeGuidePlacement(frame: layout.contentFrame, canvasWidth: canvasWidth) {
@@ -1330,22 +1334,16 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         retry: requestCatalogRefresh
                     )
                 }
-            } else if isInitialCatalogLoading || sources?.hasLoaded == false {
-                catalogGuideContent(layout, canvasWidth: canvasWidth)
-            } else if model.channels.isEmpty, let automaticChannels,
+            } else if catalogIsEmpty, let automaticChannels,
                       automaticChannels.needsEmptyState, canManageLibraryChannels,
-                      !enrollment.statuses.contains(where: { $0.failure != nil }),
-                      automaticChannels.isWorking || !isInitialCatalogLoading {
+                      !enrollment.statuses.contains(where: { $0.failure != nil }) {
                 PrototypeGuidePlacement(frame: layout.contentFrame, canvasWidth: canvasWidth) {
                     LiveTVAutomaticChannelsEmptyView(state: automaticChannels) {
                         managesLibraryChannels = true
                         sheet = .sources
                     }
                 }
-            } else if model.channels.isEmpty,
-                      isInitialCatalogLoading || libraryIssue != nil || libraryGuideIssue != nil {
-                catalogGuideContent(layout, canvasWidth: canvasWidth)
-            } else if model.channels.isEmpty, blockedPlaylistCount > 0 {
+            } else if showsSourceEmptyState, blockedPlaylistCount > 0 {
                 PrototypeGuidePlacement(frame: layout.contentFrame, canvasWidth: canvasWidth) {
                     ContentUnavailableView {
                         Label("Source approval needed", systemImage: "lock")
@@ -1355,8 +1353,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         Button("Manage sources") { sheet = .sources }
                     }
                 }
-            } else if let sources,
-                      model.channels.isEmpty,
+            } else if showsSourceEmptyState, let sources,
                       sources.configuration.playlists.isEmpty && sources.configuration.servers.isEmpty {
                 PrototypeGuidePlacement(frame: layout.contentFrame, canvasWidth: canvasWidth) {
                     LiveTVSetupWelcome(
@@ -1375,8 +1372,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         automaticChannels: automaticChannels
                     )
                 }
-            } else if let sources,
-                      model.channels.isEmpty,
+            } else if showsSourceEmptyState, let sources,
                       !sources.configuration.playlists.contains(where: \.isEnabled),
                       !sources.configuration.servers.contains(where: \.isEnabled) {
                 PrototypeGuidePlacement(frame: layout.contentFrame, canvasWidth: canvasWidth) {

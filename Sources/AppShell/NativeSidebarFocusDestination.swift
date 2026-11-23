@@ -48,7 +48,7 @@ struct NativeSidebarNavigation<Content: View>: View {
         .onChange(of: handoff.completedRequest) { _, completed in
             guard startupDestination == nil || startupFocusAllowed else { return }
             if let completed, completed.destination == selection, completed.focusTarget == .content,
-               startupDestination == selection || selection == .home {
+               startupDestination == selection || selection == .home || selection == .settings {
                 contentRequest = completed.generation
             }
         }

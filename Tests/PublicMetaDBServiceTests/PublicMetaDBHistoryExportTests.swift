@@ -1,0 +1,888 @@
+import CoreModels
+import CoreNetworking
+import CoreSecureStore
+import Foundation
+import XCTest
+@testable import PublicMetaDBService
+@testable import TestSupportNetworking
+
+@MainActor
+final class PublicMetaDBHistoryExportTests: XCTestCase {
+    private let library = MediaLibrary(id: "library", title: "Movies", kind: .movie)
+
+    private func movie(id: String = "movie", played: Bool = true, position: Double? = nil) -> MediaItem {
+        .init(id: id, title: "Movie", kind: .movie, runtime: 1_000, resumePosition: position,
+              isPlayed: played, providerIDs: ["Tmdb": "550"])
+    }
+
+    private func fixture(
+        items: [MediaItem], providerKind: ProviderKind = .jellyfin,
+        http: ExportHTTP = ExportHTTP(), store: DurableLocalStateStore? = nil,
+        connectionID: UUID = UUID(), authorization: ExportAuthorization? = nil,
+        resolveEpisodeIdentity: PublicMetaDBEpisodeIdentity.Resolving? = nil
+    ) throws -> (PublicMetaDBHistoryExportSession, ExportProvider, ExportHTTP) {
+        let authorization = authorization ?? ExportAuthorization()
+        let provider = ExportProvider(items: items, kind: providerKind)
+        let scope = WatchMutationServerScope(
+            profile: .init(id: "profile", name: "Test"),
+            accounts: [
+                .init(id: "account", server: provider.session.server,
+                      userID: "user", userName: "Test user", deviceID: "device")
+            ]
+        )
+        let source = TrackerServerHistorySource(
+            scope: scope, accounts: [.init(id: "account", serverName: "Server", userName: "Test user")],
+            resolveProvider: { _ in provider }, isAuthorized: { authorization.current },
+            isPlaying: { _, _ in authorization.playing }
+        )
+        let client = try PublicMetaDBClient(
+            key: "pm-" + String(repeating: "T", count: 60), http: http, gate: .init()
+        )
+        let session = try PublicMetaDBHistoryExportSession(
+            source: source, client: client, connectionID: connectionID,
+            store: store ?? DurableLocalStateStore(secureStore: InMemorySecureStore()),
+            isConnected: { authorization.connected },
+            resolveEpisodeIdentity: resolveEpisodeIdentity
+        )
+        return (session, provider, http)
+    }
+
+    private func preview(_ session: PublicMetaDBHistoryExportSession, mode: PublicMetaDBHistoryExportSession.Mode = .watched) async {
+        await session.compare(accountID: "account", library: library, mode: mode)
+    }
+
+    private func apply(_ session: PublicMetaDBHistoryExportSession, conflicts: Bool = false, confirmed: Bool = true) async {
+        let ids = Set(session.rows.map(\.id))
+        await session.apply(rowIDs: ids, overridingConflicts: conflicts ? ids : [], confirmed: confirmed)
+    }
+
+    private func assertEqual<Value: Equatable>(
+        _ actual: @autoclosure () async -> Value, _ expected: Value,
+        file: StaticString = #filePath, line: UInt = #line
+    ) async {
+        let value = await actual()
+        XCTAssertEqual(value, expected, file: file, line: line)
+    }
+
+    func testPreviewIsReadOnlyAndConfirmationBackfillsOnePlayForBothProviderScopes() async throws {
+        for kind in [ProviderKind.plex, .jellyfin] {
+            let (session, provider, http) = try fixture(items: [movie()], providerKind: kind)
+            await preview(session)
+            XCTAssertNil(session.error)
+            XCTAssertEqual(session.rows.map(\.status), [.ready])
+            await assertEqual(await provider.pageOffsets(), [0, 1])
+            await assertEqual(await http.mutationCount(), 0)
+            await apply(session, confirmed: false)
+            XCTAssertEqual(session.error as? TrackerHistoryError, .invalidSelection)
+            await assertEqual(await http.mutationCount(), 0)
+            await apply(session)
+            XCTAssertNil(session.error)
+            let posts = await http.posts()
+            XCTAssertEqual(posts.count, 1)
+            XCTAssertEqual(posts[0].queryItems.first { $0.name == "dedupe" }?.value, "true")
+            let payload = try XCTUnwrap(posts[0].body).jsonObject
+            XCTAssertTrue(payload?["watched_at"] is NSNull)
+            await assertEqual(await provider.writeCount(), 0)
+        }
+    }
+
+    func testKnownWatchDateIsPreservedButUnfinishedRewatchDateIsNotInvented() async throws {
+        for hasResume in [false, true] {
+            var item = movie(position: hasResume ? 300 : nil)
+            item.isPlayed = !hasResume
+            item.lastPlayedAt = Date(timeIntervalSince1970: 1_700_000_000)
+            let (session, _, http) = try fixture(items: [item])
+            await preview(session)
+            XCTAssertEqual(session.rows.map(\.status), [.ready])
+            XCTAssertEqual(session.rows.first?.exportedWatchDate, hasResume ? nil : item.lastPlayedAt)
+            await apply(session)
+            XCTAssertNil(session.error)
+            let posts = await http.posts()
+            let payload = try XCTUnwrap(posts.first?.body).jsonObject
+            if hasResume { XCTAssertTrue(payload?["watched_at"] is NSNull) }
+            else { XCTAssertEqual(payload?["watched_at"] as? String, "2023-11-14T22:13:20.000Z") }
+        }
+    }
+
+    func testUnfinishedFirstViewingNeverBecomesAWatchedExport() async throws {
+        var item = movie(played: false, position: 300)
+        item.lastPlayedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let (session, _, http) = try fixture(items: [item])
+        await preview(session)
+        XCTAssertNil(session.error)
+        XCTAssertTrue(session.rows.isEmpty)
+        await apply(session)
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
+    func testRemovingHistoricalWatchAfterPreviewBlocksRewatchExport() async throws {
+        var item = movie(position: 300)
+        item.isPlayed = false
+        let (session, provider, http) = try fixture(items: [item])
+        await preview(session)
+        XCTAssertEqual(session.rows.map(\.status), [.ready])
+        item.hasBeenPlayed = false
+        await provider.replace([item])
+        await apply(session)
+        XCTAssertEqual(session.error as? TrackerHistoryError, .stalePreview)
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
+    func testExistingRemoteHistoryDoesNotBecomeAnotherPlay() async throws {
+        let (session, _, http) = try fixture(items: [movie()])
+        await http.setWatched(true)
+        await preview(session)
+        XCTAssertEqual(session.rows.map(\.status), [.alreadyMatches])
+        await apply(session)
+        XCTAssertEqual(session.error as? TrackerHistoryError, .invalidSelection)
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
+    func testOtherTitlesRemainUntouchedDuringBackfillAndReadback() async throws {
+        let (session, provider, http) = try fixture(items: [movie()])
+        await http.addOtherTitle()
+        await preview(session)
+        XCTAssertNil(session.error)
+        XCTAssertEqual(session.rows.map(\.status), [.ready])
+        await apply(session)
+        XCTAssertNil(session.error)
+        await assertEqual(await http.mutationCount(), 1)
+        await assertEqual(await http.watchedTMDBIDs(), [550, 999])
+        await assertEqual(await provider.writeCount(), 0)
+    }
+
+    func testResumeBoundaryChecksUseExactPublicMetaDBThresholds() async throws {
+        for (position, expected) in [
+            (19.999, PublicMetaDBHistoryExportSession.Status.unsupported),
+            (20.0, .ready), (799.999, .ready), (800.0, .unsupported), (900.0, .unsupported)
+        ] {
+            let (session, _, http) = try fixture(items: [movie(played: false, position: position)])
+            await preview(session, mode: .resume)
+            XCTAssertNil(session.error)
+            XCTAssertEqual(session.rows.map(\.status), [expected])
+            await assertEqual(await http.mutationCount(), 0)
+        }
+    }
+
+    func testSparseCatalogResumeUsesScopedFeedThenFreshDetailWithoutHydratingUnplayedMovies() async throws {
+        var resumed = movie(played: false, position: 703.083)
+        resumed.runtime = 6_736
+        let untouched = (0..<205).map { movie(id: "unplayed-\($0)", played: false) }
+        let (session, provider, http) = try fixture(items: untouched + [resumed], providerKind: .silo)
+        await preview(session, mode: .resume)
+        XCTAssertNil(session.error)
+        XCTAssertEqual(session.rows.map(\.status), [.ready])
+        await assertEqual(await provider.pageOffsets(), [0, 200, 206])
+        await assertEqual(await provider.resumeFeedRequests(), [["library"]])
+        await assertEqual(await provider.itemReads(), ["movie"])
+        await assertEqual(await http.mutationCount(), 0)
+        guard session.rows.count == 1 else { return }
+        await apply(session, confirmed: false)
+        await assertEqual(await http.mutationCount(), 0)
+        await apply(session)
+        XCTAssertNil(session.error)
+        let posts = await http.posts()
+        let payload = try XCTUnwrap(posts.first?.body).jsonObject
+        XCTAssertEqual(payload?["position_ms"] as? Double, 703_083)
+        XCTAssertEqual(payload?["runtime_ms"] as? Double, 6_736_000)
+        await assertEqual(await provider.writeCount(), 0)
+    }
+
+    func testCompleteCatalogAndWatchedExportsDoNotRequestSupplementalResumeHistory() async throws {
+        for kind in [ProviderKind.jellyfin, .plex, .emby, .mediaShare, .silo] {
+            for mode in [PublicMetaDBHistoryExportSession.Mode.watched, .resume] {
+                if kind == .silo, mode == .resume { continue }
+                let (session, provider, _) = try fixture(items: [movie(position: 300)], providerKind: kind)
+                await preview(session, mode: mode)
+                XCTAssertNil(session.error)
+                XCTAssertEqual(session.rows.map(\.status), [.ready])
+                await assertEqual(await provider.resumeFeedRequests(), [])
+            }
+        }
+    }
+
+    func testSparseResumeFeedCannotImportNextUpWithoutAResume() async throws {
+        let nextUp = movie(id: "next-up", played: false)
+        let (session, provider, http) = try fixture(
+            items: [movie(played: false, position: 300), nextUp], providerKind: .silo
+        )
+        await provider.setResumeFeed([nextUp, movie(played: false, position: 300)])
+        await preview(session, mode: .resume)
+        XCTAssertNil(session.error)
+        XCTAssertEqual(session.rows.map(\.status), [.ready])
+        await assertEqual(await provider.itemReads(), ["movie"])
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
+    func testSparseResumeFeedRejectsForeignMissingDuplicateAndInvalidEntries() async throws {
+        let resumed = movie(played: false, position: 300)
+        var foreignAccount = resumed
+        foreignAccount.sourceAccountID = "another-account"
+        var foreignLibrary = resumed
+        foreignLibrary.libraryID = "another-library"
+        var wrongKind = resumed
+        wrongKind.kind = .episode
+        var negative = resumed
+        negative.resumePosition = -1
+        var nonfinite = resumed
+        nonfinite.resumePosition = .infinity
+        let feeds = [
+            [foreignAccount], [foreignLibrary], [wrongKind], [negative], [nonfinite],
+            [resumed, resumed], [movie(id: "not-in-selected-library", played: false, position: 300)]
+        ]
+        for feed in feeds {
+            let (session, provider, http) = try fixture(items: [resumed], providerKind: .silo)
+            await provider.setResumeFeed(feed)
+            await preview(session, mode: .resume)
+            XCTAssertEqual(session.error as? TrackerHistoryError, .incompleteSnapshot)
+            XCTAssertFalse(session.hasCompared)
+            XCTAssertTrue(session.rows.isEmpty)
+            await assertEqual(await provider.itemReads(), [])
+            await assertEqual(await http.mutationCount(), 0)
+        }
+    }
+
+    func testSparseResumeFeedFailuresAreNotAnEmptySuccessfulPreview() async throws {
+        for failure in [AppError.unauthorized, .rateLimited(retryAfter: 60), .invalidResponse] {
+            let (session, provider, http) = try fixture(
+                items: [movie(played: false, position: 300)], providerKind: .silo
+            )
+            await provider.failResumeFeed(failure)
+            await preview(session, mode: .resume)
+            XCTAssertEqual(session.error as? AppError, failure)
+            XCTAssertFalse(session.hasCompared)
+            XCTAssertTrue(session.rows.isEmpty)
+            await assertEqual(await http.mutationCount(), 0)
+        }
+    }
+
+    func testSparseResumeFeedRechecksAuthorizationAfterAwaiting() async throws {
+        let authorization = ExportAuthorization()
+        let (session, provider, http) = try fixture(
+            items: [movie(played: false, position: 300)], providerKind: .silo, authorization: authorization
+        )
+        await provider.onResumeFeed { await MainActor.run { authorization.current = false } }
+        await preview(session, mode: .resume)
+        XCTAssertEqual(session.error as? TrackerHistoryError, .scopeChanged)
+        XCTAssertFalse(session.hasCompared)
+        await assertEqual(await provider.itemReads(), [])
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
+    func testSparseResumeFeedCannotReplaceFreshItemEvidence() async throws {
+        let (session, provider, http) = try fixture(items: [movie(played: false)], providerKind: .silo)
+        await provider.setResumeFeed([movie(played: false, position: 300)])
+        await preview(session, mode: .resume)
+        XCTAssertEqual(session.error as? TrackerHistoryError, .stalePreview)
+        XCTAssertFalse(session.hasCompared)
+        await assertEqual(await provider.itemReads(), ["movie"])
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
+    func testResumeConflictRequiresExplicitOverrideAndUsesMilliseconds() async throws {
+        let (session, _, http) = try fixture(items: [movie(played: false, position: 300)])
+        await http.setResume(position: 200_000)
+        await preview(session, mode: .resume)
+        XCTAssertEqual(session.rows.map(\.status), [.conflict])
+        await apply(session)
+        XCTAssertEqual(session.error as? TrackerHistoryError, .invalidSelection)
+        await assertEqual(await http.mutationCount(), 0)
+        await apply(session, conflicts: true)
+        XCTAssertNil(session.error)
+        let posts = await http.posts()
+        let payload = try XCTUnwrap(posts.first?.body).jsonObject
+        XCTAssertEqual(payload?["position_ms"] as? Double, 300_000)
+        XCTAssertEqual(payload?["runtime_ms"] as? Double, 1_000_000)
+    }
+
+    func testChangedSourceOrTrackerBaselinePreventsDispatch() async throws {
+        for changeSource in [false, true] {
+            let (session, provider, http) = try fixture(items: [movie()])
+            await preview(session)
+            if changeSource { await provider.replace([movie(played: false)]) }
+            else { await http.setWatched(true) }
+            await apply(session)
+            XCTAssertEqual(session.error as? TrackerHistoryError, .stalePreview)
+            await assertEqual(await http.mutationCount(), 0)
+        }
+    }
+
+    func testProfileConnectionAndPageExitRevokeApproval() async throws {
+        for kind in 0..<3 {
+            let authorization = ExportAuthorization()
+            let (session, _, http) = try fixture(items: [movie()], authorization: authorization)
+            await preview(session)
+            switch kind {
+            case 0: authorization.current = false
+            case 1: authorization.connected = false
+            default: session.cancel()
+            }
+            await apply(session)
+            XCTAssertEqual(session.error as? TrackerHistoryError, .scopeChanged)
+            await assertEqual(await http.mutationCount(), 0)
+        }
+    }
+
+    func testScopeIsCheckedAgainAtDispatchAfterFreshSourceRead() async throws {
+        let authorization = ExportAuthorization()
+        let (session, provider, http) = try fixture(items: [movie()], authorization: authorization)
+        await preview(session)
+        await provider.onRead(number: 4) { @MainActor in authorization.current = false }
+        await apply(session)
+        XCTAssertNotNil(session.error)
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
+    func testLostWriteReplyIsReconciledWithoutReplayAfterRelaunchOrRemoteDeletion() async throws {
+        let store = try DurableLocalStateStore(secureStore: InMemorySecureStore())
+        let connectionID = UUID()
+        let (first, _, http) = try fixture(items: [movie()], store: store, connectionID: connectionID)
+        await http.loseReply(applying: true)
+        await preview(first)
+        await apply(first)
+        XCTAssertNil(first.error)
+        await assertEqual(await http.mutationCount(), 1)
+        await http.setWatched(false)
+        let (second, _, _) = try fixture(items: [movie()], http: http, store: store, connectionID: connectionID)
+        await preview(second)
+        XCTAssertEqual(second.rows.map(\.status), [.previousAttempt])
+        await apply(second)
+        await assertEqual(await http.mutationCount(), 1)
+    }
+
+    func testUnconfirmedWriteRemainsBlockedAfterRelaunch() async throws {
+        let store = try DurableLocalStateStore(secureStore: InMemorySecureStore())
+        let connectionID = UUID()
+        let (first, _, http) = try fixture(items: [movie()], store: store, connectionID: connectionID)
+        await http.loseReply(applying: false)
+        await preview(first)
+        await apply(first)
+        XCTAssertEqual(first.error as? PublicMetaDB.Failure, .uncertainWrite)
+        let (second, _, _) = try fixture(items: [movie()], http: http, store: store, connectionID: connectionID)
+        await preview(second)
+        XCTAssertEqual(second.rows.map(\.status), [.previousAttempt])
+        await apply(second)
+        await assertEqual(await http.mutationCount(), 1)
+    }
+
+    func testMissingIdentityAndDuplicateSourceMatchesAreNotExportable() async throws {
+        var missing = movie(id: "missing")
+        missing.providerIDs = [:]
+        let (session, _, http) = try fixture(items: [movie(), movie(id: "edition"), missing])
+        await preview(session)
+        XCTAssertEqual(session.rows.map(\.status), [.ambiguous, .ambiguous, .unsupported])
+        await apply(session)
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
+    func testTruncatedInventoryFailsClosedInsteadOfPublishingPartialRows() async throws {
+        for emptyTotal in [0, 2] {
+            let (session, provider, http) = try fixture(items: [movie()])
+            await provider.setAdvertisedTotal(2)
+            await provider.setEmptyPageTotal(emptyTotal)
+            await preview(session)
+            XCTAssertEqual(session.error as? TrackerHistoryError, .incompleteSnapshot)
+            XCTAssertFalse(session.hasCompared)
+            XCTAssertTrue(session.rows.isEmpty)
+            await assertEqual(await http.mutationCount(), 0)
+        }
+    }
+
+    func testEmptyZeroTotalProbeCompletesOnlyTheAdvertisedInventory() async throws {
+        for count in [0, 1, 200, 201] {
+            let items = (0..<count).map { movie(id: "movie-\($0)", played: $0 == 0) }
+            let (session, provider, http) = try fixture(items: items)
+            await provider.setEmptyPageTotal(0)
+            await preview(session)
+            XCTAssertNil(session.error)
+            XCTAssertTrue(session.hasCompared)
+            XCTAssertEqual(session.loadedCount, count)
+            XCTAssertEqual(session.rows.count, min(count, 1))
+            let offsets = Array(stride(from: 0, to: count, by: 200)) + [count]
+            await assertEqual(await provider.pageOffsets(), offsets)
+            await assertEqual(await http.mutationCount(), 0)
+        }
+    }
+
+    func testNonemptyPageBeyondAdvertisedEndStillFailsClosed() async throws {
+        let (session, provider, http) = try fixture(items: [movie()])
+        await provider.setAdvertisedTotal(0)
+        await preview(session)
+        XCTAssertEqual(session.error as? TrackerHistoryError, .incompleteSnapshot)
+        XCTAssertFalse(session.hasCompared)
+        XCTAssertTrue(session.rows.isEmpty)
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
+    func testPlayingTitleCannotBeExported() async throws {
+        let authorization = ExportAuthorization()
+        authorization.playing = true
+        let (session, _, http) = try fixture(items: [movie()], authorization: authorization)
+        await preview(session)
+        XCTAssertEqual(session.rows.map(\.status), [.playing])
+        await apply(session)
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
+    func testEmptyServerInventoryNeverClearsTrackerHistory() async throws {
+        let (session, _, http) = try fixture(items: [])
+        await http.setWatched(true)
+        await preview(session)
+        XCTAssertNil(session.error)
+        XCTAssertTrue(session.hasCompared)
+        XCTAssertTrue(session.rows.isEmpty)
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
+    func testReceiptStorageFailurePreventsAnyMutation() async throws {
+        let store = try DurableLocalStateStore(secureStore: InMemorySecureStore(), maximumPayloadBytes: 1)
+        let (session, _, http) = try fixture(items: [movie()], store: store)
+        await preview(session)
+        await apply(session)
+        XCTAssertEqual(session.error as? DurableLocalStateError, .payloadTooLarge)
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
+    func testPlaybackStartingAfterPreviewBlocksExport() async throws {
+        let authorization = ExportAuthorization()
+        let (session, _, http) = try fixture(items: [movie()], authorization: authorization)
+        await preview(session)
+        authorization.playing = true
+        await apply(session)
+        XCTAssertEqual(session.error as? AppError, .conflict)
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
+    func testEpisodeBackfillRefreshesParentIdentityAndRequiresItsOrdering() async throws {
+        for ordering in [EpisodeOrdering.tmdb, .tvdbDefault] {
+            var episode = movie()
+            episode.kind = .episode
+            episode.seriesID = "series"
+            episode.seasonNumber = 1
+            episode.episodeNumber = 2
+            episode.providerIDs = ["Tvdb": "900"]
+            var series = MediaItem(id: "series", title: "Series", kind: .series, providerIDs: ["Tmdb": "1399"])
+            series.episodeOrdering = ordering
+            let (session, provider, http) = try fixture(items: [episode])
+            await provider.setSeries(series)
+            await session.compare(
+                accountID: "account", library: .init(id: "library", title: "Shows", kind: .series), mode: .watched
+            )
+            XCTAssertNil(session.error)
+            XCTAssertEqual(session.rows.map(\.status), [ordering == .tmdb ? .ready : .unsupported])
+            if ordering == .tmdb {
+                await apply(session)
+                XCTAssertNil(session.error)
+                let posts = await http.posts()
+                let payload = try XCTUnwrap(posts.first?.body).jsonObject
+                XCTAssertEqual(payload?["tmdb_id"] as? Int, 1399)
+                XCTAssertEqual(payload?["season"] as? Int, 1)
+                XCTAssertEqual(payload?["episode"] as? Int, 2)
+            } else {
+                await apply(session)
+                await assertEqual(await http.mutationCount(), 0)
+            }
+        }
+    }
+
+    func testDroppedEpisodeNeedsExplicitConflictApproval() async throws {
+        var episode = movie()
+        episode.kind = .episode
+        episode.seasonNumber = 1
+        episode.episodeNumber = 2
+        episode.episodeOrdering = .tmdb
+        episode.providerIDs = ["seriesTmdb": "1399"]
+        let (session, _, http) = try fixture(items: [episode])
+        await http.setDropped(1399)
+        await session.compare(
+            accountID: "account", library: .init(id: "library", title: "Shows", kind: .series), mode: .watched
+        )
+        XCTAssertNil(session.error)
+        XCTAssertEqual(session.rows.map(\.status), [.conflict])
+        await apply(session)
+        await assertEqual(await http.mutationCount(), 0)
+        await apply(session, conflicts: true)
+        XCTAssertNil(session.error)
+        await assertEqual(await http.mutationCount(), 1)
+    }
+
+    private func episode(ordering: EpisodeOrdering? = nil) -> MediaItem {
+        .init(
+            id: "episode", title: "Episode", kind: .episode,
+            seasonNumber: 1, episodeNumber: 2, episodeOrdering: ordering,
+            runtime: 1_000, resumePosition: 300, isPlayed: true,
+            providerIDs: ["Tvdb": "900", "seriesTvdb": "100", "seriesTmdb": "1399"]
+        )
+    }
+
+    private func previewEpisode(
+        _ session: PublicMetaDBHistoryExportSession, mode: PublicMetaDBHistoryExportSession.Mode = .watched
+    ) async {
+        await session.compare(
+            accountID: "account", library: .init(id: "library", title: "Shows", kind: .series), mode: mode
+        )
+    }
+
+    func testExactEpisodeProofSupportsWatchedAndResumeWithoutRelabelingSource() async throws {
+        let reference = episode(ordering: .tmdb)
+        let orderings: [EpisodeOrdering?] = [nil, .tvdbDefault]
+        for ordering in orderings {
+            for mode in PublicMetaDBHistoryExportSession.Mode.allCases {
+                let authorization = ExportAuthorization()
+                let item = episode(ordering: ordering)
+                let (session, provider, http) = try fixture(
+                    items: [item], authorization: authorization,
+                    resolveEpisodeIdentity: { content in
+                        authorization.identityLookups += 1
+                        XCTAssertEqual(content.tmdbID, 1399)
+                        XCTAssertEqual(content.season, 1)
+                        XCTAssertEqual(content.episode, 2)
+                        return reference
+                    }
+                )
+                await previewEpisode(session, mode: mode)
+                XCTAssertNil(session.error)
+                XCTAssertEqual(session.rows.map(\.status), [.ready])
+                await apply(session)
+                XCTAssertNil(session.error)
+                XCTAssertEqual(authorization.identityLookups, 1)
+                let posts = await http.posts()
+                let payload = try XCTUnwrap(posts.first?.body).jsonObject
+                XCTAssertEqual(payload?["tmdb_id"] as? Int, 1399)
+                XCTAssertEqual(payload?["season"] as? Int, 1)
+                XCTAssertEqual(payload?["episode"] as? Int, 2)
+                let unchanged = try await provider.item(id: item.id)
+                XCTAssertEqual(unchanged.episodeOrdering, ordering)
+                XCTAssertEqual(unchanged.providerIDs, item.providerIDs)
+                await assertEqual(await provider.writeCount(), 0)
+            }
+        }
+    }
+
+    func testUnprovenConflictingAndCombinedEpisodesRemainUnsupported() async throws {
+        let reference = episode(ordering: .tmdb)
+        for variant in 0..<7 {
+            var item = episode()
+            switch variant {
+            case 0: item.providerIDs["Tvdb"] = nil
+            case 1: item.providerIDs["Tvdb"] = "901"
+            case 2: item.providerIDs["seriesTvdb"] = "101"
+            case 3: item.providerIDs["tvdb"] = "901"
+            case 4: item.episodeNumberEnd = 3
+            case 5: item.providerIDs["seriesTmdb"] = nil
+            default: break
+            }
+            let authorization = ExportAuthorization()
+            let unavailable = variant == 6
+            let (session, _, http) = try fixture(
+                items: [item], resolveEpisodeIdentity: { _ in
+                    authorization.identityLookups += 1
+                    return unavailable ? nil : reference
+                }
+            )
+            await previewEpisode(session)
+            XCTAssertNil(session.error)
+            XCTAssertEqual(session.rows.map(\.status), [.unsupported])
+            if variant == 4 || variant == 5 { XCTAssertEqual(authorization.identityLookups, 0) }
+            await apply(session)
+            await assertEqual(await http.mutationCount(), 0)
+        }
+    }
+
+    func testEpisodeProofIsRecheckedAgainstFreshSourceAtApprovalAndDispatch() async throws {
+        let reference = episode(ordering: .tmdb)
+        for atDispatch in [false, true] {
+            let (session, provider, http) = try fixture(
+                items: [episode()], resolveEpisodeIdentity: { _ in reference }
+            )
+            await previewEpisode(session)
+            XCTAssertEqual(session.rows.map(\.status), [.ready])
+            var changed = episode()
+            changed.episodeNumberEnd = 3
+            let replacement = changed
+            if atDispatch {
+                await provider.onRead(number: 4) { await provider.replace([replacement]) }
+            } else {
+                await provider.replace([replacement])
+            }
+            await apply(session)
+            XCTAssertEqual(session.error as? TrackerHistoryError, .stalePreview)
+            await assertEqual(await http.mutationCount(), 0)
+        }
+    }
+
+    func testMetadataFailureCancellationAndScopeChangesCannotPublishEpisodePreview() async throws {
+        let reference = episode(ordering: .tmdb)
+        for variant in 0..<5 {
+            let authorization = ExportAuthorization()
+            let (session, _, http) = try fixture(
+                items: [episode()], authorization: authorization,
+                resolveEpisodeIdentity: { _ in
+                    switch variant {
+                    case 0: throw AppError.notFound
+                    case 1: throw CancellationError()
+                    case 2: authorization.connected = false
+                    case 3: authorization.current = false
+                    default:
+                        var wrong = reference
+                        wrong.episodeNumber = 3
+                        return wrong
+                    }
+                    return reference
+                }
+            )
+            await previewEpisode(session)
+            XCTAssertNotNil(session.error)
+            XCTAssertFalse(session.hasCompared)
+            XCTAssertTrue(session.rows.isEmpty)
+            await assertEqual(await http.mutationCount(), 0)
+        }
+    }
+
+    func testDuplicateEpisodeProofIsResolvedOnceButDoesNotAuthorizeAmbiguousExports() async throws {
+        let reference = episode(ordering: .tmdb)
+        var duplicate = episode()
+        duplicate.id = "other-file"
+        let authorization = ExportAuthorization()
+        let (session, _, http) = try fixture(
+            items: [episode(), duplicate], resolveEpisodeIdentity: { _ in
+                authorization.identityLookups += 1
+                return reference
+            }
+        )
+        await previewEpisode(session)
+        XCTAssertNil(session.error)
+        XCTAssertEqual(authorization.identityLookups, 1)
+        XCTAssertEqual(session.rows.map(\.status), [.ambiguous, .ambiguous])
+        await apply(session)
+        await assertEqual(await http.mutationCount(), 0)
+    }
+
+    func testMultiPageInventoryAndPartialBulkFailureRetainIndividualOutcomes() async throws {
+        let items = (0..<201).map { index -> MediaItem in
+            var item = movie(id: "movie-\(index)", played: index < 2)
+            item.providerIDs = ["Tmdb": String(550 + index)]
+            return item
+        }
+        let (session, provider, http) = try fixture(items: items)
+        await preview(session)
+        XCTAssertNil(session.error)
+        XCTAssertEqual(session.rows.count, 2)
+        await assertEqual(await provider.pageOffsets(), [0, 200, 201])
+        await http.failWrite(number: 2)
+        await apply(session)
+        XCTAssertEqual(session.error as? PublicMetaDB.Failure, .uncertainWrite)
+        XCTAssertEqual(session.outcomes.count, 2)
+        if case .confirmed? = session.outcomes[session.rows[0].id] {} else { XCTFail("First write was not confirmed") }
+        if case .unconfirmed? = session.outcomes[session.rows[1].id] {} else { XCTFail("Lost write was acknowledged") }
+        await assertEqual(await http.mutationCount(), 2)
+    }
+
+    func testBatchSharesOnlyItsAcknowledgedUndropWithoutAcceptingLaterRedrop() async throws {
+        for redrop in [false, true] {
+            let episodes = (1...2).map { number -> MediaItem in
+                var item = movie(id: "episode-\(number)")
+                item.kind = .episode
+                item.seasonNumber = 1
+                item.episodeNumber = number
+                item.episodeOrdering = .tmdb
+                item.providerIDs = ["seriesTmdb": "1399"]
+                return item
+            }
+            let (session, provider, http) = try fixture(items: episodes)
+            await http.setDropped(1399)
+            await session.compare(
+                accountID: "account", library: .init(id: "library", title: "Shows", kind: .series), mode: .watched
+            )
+            XCTAssertEqual(session.rows.map(\.status), [.conflict, .conflict])
+            if redrop {
+                await provider.onRead(number: 7) { await http.setDropped(1399) }
+            }
+            await apply(session, conflicts: true)
+            if redrop {
+                XCTAssertEqual(session.error as? TrackerHistoryError, .stalePreview)
+                await assertEqual(await http.mutationCount(), 1)
+            } else {
+                XCTAssertNil(session.error)
+                await assertEqual(await http.mutationCount(), 2)
+                XCTAssertEqual(session.outcomes.count, 2)
+                for outcome in session.outcomes.values {
+                    if case .confirmed = outcome {} else { XCTFail("Expected both approved episodes to be confirmed") }
+                }
+            }
+        }
+    }
+
+    func testDefiniteRejectionRequiresNewPreviewButDoesNotLeaveUncertainReceipt() async throws {
+        let (session, _, http) = try fixture(items: [movie()])
+        await http.rejectWrites(true)
+        await preview(session)
+        await apply(session)
+        XCTAssertEqual(session.error as? PublicMetaDB.Failure, .blocked)
+        await http.rejectWrites(false)
+        await preview(session)
+        XCTAssertEqual(session.rows.map(\.status), [.ready])
+        await apply(session)
+        XCTAssertNil(session.error)
+        await assertEqual(await http.mutationCount(), 2)
+    }
+}
+
+@MainActor
+private final class ExportAuthorization {
+    var current = true
+    var connected = true
+    var playing = false
+    var identityLookups = 0
+}
+
+private actor ExportProvider: MediaProvider {
+    nonisolated let kind: ProviderKind
+    nonisolated let session: UserSession
+    nonisolated var catalogResumeRequiresEnrichment: Bool { kind == .silo }
+    private var values: [MediaItem]
+    private var offsets: [Int] = []
+    private var feedRequests: [[String]] = []
+    private var readIDs: [String] = []
+    private var resumeFeed: [MediaItem]?
+    private var resumeFeedFailure: AppError?
+    private var resumeFeedHook: (@Sendable () async -> Void)?
+    private var reads = 0
+    private var writes = 0
+    private var advertisedTotal: Int?
+    private var emptyPageTotal: Int?
+    private var series: MediaItem?
+    private var readHook: (Int, @Sendable () async -> Void)?
+
+    init(items: [MediaItem], kind: ProviderKind) {
+        self.kind = kind
+        values = items
+        session = .init(
+            server: .init(id: "server", name: "Server", baseURL: URL(string: "https://example.test")!, provider: kind),
+            userID: "user", userName: "Test user", deviceID: "device", accessToken: ""
+        )
+    }
+    func replace(_ items: [MediaItem]) { values = items }
+    func setSeries(_ item: MediaItem) { series = item }
+    func setAdvertisedTotal(_ total: Int) { advertisedTotal = total }
+    func setEmptyPageTotal(_ total: Int) { emptyPageTotal = total }
+    func onRead(number: Int, action: @escaping @Sendable () async -> Void) { readHook = (number, action) }
+    func pageOffsets() -> [Int] { offsets }
+    func resumeFeedRequests() -> [[String]] { feedRequests }
+    func itemReads() -> [String] { readIDs }
+    func setResumeFeed(_ items: [MediaItem]) { resumeFeed = items }
+    func failResumeFeed(_ error: AppError) { resumeFeedFailure = error }
+    func onResumeFeed(_ action: @escaping @Sendable () async -> Void) { resumeFeedHook = action }
+    func writeCount() -> Int { writes }
+    func libraries() async throws -> [MediaLibrary] {
+        [.init(id: "library", title: "Library", kind: values.first?.kind == .episode ? .series : .movie)]
+    }
+    func continueWatching(limit: Int) async throws -> [MediaItem] { [] }
+    func continueWatching(limit: Int, inLibraries libraryIDs: [String]?) async throws -> [MediaItem] {
+        XCTAssertEqual(limit, Int.max)
+        feedRequests.append(libraryIDs ?? [])
+        await resumeFeedHook?()
+        if let resumeFeedFailure { throw resumeFeedFailure }
+        return resumeFeed ?? values.filter { ($0.resumePosition ?? 0) > 0 }
+    }
+    func latest(limit: Int) async throws -> [MediaItem] { [] }
+    func item(id: String) async throws -> MediaItem {
+        readIDs.append(id)
+        reads += 1
+        if let (number, hook) = readHook, reads == number { await hook() }
+        if let series, series.id == id { return series }
+        guard let item = values.first(where: { $0.id == id }) else { throw AppError.notFound }
+        return item
+    }
+    func children(of itemID: String) async throws -> [MediaItem] { throw AppError.notFound }
+    func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        offsets.append(page.startIndex)
+        var items = Array(values.dropFirst(page.startIndex).prefix(page.limit))
+        if catalogResumeRequiresEnrichment {
+            for index in items.indices {
+                items[index].resumePosition = nil
+                items[index].playedPercentage = nil
+            }
+        }
+        return .init(
+            items: items,
+            startIndex: page.startIndex,
+            totalCount: (items.isEmpty ? emptyPageTotal : nil) ?? advertisedTotal ?? values.count
+        )
+    }
+    func search(query: String, limit: Int) async throws -> [MediaItem] { [] }
+    func playbackInfo(for itemID: String) async throws -> PlaybackRequest { throw AppError.notFound }
+    func reportPlayback(_ progress: PlaybackProgress, event: PlaybackEvent) async throws { writes += 1 }
+    nonisolated func imageURL(itemID: String, kind: ImageKind, maxWidth: Int?) -> URL? { nil }
+}
+
+private actor ExportHTTP: HTTPClient {
+    private var watched: [[String: Any]] = []
+    private var resume: [[String: Any]] = []
+    private var requests: [Endpoint] = []
+    private var losesReply = false
+    private var appliesWrite = true
+    private var dropped: Int?
+    private var failedWriteNumber: Int?
+    private var rejectsWrites = false
+
+    func setWatched(_ value: Bool) {
+        watched = value ? [["id": "watch", "tmdb_id": 550, "media_type": "movie", "watched_at": NSNull()]] : []
+    }
+    func addOtherTitle() {
+        watched.append(["id": "other-title", "tmdb_id": 999, "media_type": "movie", "watched_at": NSNull()])
+    }
+    func watchedTMDBIDs() -> [Int] { watched.compactMap { $0["tmdb_id"] as? Int }.sorted() }
+    func setResume(position: Double) {
+        resume = [["id": "resume", "tmdb_id": 550, "media_type": "movie", "position_ms": position, "runtime_ms": 1_000_000]]
+    }
+    func loseReply(applying: Bool) { losesReply = true; appliesWrite = applying }
+    func setDropped(_ id: Int) { dropped = id }
+    func failWrite(number: Int) { failedWriteNumber = number }
+    func rejectWrites(_ value: Bool) { rejectsWrites = value }
+    func posts() -> [Endpoint] { requests.filter { $0.method == .post } }
+    func mutationCount() -> Int { requests.filter { $0.method != .get }.count }
+
+    func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+        requests.append(endpoint)
+        var body: [String: Any]
+        var status = 200
+        if endpoint.method == .get {
+            var rows = endpoint.path.hasSuffix("/watched") ? watched : (endpoint.path.hasSuffix("/resume") ? resume : [])
+            if endpoint.path.hasSuffix("/dropped"), let dropped {
+                rows = [["id": "drop", "tmdb_id": dropped, "media_type": "tv"]]
+            }
+            if endpoint.path.hasSuffix("/resume") {
+                for field in ["tmdb_id", "season", "episode"] {
+                    if let value = endpoint.queryItems.first(where: { $0.name == field })?.value, let id = Int(value) {
+                        rows = rows.filter { ($0[field] as? Int) == id }
+                    }
+                }
+            }
+            body = ["items": rows, "total": rows.count, "page": 1, "perPage": 500, "totalPages": rows.isEmpty ? 0 : 1]
+        } else {
+            var value = try XCTUnwrap(endpoint.body?.jsonObject)
+            let isWatch = endpoint.path.hasSuffix("/watched")
+            if isWatch, value["watched_at"] is NSNull { value["watched_at"] = "" }
+            let fails = failedWriteNumber == mutationCount()
+            value["id"] = "\(isWatch ? "watch" : "resume")-\(mutationCount())"
+            if appliesWrite && !fails && !rejectsWrites {
+                if isWatch { watched.append(value); dropped = nil }
+                else { resume = [value] }
+            }
+            body = isWatch ? ["success": true, "item": value] : ["action": "saved", "item": value]
+            if losesReply || fails { body = [:]; status = 503 }
+            if rejectsWrites { body = [:]; status = 403 }
+        }
+        return (
+            try JSONSerialization.data(withJSONObject: body),
+            try XCTUnwrap(HTTPURLResponse(url: baseURL, statusCode: status, httpVersion: nil, headerFields: nil))
+        )
+    }
+}
+
+private extension Data {
+    var jsonObject: [String: Any]? {
+        (try? JSONSerialization.jsonObject(with: self)) as? [String: Any]
+    }
+}

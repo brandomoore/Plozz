@@ -5,6 +5,7 @@ import CoreUI
 import TraktService
 import SimklService
 import WetrakrService
+import PublicMetaDBService
 import AniListService
 import MALService
 import LastFmService
@@ -13,6 +14,13 @@ struct IntegrationsDetailView: View {
     let trakt: TraktService
     let simkl: SimklService
     let wetrakr: WetrakrService
+    var publicMetaDB: PublicMetaDBService? = nil
+    var makePublicMetaDBHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
+    var makeTraktHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
+    var makeSimklHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
+    var makeWetrakrHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
+    var makeAniListHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
+    var makeMALHistoryImport: (@MainActor () -> TrackerHistoryImportSession)? = nil
     let anilist: AniListService
     let mal: MALService
     let lastfm: LastFmService
@@ -22,10 +30,27 @@ struct IntegrationsDetailView: View {
     @State private var confirmingWetrakrReconnect = false
     #if os(tvOS)
     @Environment(\.settingsInWorkspace) private var inWorkspace
+    @Environment(SettingsSearchRequest.self) private var searchRequest: SettingsSearchRequest?
     #endif
 
-    var body: some View {
+    @ViewBuilder private var trackerPage: some View {
+        #if os(tvOS)
+        if let searchRequest, let account = SettingsSearchCatalog.entry(id: searchRequest.targetID)?.page.trackerAccount {
+            if let row = rows.first(where: { $0.id == account.rowID }) {
+                SettingsFormRowPage(row: row, showsBack: false)
+            } else {
+                ContentUnavailableView("Setting unavailable", systemImage: "magnifyingglass")
+            }
+        } else {
+            SettingsSplitLayout(title: "Trackers", rows: rows)
+        }
+        #else
         SettingsSplitLayout(title: "Trackers", rows: rows)
+        #endif
+    }
+
+    var body: some View {
+        trackerPage
             .confirmationDialog("Reconnect Trakt for this profile?", isPresented: $confirmingTraktReconnect, titleVisibility: .visible) {
                 Button("Reconnect Trakt", role: .destructive) { trakt.connect() }
                 Button("Cancel", role: .cancel) {}
@@ -41,7 +66,9 @@ struct IntegrationsDetailView: View {
             } message: {
                 Text("Try Retry first. Reconnecting replaces this profile's WeTrakr connection on all your Plozz devices. Other profiles are not affected.")
             }
-            .onChange(of: wetrakr.phase) { _, _ in confirmingWetrakrReconnect = false }
+            .onChange(of: wetrakr.phase) { _, _ in
+                confirmingWetrakrReconnect = false
+            }
             .task {
                 // Load all statuses up front so the left list's value
                 // summaries are correct before any row is focused.
@@ -62,14 +89,7 @@ struct IntegrationsDetailView: View {
             SettingsSplitRow(
                 id: "trakt",
                 verbatimTitle: "Trakt",
-                // Deliberately says nothing about WHERE the media came from.
-                // Naming Jellyfin was wrong twice over: scrobbling works from any
-                // provider — Plex, Emby and network shares included — and this
-                // integration also syncs the watchlist, which the old wording
-                // never mentioned. Describing what the connection does, rather
-                // than enumerating what it currently covers, is also what keeps
-                // this true the next time something is added to it.
-                description: "Scrobble and sync your watch history and watchlist with Trakt.",
+                description: "Report movie and episode playback to Trakt.",
             ) {
                 if case let .connecting(userCode, verificationURL, expiresAt) = trakt.phase {
                     DeviceCodeConnectingView(
@@ -93,13 +113,15 @@ struct IntegrationsDetailView: View {
                         onConnect: { trakt.connect() },
                         onCancel: { trakt.cancelConnect() },
                         onDisconnect: { Task { await trakt.disconnect() } }
-                    )
+                    ) {
+                        TrackerAccountSettingsRows(tracker: trakt, makeSession: makeTraktHistoryImport)
+                    }
                 }
             },
             SettingsSplitRow(
                 id: "simkl",
                 verbatimTitle: "Simkl",
-                description: "Scrobble and sync your watch history and watchlist with Simkl.",
+                description: "Report movie and episode playback to Simkl.",
             ) {
                 if case let .connecting(userCode, verificationURL, expiresAt) = simkl.phase {
                     DeviceCodeConnectingView(
@@ -116,13 +138,15 @@ struct IntegrationsDetailView: View {
                         onConnect: { simkl.connect() },
                         onCancel: { simkl.cancelConnect() },
                         onDisconnect: { Task { await simkl.disconnect() } }
-                    )
+                    ) {
+                        TrackerAccountSettingsRows(tracker: simkl, makeSession: makeSimklHistoryImport)
+                    }
                 }
             },
             SettingsSplitRow(
                 id: "wetrakr",
                 verbatimTitle: "WeTrakr",
-                description: "Scrobble movies and episodes and sync your watchlist with WeTrakr."
+                description: "Report movie and episode playback to WeTrakr."
             ) {
                 if case let .connecting(userCode, verificationURL, expiresAt) = wetrakr.phase {
                     DeviceCodeConnectingView(
@@ -141,13 +165,15 @@ struct IntegrationsDetailView: View {
                         phase: wetrakrRowPhase, onConnect: { wetrakr.connect() },
                         onCancel: { wetrakr.cancelConnect() },
                         onDisconnect: { Task { await wetrakr.disconnect() } }
-                    )
+                    ) {
+                        TrackerAccountSettingsRows(tracker: wetrakr, makeSession: makeWetrakrHistoryImport)
+                    }
                 }
             },
             SettingsSplitRow(
                 id: "anilist",
                 verbatimTitle: "AniList",
-                description: "Scrobble and sync your anime progress and watchlist with AniList.",
+                description: "Track the anime you watch on AniList.",
             ) {
                 if case .awaitingToken = anilist.phase {
                     AniListTokenEntryView(anilist: anilist)
@@ -157,13 +183,15 @@ struct IntegrationsDetailView: View {
                         onConnect: { anilist.connect() },
                         onCancel: { anilist.cancelConnect() },
                         onDisconnect: { Task { await anilist.disconnect() } }
-                    )
+                    ) {
+                        TrackerAccountSettingsRows(tracker: anilist, makeSession: makeAniListHistoryImport)
+                    }
                 }
             },
             SettingsSplitRow(
                 id: "mal",
                 verbatimTitle: "MyAnimeList",
-                description: "Scrobble and sync your anime progress and watchlist with MyAnimeList.",
+                description: "Track the anime you watch on MyAnimeList.",
             ) {
                 if case .awaitingAuthorizationCode = mal.phase {
                     MALAuthorizationCodeEntryView(mal: mal)
@@ -173,13 +201,15 @@ struct IntegrationsDetailView: View {
                         onConnect: { mal.connect() },
                         onCancel: { mal.cancelConnect() },
                         onDisconnect: { Task { await mal.disconnect() } }
-                    )
+                    ) {
+                        TrackerAccountSettingsRows(tracker: mal, makeSession: makeMALHistoryImport)
+                    }
                 }
             },
             SettingsSplitRow(
                 id: "lastfm",
                 verbatimTitle: "Last.fm",
-                description: "Scrobble the music you play in Plozz to your Last.fm profile.",
+                description: lastfmRowPhase == .connecting ? nil : "Report the music you play to Last.fm.",
             ) {
                 if case let .connecting(authURL, _) = lastfm.phase {
                     LastFmConnectingView(
@@ -192,7 +222,9 @@ struct IntegrationsDetailView: View {
                         onConnect: { lastfm.connect() },
                         onCancel: { lastfm.cancelConnect() },
                         onDisconnect: { Task { await lastfm.disconnect() } }
-                    )
+                    ) {
+                        TrackerActivationRow(tracker: lastfm, trackerID: "lastfm")
+                    }
                 }
             }
         ]
@@ -200,15 +232,12 @@ struct IntegrationsDetailView: View {
         let watchStatus: [SettingsSplitRow] = [
             SettingsSplitRow(
                 id: "sync-across-servers",
-                title: "Sync across all my servers",
-                description: canSyncAcrossServers
-                    ? (playback.settings.syncWatchAcrossServers
-                        ? "Watching, resuming, or marking any media as watched updates every server that has it, keeping the same progress everywhere."
-                        : "Only the server you watched on is updated.")
-                    : "Add another server to sync watch status across servers.",
+                title: "Watch status",
+                description: "Keep watched status and playback progress in sync.",
             ) {
-                Toggle("Sync across all my servers", isOn: $playback.settings.syncWatchAcrossServers)
-                    .disabled(!canSyncAcrossServers).settingsSearchAnchor("cross-server-watch-sync")
+                Toggle("Sync across servers", isOn: $playback.settings.syncWatchAcrossServers)
+                    .disabled(!canSyncAcrossServers)
+                    .settingsSearchAnchor("cross-server-watch-sync")
             }
         ]
 
@@ -216,10 +245,26 @@ struct IntegrationsDetailView: View {
         if inWorkspace {
             let phases = [traktRowPhase, simklRowPhase, wetrakrRowPhase, anilistRowPhase, malRowPhase, lastfmRowPhase]
             trackers = zip(trackers, phases).map { row, phase in
-                row.page(summary: statusLabel(phase))
+                let page = row.page(summary: statusLabel(phase))
+                if case .connected = phase { return page.groupedContent() }
+                return page
             }
         }
         #endif
+        if let publicMetaDB {
+            var row = SettingsSplitRow(
+                id: "publicmetadb",
+                verbatimTitle: "PublicMetaDB"
+            ) {
+                PublicMetaDBSettingsContent(service: publicMetaDB, makeHistoryImport: makePublicMetaDBHistoryImport)
+            }
+            #if os(tvOS)
+            if inWorkspace {
+                row = row.page(summary: PublicMetaDBConnectionStatus(phase: publicMetaDB.phase).text).groupedContent()
+            }
+            #endif
+            trackers.append(row)
+        }
         return trackers.filter { $0.id != "wetrakr" || wetrakr.isConfigured } + watchStatus
     }
 
@@ -239,11 +284,12 @@ struct IntegrationsDetailView: View {
     /// entry with its own Cancel). Reuses the same phase vocabulary as the old
     /// `TrackerRow` so behaviour is unchanged — just relocated to the detail pane.
     @ViewBuilder
-    private func trackerActionBar(
+    private func trackerActionBar<Settings: View>(
         phase: TrackerRowPhase,
         onConnect: @escaping () -> Void,
         onCancel: @escaping () -> Void,
-        onDisconnect: @escaping () -> Void
+        onDisconnect: @escaping () -> Void,
+        @ViewBuilder settings: () -> Settings
     ) -> some View {
         switch phase {
         case .loading:
@@ -266,10 +312,9 @@ struct IntegrationsDetailView: View {
                 Text("Cancel")
             }
         case let .connected(username):
-            VStack(alignment: .leading, spacing: 18) {
-                Label("Connected as \(username)", systemImage: "checkmark.seal.fill")
-                    .font(.headline)
-                    .foregroundStyle(.green)
+            settings()
+            SettingsSectionGroup("Account") {
+                TrackerConnectedStatus(username: username)
                 Button(role: .destructive, action: onDisconnect) {
                     Label("Disconnect", systemImage: "xmark.circle")
                 }
@@ -430,32 +475,56 @@ struct MALAuthorizationCodeEntryView: View {
     @State private var codeInput: String = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Scan the QR code or visit the URL on your phone, sign in to MyAnimeList, then enter the code shown:")
-                .font(.callout)
-                .plozzForeground(.secondary)
+        if case let .awaitingAuthorizationCode(authorizationURL) = mal.phase {
+            TrackerPhoneEntryPanel(
+                instruction: "Scan the QR code or visit the URL on your phone, sign in to MyAnimeList, then enter the code shown:",
+                qrPayload: authorizationURL, website: "plozz.app/myanimelist"
+            ) {
+                TextField("Enter code", text: $codeInput)
+                HStack(spacing: 16) {
+                    Button("Connect") {
+                        mal.submitAuthorizationCode(codeInput)
+                    }
+                    .disabled(codeInput.trimmingCharacters(in: .whitespacesAndNewlines).count < 4)
+                    Button("Cancel", role: .cancel) {
+                        mal.cancelConnect()
+                    }
+                }
+            }
+        }
+    }
+}
 
-            if case let .awaitingAuthorizationCode(authorizationURL) = mal.phase {
-                HStack(alignment: .center, spacing: 32) {
-                    QRCodeView(authorizationURL)
+/// Keep the credential-bearing QR payload separate from its human-readable website.
+struct TrackerPhoneEntryPanel<Controls: View>: View {
+    let instruction: LocalizedStringKey?
+    let qrPayload: String?
+    let website: String
+    @ViewBuilder let controls: Controls
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if let instruction {
+                Text(instruction)
+                    .font(.callout)
+                    .plozzForeground(.secondary)
+            }
+            HStack(alignment: .center, spacing: 32) {
+                if let qrPayload {
+                    QRCodeView(qrPayload)
                         .frame(width: 160, height: 160)
                         .padding(10)
                         .background(.white, in: RoundedRectangle(cornerRadius: PlozzTheme.Metrics.Radius.control))
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("plozz.app/myanimelist")
-                            .font(.title3.weight(.semibold))
-                        TextField("Enter code", text: $codeInput)
-                        HStack(spacing: 16) {
-                            Button("Connect") {
-                                mal.submitAuthorizationCode(codeInput)
-                            }
-                            .disabled(codeInput.trimmingCharacters(in: .whitespacesAndNewlines).count < 4)
-                            Button("Cancel", role: .cancel) {
-                                mal.cancelConnect()
-                            }
-                        }
-                    }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("QR code")
+                        .accessibilityAddTraits(.isImage)
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(verbatim: website)
+                        .font(.title3.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    controls
                 }
             }
         }
@@ -479,12 +548,8 @@ struct LastFmConnectingView: View {
                 .background(.white, in: RoundedRectangle(cornerRadius: PlozzTheme.Metrics.Radius.control))
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("Scan to connect Last.fm")
-                    .font(.title2.weight(.semibold))
-                Text("Scan the code with your phone and approve access on Last.fm. There's no code to type — this screen updates automatically once you approve.")
+                Text("Scan with your phone and approve access.")
                     .font(.callout)
-                    .plozzForeground(.secondary)
-                    .frame(maxWidth: 460, alignment: .leading)
                 HStack(spacing: 14) {
                     ProgressView().controlSize(.small)
                     Text("Waiting for approval…")
@@ -526,6 +591,8 @@ struct DeviceCodeConnectingView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text(displayURL)
                     .font(.title2.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 Text(userCode)
                     .font(.plozzCode(size: 52))
                     .tracking(8)
@@ -544,9 +611,8 @@ struct DeviceCodeConnectingView: View {
                 }
                 .padding(.top, 16)
             }
-
-            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var activationURL: String {

@@ -21,7 +21,7 @@ final class SettingsDetailNavigationHostedTests: XCTestCase {
         let chrome = NavigationChromeModel()
         let probes = PageMotionProbes()
         let root = SettingsWorkspace(navigation: navigation) {
-            SettingsSearchTelevisionView {
+            SettingsSearchTelevisionView(wetrakrConfigured: false) {
                 SettingsSectionGroup {
                     SettingsSectionButton(title: Text("Playback"), icon: "play", route: .playback)
                     SettingsSectionButton(

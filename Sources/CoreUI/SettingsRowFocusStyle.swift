@@ -38,7 +38,15 @@ public enum SettingsFormMetrics {
     public static let groupCornerRadius = PlozzTheme.Metrics.mediumCardCornerRadius
     public static let connectedGroupSpacing = PlozzTheme.Spacing.xSmall
     public static let connectedGroupInnerCornerRadius: CGFloat = 8
+    public static func rowCornerRadii(
+        first: Bool, last: Bool, outer: CGFloat, inner: CGFloat = connectedGroupInnerCornerRadius
+    ) -> RectangleCornerRadii {
+        let top = first ? outer : inner
+        let bottom = last ? outer : inner
+        return .init(topLeading: top, bottomLeading: bottom, bottomTrailing: bottom, topTrailing: top)
+    }
     public static let dividerFocusClearance = PlozzTheme.Spacing.xSmall
+    static let descriptionBoundarySpacing = PlozzTheme.Spacing.large + PlozzTheme.Spacing.xxSmall
     public static let illustratedGroupSpacing = PlozzTheme.Spacing.medium
     public static var groupInset: CGFloat {
         #if os(tvOS)
@@ -183,8 +191,16 @@ private struct SettingsFormButtonBody: View {
 
     var body: some View {
         SettingsFocusRow(isFocused: isFocused, isPressed: configuration.isPressed, size: .contained) {
-            configuration.label
-                .settingsFormRowLayout()
+            Group {
+                if configuration.role == .destructive {
+                    configuration.label
+                        .plozzForeground(.primary)
+                        .environment(\.settingsRowIsDestructive, true)
+                } else {
+                    configuration.label
+                }
+            }
+            .settingsFormRowLayout()
         }
     }
 }
@@ -468,6 +484,7 @@ public struct SettingsRowSecondaryStyle: ViewModifier {
 /// Mobile leading icons match primary titles with medium-weight monochrome
 /// symbols. TV keeps secondary idle icons and its inverted focus foreground.
 public struct SettingsRowIconStyle: ViewModifier {
+    @Environment(\.settingsRowIsDestructive) private var isDestructive
     @Environment(\.settingsRowIsFocused) private var focused
     @Environment(\.settingsRowFocusForeground) private var focusFg
     @Environment(\.themePalette) private var palette
@@ -481,11 +498,11 @@ public struct SettingsRowIconStyle: ViewModifier {
             .fontWeight(.medium)
             .plozzForeground(.primary)
         #else
-        content.foregroundStyle(
-            focused
-            ? AnyShapeStyle(focusFg)
-            : AnyShapeStyle(palette.secondaryText)
-        )
+        if isDestructive {
+            content.plozzForeground(.primary)
+        } else {
+            content.foregroundStyle(focused ? focusFg : palette.secondaryText)
+        }
         #endif
     }
 }

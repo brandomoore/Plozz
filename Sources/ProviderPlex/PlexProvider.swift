@@ -2880,11 +2880,31 @@ extension PlexProvider: PlayedStateWriting {
             PlozzLog.playback.debug("Ignoring stale Plex extra played write.")
             return
         }
+        var endpoint = played ? "/library/metadata" : "/:/unscrobble"
         do {
+            if played {
+                let current = try await client.metadata(ratingKey: itemID)
+                guard current.ratingKey == itemID else { throw AppError.invalidResponse }
+                try Task.checkCancellation()
+                // Timeline reporting already counts completed playback. Convergence
+                // sets a state; another scrobble would invent an additional play.
+                if (current.type == "movie" || current.type == "episode"),
+                   (current.viewCount ?? 0) > 0, (current.viewOffset ?? 0) == 0 {
+                    ContinueWatchingDiagnostics.emit(ContinueWatchingDiagnostics.writeLine(
+                        provider: "plex",
+                        endpoint: endpoint,
+                        itemID: itemID,
+                        detail: "played=true alreadyComplete=true",
+                        ok: true
+                    ))
+                    return
+                }
+            }
+            endpoint = played ? "/:/scrobble" : "/:/unscrobble"
             try await client.setWatched(played, ratingKey: itemID)
             ContinueWatchingDiagnostics.emit(ContinueWatchingDiagnostics.writeLine(
                 provider: "plex",
-                endpoint: played ? "/:/scrobble" : "/:/unscrobble",
+                endpoint: endpoint,
                 itemID: itemID,
                 detail: "played=\(played)",
                 ok: true
@@ -2892,7 +2912,7 @@ extension PlexProvider: PlayedStateWriting {
         } catch {
             ContinueWatchingDiagnostics.emit(ContinueWatchingDiagnostics.writeLine(
                 provider: "plex",
-                endpoint: played ? "/:/scrobble" : "/:/unscrobble",
+                endpoint: endpoint,
                 itemID: itemID,
                 detail: "played=\(played)",
                 ok: false,

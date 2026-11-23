@@ -15,31 +15,24 @@ public struct PlaybackReadAheadControl: View {
     }
 
     public var body: some View {
-        #if os(tvOS)
         SettingsDescribedControl {
+            #if os(tvOS)
             SettingsMenuRow(title: "Video buffer", value: Text(selection.title)) {
-                Picker("Video buffer", selection: $selection) {
-                    ForEach(PlaybackReadAhead.allCases, id: \.self) {
-                        Text($0.title).tag($0)
-                    }
-                }
+                picker
             }
             .accessibilityIdentifier("playback-read-ahead")
+            #else
+            picker.accessibilityIdentifier("playback-read-ahead")
+            #endif
         } description: {
             PlaybackReadAheadHelp()
         }
-        #else
-        SettingsSectionGroup {
-            Picker("Video buffer", selection: $selection) {
-                ForEach(PlaybackReadAhead.allCases, id: \.self) {
-                    Text($0.title).tag($0)
-                }
-            }
-            .accessibilityIdentifier("playback-read-ahead")
-        } footer: {
-            PlaybackReadAheadHelp()
+    }
+
+    private var picker: some View {
+        Picker("Video buffer", selection: $selection) {
+            ForEach(PlaybackReadAhead.allCases, id: \.self) { Text($0.title).tag($0) }
         }
-        #endif
     }
 }
 
@@ -62,31 +55,24 @@ public struct LivePlaybackBufferControl: View {
     }
 
     public var body: some View {
-        #if os(tvOS)
         SettingsDescribedControl {
+            #if os(tvOS)
             SettingsMenuRow(title: "Live TV buffer", value: Text(selection.title)) {
-                Picker("Live TV buffer", selection: $selection) {
-                    ForEach(LivePlaybackBuffer.allCases, id: \.self) {
-                        Text($0.title).tag($0)
-                    }
-                }
+                picker
             }
             .accessibilityIdentifier("live-playback-buffer")
+            #else
+            picker.accessibilityIdentifier("live-playback-buffer")
+            #endif
         } description: {
             help
         }
-        #else
-        SettingsSectionGroup {
-            Picker("Live TV buffer", selection: $selection) {
-                ForEach(LivePlaybackBuffer.allCases, id: \.self) {
-                    Text($0.title).tag($0)
-                }
-            }
-            .accessibilityIdentifier("live-playback-buffer")
-        } footer: {
-            help
+    }
+
+    private var picker: some View {
+        Picker("Live TV buffer", selection: $selection) {
+            ForEach(LivePlaybackBuffer.allCases, id: \.self) { Text($0.title).tag($0) }
         }
-        #endif
     }
 
     private var help: some View {

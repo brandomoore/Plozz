@@ -315,6 +315,71 @@ final class SearchViewModelTests: XCTestCase {
         XCTAssertEqual(provider.callCount, 0)
     }
 
+    func testSameQueryRefreshKeepsCurrentCardsUntilReplacementArrives() async {
+        let provider = SearchStubProvider(results: makeItems(2))
+        let vm = makeVM(provider)
+        vm.query = "movie"
+        await vm.search()
+        guard case let .loaded(original) = vm.state else { return XCTFail("Expected initial results") }
+        vm.query = " movie "
+        defer { provider.onSearch = nil }
+        provider.onSearch = {
+            guard case let .loaded(current) = vm.state else {
+                XCTFail("A background refresh must not tear down the result cards")
+                return makeItems(3)
+            }
+            XCTAssertEqual(current, original)
+            return makeItems(3)
+        }
+
+        await vm.search()
+
+        guard case let .loaded(refreshed) = vm.state else { return XCTFail("Expected refreshed results") }
+        XCTAssertEqual(refreshed[0].items.map(\.id), ["i0", "i1", "i2"])
+        XCTAssertEqual(provider.callCount, 2)
+    }
+
+    func testChangedQueryStillReplacesOldCardsWithLoading() async {
+        let provider = SearchStubProvider(results: makeItems(2))
+        let vm = makeVM(provider)
+        vm.query = "movie"
+        await vm.search()
+        vm.query = "another movie"
+        defer { provider.onSearch = nil }
+        provider.onSearch = {
+            if case .loading = vm.state {} else { XCTFail("New queries must not show unrelated old cards") }
+            return makeItems(1)
+        }
+
+        await vm.search()
+
+        guard case let .loaded(refreshed) = vm.state else { return XCTFail("Expected new-query results") }
+        XCTAssertEqual(refreshed[0].items.map(\.id), ["i0"])
+    }
+
+    func testSameQueryRefreshStillSurfacesEmptyAndFailedResults() async {
+        for shouldFail in [false, true] {
+            let provider = SearchStubProvider(results: makeItems(2))
+            let vm = makeVM(provider)
+            vm.query = "movie"
+            await vm.search()
+            defer { provider.onSearch = nil }
+            provider.onSearch = {
+                if case .loaded = vm.state {} else { XCTFail("Expected existing cards during refresh") }
+                if shouldFail { throw AppError.serverUnreachable }
+                return []
+            }
+
+            await vm.search()
+
+            if shouldFail {
+                if case .failed(.serverUnreachable) = vm.state {} else { XCTFail("Expected explicit refresh failure") }
+            } else {
+                if case .empty = vm.state {} else { XCTFail("Expected the empty refresh result") }
+            }
+        }
+    }
+
     func testQueryLoadsSectionedResults() async {
         let provider = SearchStubProvider(results: [
             MediaItem(id: "m1", title: "Dune", kind: .movie),
@@ -636,6 +701,7 @@ private final class SearchStubProvider: MediaProvider, @unchecked Sendable {
     private let childrenByID: [String: [MediaItem]]
     private(set) var callCount = 0
     private(set) var lastQuery: String?
+    @MainActor var onSearch: (@MainActor @Sendable () throws -> [MediaItem])?
 
     init(
         results: [MediaItem],
@@ -658,6 +724,7 @@ private final class SearchStubProvider: MediaProvider, @unchecked Sendable {
     func search(query: String, limit: Int) async throws -> [MediaItem] {
         callCount += 1
         lastQuery = query
+        if let onSearch = await onSearch { return try await onSearch() }
         if let error { throw error }
         return results
     }

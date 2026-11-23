@@ -372,8 +372,10 @@ final class CinematicDetailTransitionHostedTests: XCTestCase {
         try await waitUntil { fixture.model.session != nil }
         let session = try XCTUnwrap(fixture.model.session)
         XCTAssertNil(session.returnArtwork)
-        try await waitUntil { self.overlays(in: fixture.window).isEmpty }
-        XCTAssertEqual(session.stage, .logo)
+        // UIKit fades the cover independently of the foreground reveal task.
+        try await waitUntil {
+            self.overlays(in: fixture.window).isEmpty && fixture.model.stages.contains(.logo)
+        }
         try await waitUntil { session.stage == .complete && fixture.model.stages.last == .complete }
         XCTAssertEqual(fixture.model.stages, [.artwork, .logo, .metadata, .controls, .complete])
         XCTAssertTrue(inputGuards(in: fixture.window).isEmpty)

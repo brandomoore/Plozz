@@ -147,6 +147,17 @@ final class PosterZoomInteractionTests: XCTestCase {
         XCTAssertTrue(plain.wait(for: \.isHittable, toEqual: true, timeout: 5))
     }
 
+    func testProtectedInlineEpisodeDoesNotAnnounceItsTitleOnEitherButton() {
+        app.launchArguments = ["--home-hero-fixture", "--poster-home-menu", "--protect-episodes"]
+        app.launch()
+        let more = app.buttons["More actions for Episode 2"]
+        reveal(more)
+        XCTAssertTrue(app.buttons["Episode 2"].firstMatch.exists, app.debugDescription)
+        XCTAssertFalse(app.buttons["More actions for Hero Episode"].exists)
+        more.tap()
+        XCTAssertTrue(app.buttons["Go to Episode"].waitForExistence(timeout: 5))
+    }
+
     func testProductionContinueWatchingAndInlineEpisodeMenusKeepTheirDestination() {
         app.launchArguments = ["--home-hero-fixture", "--poster-home-menu"]
         app.launch()

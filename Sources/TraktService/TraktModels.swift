@@ -66,7 +66,7 @@ public struct TraktUserSettings: Decodable, Sendable, Equatable {
 
 /// External database ids for a movie/show/episode, as Trakt expects them.
 /// Only the ids we can resolve are sent; the rest stay `nil` and are omitted.
-struct TraktIDs: Codable, Equatable {
+struct TraktIDs: Codable, Equatable, Sendable {
     var trakt: Int?
     var imdb: String?
     var tmdb: Int?
@@ -75,19 +75,19 @@ struct TraktIDs: Codable, Equatable {
     var isEmpty: Bool { trakt == nil && imdb == nil && tmdb == nil && tvdb == nil }
 }
 
-struct TraktMovieRef: Codable, Equatable {
+struct TraktMovieRef: Codable, Equatable, Sendable {
     var title: String?  // l10n:content — media title sent to Trakt, sourced from our own item metadata
     var year: Int?
     var ids: TraktIDs
 }
 
-struct TraktShowRef: Codable, Equatable {
+struct TraktShowRef: Codable, Equatable, Sendable {
     var title: String?  // l10n:content — media title sent to Trakt, sourced from our own item metadata
     var year: Int?
     var ids: TraktIDs
 }
 
-struct TraktEpisodeRef: Codable, Equatable {
+struct TraktEpisodeRef: Codable, Equatable, Sendable {
     var season: Int?
     var number: Int?
     var ids: TraktIDs

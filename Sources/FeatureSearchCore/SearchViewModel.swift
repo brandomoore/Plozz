@@ -14,6 +14,7 @@ import CoreModels
 public final class SearchViewModel {
     public var query: String = ""
     public private(set) var state: LoadState<[SearchSection]> = .idle
+    private var loadedQuery: String?
 
     private let accounts: [ResolvedAccount]
     private let limit: Int
@@ -96,7 +97,13 @@ public final class SearchViewModel {
         var outcome = PerformanceDiagnostics.Outcome.cancelled
         var metrics = PerformanceDiagnostics.Metrics()
         defer { span?.finish(Task.isCancelled ? .cancelled : outcome, metrics: metrics) }
-        state = .loading
+        // Background refreshes must not remove the card owning an open menu or focus.
+        switch state {
+        case .loaded where loadedQuery == requested:
+            break
+        default:
+            state = .loading
+        }
 
         // Start the discovery (Seerr) search concurrently with the library search
         // so the two round-trips overlap. Structured `async let` so cancelling this
@@ -141,6 +148,7 @@ public final class SearchViewModel {
         metrics = .init(items: sections.reduce(0) { $0 + $1.items.count }, rows: sections.count)
 
         if !sections.isEmpty {
+            loadedQuery = requested
             state = .loaded(sections)
             scheduleAvailabilityCueEnrichment(
                 requestedQuery: requested,

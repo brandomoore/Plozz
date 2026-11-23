@@ -2433,7 +2433,6 @@ struct PlozziOSHomeHeroForeground: View {
 }
 
 struct PlozziOSDetailHeroForeground: View {
-    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @State private var isVersionPickerPresented = false
     @State var sourceMenu = PlaybackSourceMenuState()
     @Environment(\.colorScheme) private var colorScheme
@@ -2541,21 +2540,11 @@ struct PlozziOSDetailHeroForeground: View {
     /// The episode's own 16:9 still, shown above its details on an episode page.
     /// Same artwork chain and spoiler policy as the episode cards.
     private var episodeStill: some View {
-        let source = MediaArtworkSource(
-            item: item, placement: .episodeThumbnail, policy: artworkPolicy.forArea(.episodes)
-        )
-        return FallbackAsyncImage(
-            references: source.references,
-            variant: .landscapeCard,
-            artworkPolicy: source.policy,
-            asyncFallbackURL: source.fallbackURL,
-            pinIdentity: source.itemIdentity
-        ) {
+        PlozziOSEpisodeStill(item: item, spoilers: appModel.settings.spoilers.settings) {
             MediaArtworkPlaceholder(
                 symbol: .init(for: item), cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius
             )
         }
-        .blur(radius: appModel.settings.spoilers.settings.shouldHideThumbnail(for: item) ? 24 : 0)
         .aspectRatio(16 / 9, contentMode: .fit)
         .frame(maxWidth: style == .compactPortrait ? .infinity : 560)
         .clipShape(
@@ -2575,6 +2564,8 @@ struct PlozziOSDetailHeroForeground: View {
         let entries = actions
         let extras = orderedInlineExtras(from: entries)
         let parentNavigationEntry = entries.first { $0.action == .goToSeason }
+        let spoilers = appModel.settings.spoilers.settings
+        let hidesText = spoilers.shouldHideText(for: item)
         VStack(
             alignment: style == .compactPortrait ? .center : .leading,
             spacing: 12
@@ -2595,7 +2586,9 @@ struct PlozziOSDetailHeroForeground: View {
                 onTapBreadcrumb: parentNavigationEntry.map { entry in
                     { perform(entry) }
                 },
-                subjectTitle: presentsEpisodeStill ? item.title : nil,
+                subjectTitle: presentsEpisodeStill && !hidesText ? item.title : nil,
+                maskedSubjectTitle: presentsEpisodeStill && hidesText ? spoilers.maskedTitle(for: item) : nil,
+                hiddenOverviewMode: hidesText ? spoilers.mode : nil,
                 scheduleLine: scheduleLine,
                 logoFallback: PlozziOSHeroMetadata.tmdbLogoFallback(for: rootItem),
                 usesCompactDetailLayout: style == .compactPortrait,
@@ -3159,6 +3152,8 @@ struct PlozziOSHeroMetadata: View {
     var onTapBreadcrumb: (() -> Void)? = nil
     /// The subject's own title, when it differs from `presentation.title`.
     var subjectTitle: String? = nil
+    var maskedSubjectTitle: LocalizedStringResource? = nil
+    var hiddenOverviewMode: SpoilerSettings.Mode? = nil
     /// The air-schedule badge above the title ("New episode every Wednesday"), or
     /// `nil` when there is nothing truthful to say. Matches tvOS.
     var scheduleLine: LocalizedStringResource? = nil
@@ -3241,10 +3236,12 @@ struct PlozziOSHeroMetadata: View {
                     .disabled(onTapBreadcrumb == nil)
                     .accessibilityLabel(Text("Go to \(seriesBreadcrumb)"))
 
+                }
+                if let title = maskedSubjectTitle.map({ Text($0) }) ?? subjectTitle.map({ Text(verbatim: $0) }) {
                     // `presentation.title` resolves an episode to its *show's* name,
                     // which is right when a series hero fronts an episode but wrong
                     // here: the breadcrumb above already names the show.
-                    Text(subjectTitle ?? presentation.title)
+                    title
                         .font(textScale == 1 ? .largeTitle : .system(size: titleFontSize * textScale))
                         .fontWeight(.bold)
                         .foregroundStyle(palette.primaryText)
@@ -3299,7 +3296,13 @@ struct PlozziOSHeroMetadata: View {
                 }
 
                 if let descriptionText {
-                    if usesCompactDetailLayout {
+                    if let hiddenOverviewMode {
+                        SpoilerSafeOverviewText(
+                            overview: descriptionText, hidesSpoilers: true, mode: hiddenOverviewMode,
+                            lineCount: textSize.descriptionLineLimit(base: usesCompactDetailLayout ? 2 : 3),
+                            fontSize: overviewFontSize * textScale, reservesSpace: false
+                        )
+                    } else if usesCompactDetailLayout {
                         ExpandableOverviewText(
                             text: descriptionText,
                             title: subjectTitle ?? presentation.title,

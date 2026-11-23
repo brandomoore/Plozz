@@ -842,6 +842,7 @@ public final class PlayerViewModel {
         onPlaybackStoppedWithoutProgress: @escaping @Sendable () -> Void = {},
         onPlaybackStarted: @escaping @Sendable () -> Void = {},
         onPlaybackCheckpoint: @escaping @Sendable (_ position: TimeInterval, _ watchedPercent: Double) -> Void = { _, _ in },
+        onTrackerPlayback: @escaping @Sendable (TrackerPlaybackSample) -> Void = { _ in },
         checkpointInterval: TimeInterval = 60,
         adoptedResolved: PrefetchedPlayback? = nil,
         nowPlayingPublisher: (any NowPlayingPublishing)? = nil,
@@ -934,7 +935,8 @@ public final class PlayerViewModel {
             scrobbler: scrobbler,
             checkpointInterval: checkpointInterval,
             scrobblesLibraryItem: scrobblesLibraryItem,
-            onCheckpoint: onPlaybackCheckpoint
+            onCheckpoint: onPlaybackCheckpoint,
+            onTrackerPlayback: onTrackerPlayback
         )
         self.nextEpisodeCoordinator = NextEpisodeCoordinator(
             host: self,

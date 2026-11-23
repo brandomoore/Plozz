@@ -30,6 +30,10 @@ and every provider/feature that talks to a remote server.
   completions cannot overwrite replacements, and finished values are not cached.
 - `Endpoint`: a transport-agnostic request description (method, path, query,
   headers, body) — providers build these, not raw `URLRequest`s.
+  Redirects can follow normally, stay within the original origin, or use
+  `doNotFollow` to return the original redirect response and Location header.
+  The last policy blocks same-origin redirects too; use it for header-only
+  resolvers rather than fetching a human-facing destination.
 - `HTTPResponseDiagnostics`: opt-in task-local decode and paging evidence for library
   failures. It preserves the existing thrown `AppError` and fallback contracts,
   discards evidence when the enclosing operation succeeds, and retains at most
@@ -83,6 +87,14 @@ and every provider/feature that talks to a remote server.
   entry point. Backed by `OSLog` on Apple platforms, no-op on non-Apple
   hosts. Must never log tokens, Quick Connect secrets, or full
   `Authorization` headers.
+- `LocalMediaWatchStore`: durable, profile-and-source-scoped watch state for
+  shares and IPTV. Marking watched or unwatched clears progress but retains
+  the duration measured during playback, including across relaunch, so later
+  resume imports can still check runtime compatibility. Unknown durations stay
+  unknown; stale writes never replace newer state. Share show/season actions
+  update the indexed episode-file records in one persistence operation, with
+  timestamp ordering checked per episode. Containers derive their indicators
+  from those records rather than storing a separate played flag.
 
 ## Invariants
 

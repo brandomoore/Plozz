@@ -219,6 +219,31 @@ class RepositoryCoverageTests(unittest.TestCase):
     def test_current_settings_controls_have_reviewed_coverage(self):
         self.assertEqual(GUARD.check(self.inventory, self.policy), [])
 
+    def test_tracker_preferences_require_account_row_anchors(self):
+        account = next(item for item in self.inventory if item["name"] == "TrackerActivationRow")
+        # A match on the connection prerequisite alone cannot cover the controls
+        # available directly on a connected account.
+        catalog = component("SettingsSearchCatalog", "Sources/CoreModels/SettingsSearch.swift")
+        catalog["registrations"] = [
+            registration for item in self.inventory for registration in item["registrations"]
+            if registration["id"].startswith('"tracker-enabled-')
+        ]
+        prefix = f'{account["file"]}|{account["name"]}|'
+        policy = {
+            "roots": [account["name"]], "directories": [], "traversable_directories": [],
+            "exclusions": {k: v for k, v in self.policy["exclusions"].items() if k.startswith(prefix)},
+        }
+        self.assertEqual(GUARD.check([account, catalog], policy), [])
+        self.assertEqual({r["id"] for r in catalog["registrations"]}, {
+            f'"tracker-enabled-{provider}"' for provider in
+            ("trakt", "simkl", "wetrakr", "anilist", "myanimelist", "lastfm", "publicmetadb")
+        })
+        changed = copy.deepcopy(account)
+        row, = [c for c in changed["controls"] if c["kind"] == "Toggle"]
+        row["anchors"] = []
+        self.assertTrue(any(f"unregistered TrackerActivationRow.{row['context']} Toggle" in error
+                            for error in GUARD.check([changed, catalog], policy)))
+
     def guide_update_coverage_fixture(self):
         guide = copy.deepcopy(next(
             item for item in self.inventory

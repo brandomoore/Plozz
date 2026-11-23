@@ -11,10 +11,10 @@ import XCTest
 final class PlaybackOptionsHostedTests: XCTestCase {
     func testFELConversionRowUsesNativeFocusAndUpdatesSelection() async throws {
         try await withPanel { probe, _, window in
+            let originalItemCount = try DetailTintFocusProbe.nativeFocusItems(in: window).count
             probe.model.felConversion.isAvailable = true
             try await self.waitUntil {
-                (try? self.text(in: DetailTransitionSnapshot.image(of: window))
-                    .contains { $0.text.contains("FEL") }) == true
+                try DetailTintFocusProbe.nativeFocusItems(in: window).count > originalItemCount
             }
             probe.request(.row(3))
             try await self.waitUntil { probe.focus == .row(3) }
@@ -324,13 +324,16 @@ final class PlaybackOptionsHostedTests: XCTestCase {
     }
 
     private func waitUntil(
-        file: StaticString = #filePath, line: UInt = #line, _ condition: () -> Bool
+        file: StaticString = #filePath, line: UInt = #line, _ condition: () throws -> Bool
     ) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
-        while !condition(), ContinuousClock.now < deadline {
+        while try !condition() {
+            guard ContinuousClock.now < deadline else {
+                XCTFail("The native player menu did not reach its expected state.", file: file, line: line)
+                return
+            }
             try await Task.sleep(for: .milliseconds(20))
         }
-        XCTAssertTrue(condition(), "The native player menu did not reach its expected state.", file: file, line: line)
     }
 
     struct EnvironmentReport: Equatable {

@@ -33,18 +33,47 @@ struct ShareWatchStateService: Sendable {
     /// Overlay saved resume/played state onto a freshly-built item so the detail
     /// Play button shows "Resume" and cards show a checkmark / progress.
     func stamp(_ item: MediaItem) async -> MediaItem {
-        // Only leaf playables carry watch state; containers (folders, series,
-        // seasons, collections) have no resume/played record, so skip the lookup.
         switch item.kind {
-        case .folder, .collection, .series, .season:
+        case .folder, .collection:
             return item
+        case .series, .season:
+            return await stampContainers([item])[0]
         default:
             break
         }
-        let records = await records(for: [item.id])
-        let canonicalID = await watchItemID(for: item.id)
-        let record = records[canonicalID]
-        return Self.stamped(item, with: record)
+        return Self.stamped(item, with: await record(for: item.id))
+    }
+
+    /// Tracker resume decisions use a fresh transport revision, never the UI's
+    /// duration fallback or the default member of a group of cuts.
+    func stampForTracker(
+        _ item: MediaItem, currentRevision: @Sendable (String) async throws -> String?
+    ) async throws -> MediaItem {
+        guard item.kind == .movie || item.kind == .episode else { return await stamp(item) }
+        let record = await self.record(for: item.id)
+        var result = Self.stamped(item, with: record)
+        result.runtime = nil
+        guard let path = Self.trackerFilePath(item),
+              let measured = record?.duration, measured.isFinite, measured > 0,
+              let revision = record?.measuredFileRevision, !revision.isEmpty else { return result }
+        if try await currentRevision(path) == revision { result.runtime = measured }
+        return result
+    }
+
+    static func trackerFilePath(_ item: MediaItem) -> String? {
+        let exact = ShareCatalogID.relPath(forFileID: item.id)
+        let version = item.versions.first?.playbackMediaSourceID
+        guard item.kind == .movie || item.kind == .episode, !item.hasMultipleVersions,
+              item.versions.isEmpty || (version != nil && (exact == nil || version == exact)),
+              let path = exact ?? version, !ShareBluRayFolder.isIndex(path),
+              !ShareMediaParser.isExternalLinkFile(path) else { return nil }
+        return path
+    }
+
+    private func record(for itemID: String) async -> ShareWatchStore.Record? {
+        let records = await records(for: [itemID])
+        let canonicalID = await watchItemID(for: itemID)
+        return records[canonicalID]
     }
 
     func stamp(_ items: [MediaItem]) async -> [MediaItem] {
@@ -77,74 +106,67 @@ struct ShareWatchStateService: Sendable {
                 stamped.append(Self.stamped(item, with: records[canonical]))
             }
         }
-        return stamped
+        return await stampContainers(stamped)
     }
 
-    /// Season containers with their episodes' watch state rolled up onto them.
-    ///
-    /// Share seasons are synthetic (a `GROUP BY` over the assets table), so
-    /// `stamp` skips them — there is no record under a season's own id and never
-    /// will be. That left every share season permanently unplayed, which is not
-    /// cosmetic: the season chips showed no progress, and anything resolving
-    /// "which season is the viewer on" over the season containers always answered
-    /// "the first unwatched one" — Season 1 — however far into the show they were.
-    ///
-    /// Two round trips regardless of season count: one query for the series'
-    /// episode identities, one batched record lookup.
-    ///
-    /// Note the store keeps a bounded history
-    /// (`ShareWatchStore.maximumRecordCount`), so a very old, very large library
-    /// can have episode records evicted. That makes a completed season
-    /// under-report as partly watched — never the reverse, which is the safe
-    /// direction: the viewer is offered an episode they have seen rather than
-    /// being told a show is finished when it is not.
-    func stampSeasons(_ seasons: [MediaItem], seriesKey: String) async -> [MediaItem] {
-        guard !seasons.isEmpty else { return seasons }
-        let identities = await catalog().episodeWatchIdentities(seriesKey: seriesKey)
-        guard !identities.isEmpty else { return seasons }
-
-        let records = await watchStore.records(for: Set(identities.map(\.fileID)))
-
-        // season → logical episode → the records of every file backing it
-        var bySeason: [Int: [String: [ShareWatchStore.Record]]] = [:]
-        for identity in identities {
-            var episodes = bySeason[identity.season] ?? [:]
-            var found = episodes[identity.logicalKey] ?? []
-            if let record = records[identity.fileID] { found.append(record) }
-            episodes[identity.logicalKey] = found
-            bySeason[identity.season] = episodes
+    /// Containers derive their state from indexed episode files, never a
+    /// synthetic container record. One identity query and record batch per show,
+    /// even when the page includes all its seasons. Evicted records conservatively
+    /// count as unwatched under the store's existing bounded-history policy.
+    private func stampContainers(
+        _ items: [MediaItem], keepingActiveRewatches: Bool = false
+    ) async -> [MediaItem] {
+        guard usesCatalogClassification else { return items }
+        var indicesBySeries: [String: [Int]] = [:]
+        for index in items.indices {
+            let item = items[index]
+            let key: String?
+            switch item.kind {
+            case .series:
+                key = ShareCatalogID.seriesKey(forSeriesID: item.id)
+            case .season:
+                key = ShareCatalogID.seasonComponents(forSeasonID: item.id)?.seriesKey
+            default:
+                key = nil
+            }
+            if let key { indicesBySeries[key, default: []].append(index) }
         }
-
-        return seasons.map { season in
-            guard let number = season.seasonNumber,
-                  let episodes = bySeason[number],
-                  !episodes.isEmpty
-            else { return season }
-
-            return Self.stampedContainer(season, episodes: Array(episodes.values))
+        guard !indicesBySeries.isEmpty else { return items }
+        let catalog = await self.catalog()
+        var result = items
+        for (key, indices) in indicesBySeries {
+            let identities = await catalog.episodeWatchIdentities(seriesKey: key)
+            let records = await watchStore.records(for: Set(identities.map(\.fileID)))
+            var bySeason: [Int: [String: [ShareWatchStore.Record]]] = [:]
+            for identity in identities {
+                bySeason[identity.season, default: [:]][identity.logicalKey, default: []]
+                    += records[identity.fileID].map { [$0] } ?? []
+            }
+            for index in indices {
+                let item = items[index]
+                let episodes: [[ShareWatchStore.Record]]
+                if item.kind == .season,
+                   let scope = ShareCatalogID.seasonComponents(forSeasonID: item.id) {
+                    episodes = bySeason[scope.season].map { Array($0.values) } ?? []
+                } else {
+                    episodes = bySeason.values.flatMap { $0.values }
+                }
+                result[index] = Self.stampedContainer(
+                    item, episodes: episodes, keepingActiveRewatches: keepingActiveRewatches
+                )
+            }
         }
+        return result
     }
 
     /// Indexed local reads only, for the bounded Home candidate window. All
     /// share transports use the same profile/account-scoped watch store.
     func stampRecentlyAdded(_ items: [MediaItem]) async throws -> [MediaItem] {
-        let catalog = await self.catalog()
         var result = items
         for index in result.indices {
             try Task.checkCancellation()
-            let item = result[index]
-            guard item.kind == .series,
-                  let key = ShareCatalogID.seriesKey(forSeriesID: item.id) else { continue }
-            let identities = await catalog.episodeWatchIdentities(seriesKey: key)
-            let records = await watchStore.records(for: Set(identities.map(\.fileID)))
-            var episodes: [String: [ShareWatchStore.Record]] = [:]
-            for identity in identities {
-                let episode = "\(identity.season):\(identity.logicalKey)"
-                episodes[episode, default: []] += records[identity.fileID].map { [$0] } ?? []
-            }
-            result[index] = Self.stampedContainer(
-                item, episodes: Array(episodes.values), keepingActiveRewatches: true
-            )
+            guard result[index].kind == .series else { continue }
+            result[index] = await stampContainers([result[index]], keepingActiveRewatches: true)[0]
         }
         try Task.checkCancellation()
         return result
@@ -175,13 +197,12 @@ struct ShareWatchStateService: Sendable {
         guard let record else { return item }
         var copy = item
         copy.isPlayed = record.played
+        copy.hasBeenPlayed = record.played || item.hasBeenPlayed
         copy.resumePosition = (!record.played && record.position > 1) ? record.position : nil
         copy.lastPlayedAt = record.updatedAt
-        // Carry the learned duration onto the item (a share item has no runtime
-        // until it's played once) and derive the played fraction the Continue
-        // Watching / poster progress bar renders. Only in-progress records get a
-        // fraction — a finished (played) or unstarted item shows no bar.
-        if let duration = record.duration, duration > 0 {
+        if let duration = record.duration, duration.isFinite, duration > 0 {
+            // A canonical watch record can outlive the file. Keep catalog
+            // runtime when present and retain the UI fallback for untimed cards.
             if copy.runtime == nil { copy.runtime = duration }
             if !record.played, record.position > 1 {
                 copy.playedPercentage = min(max(record.position / duration, 0), 1)
@@ -276,7 +297,10 @@ struct ShareWatchStateService: Sendable {
         switch event {
         case .progress, .pause, .stop:
             let id = await watchItemID(for: progress.itemID)
-            await watchStore.setResume(progress.positionSeconds, itemID: id, capturedAt: Date(), duration: progress.durationSeconds)
+            await watchStore.setResume(
+                progress.positionSeconds, itemID: id, capturedAt: Date(),
+                duration: progress.durationSeconds, measuredFileRevision: progress.measuredFileRevision
+            )
         case .start, .unpause:
             break
         }
@@ -284,11 +308,28 @@ struct ShareWatchStateService: Sendable {
 
     func setPlayed(_ played: Bool, itemID: String, capturedAt: Date) async {
         guard await mayPersistWatchState(for: itemID) else { return }
+        if usesCatalogClassification {
+            let season = ShareCatalogID.seasonComponents(forSeasonID: itemID)
+            if let key = ShareCatalogID.seriesKey(forSeriesID: itemID) ?? season?.seriesKey {
+                let identities = await catalog().episodeWatchIdentities(seriesKey: key)
+                let files = identities.filter { season == nil || $0.season == season?.season }.map(\.fileID)
+                await watchStore.setPlayed(played, itemIDs: files, capturedAt: capturedAt)
+                return
+            }
+        }
         await watchStore.setPlayed(played, itemID: await watchItemID(for: itemID), capturedAt: capturedAt)
     }
 
     func setResumePosition(_ seconds: TimeInterval, itemID: String, capturedAt: Date) async {
         guard await mayPersistWatchState(for: itemID) else { return }
+        if seconds == 0, usesCatalogClassification,
+           ShareCatalogID.seriesKey(forSeriesID: itemID) != nil
+            || ShareCatalogID.seasonComponents(forSeasonID: itemID) != nil {
+            // The outbox follows a played write with a resume clear. The episode
+            // batch already cleared progress; containers have no independent resume.
+            PlozzLog.playback.debug("share.clearResume container already handled by episode watch state")
+            return
+        }
         await watchStore.setResume(seconds, itemID: await watchItemID(for: itemID), capturedAt: capturedAt)
     }
 

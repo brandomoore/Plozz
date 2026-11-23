@@ -257,7 +257,9 @@ struct PresentationHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--upcoming-capture-fixture") {
+            if ProcessInfo.processInfo.arguments.contains("--tracker-history-import-fixture") {
+                TrackerHistoryImportFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--upcoming-capture-fixture") {
                 UpcomingCaptureFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--detail-selection-fixture") {
                 DetailSelectionFixture()

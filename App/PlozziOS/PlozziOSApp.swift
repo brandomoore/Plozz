@@ -58,7 +58,9 @@ struct PlozziOSApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if launchPrepared {
+                if !ReleaseChannelLaunch.shared.isReady {
+                    ProgressView()
+                } else if launchPrepared {
                     PlozziOSRootView()
                 } else {
                     ICloudSetupUnavailableView {

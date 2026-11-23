@@ -580,8 +580,7 @@ final class SettingsInteractionTests: XCTestCase {
     func testSettingsSearchRevealsNestedSubtitleAndCardControls() {
         for (query, id) in [
             ("theme", "theme"),
-            ("make subtitles bigger", "subtitle-size"), ("show progress bars", "progress-bars"),
-            ("remember subtitles per series", "subtitle-remember")
+            ("make subtitles bigger", "subtitle-size"), ("show progress bars", "progress-bars")
         ] {
             launchNavigation(directPresentation: true)
             app.buttons["fixture-open-settings"].tap()
@@ -601,20 +600,45 @@ final class SettingsInteractionTests: XCTestCase {
                     format: "label == %@ OR label BEGINSWITH %@", "Appearance", "Appearance,"
                 )).firstMatch
             case "subtitle-size": target = app.staticTexts["Text Size"].firstMatch
-            case "subtitle-remember": target = app.switches["Remember subtitles per series"].firstMatch
             default: target = app.switches["progress-bars-toggle"].firstMatch
             }
             XCTAssertTrue(target.waitForExistence(timeout: 5), app.debugDescription)
             XCTAssertTrue(target.isHittable, "Reveal \(id) without a manual scroll.")
-            if id == "subtitle-remember" {
-                XCTAssertGreaterThanOrEqual(target.frame.minY, app.navigationBars["Playback"].frame.maxY)
-                XCTAssertLessThanOrEqual(target.frame.maxY, app.frame.maxY)
-            }
             capture("settings-search-\(id)")
             if id == "theme" {
                 target.tap()
                 XCTAssertTrue(app.buttons["Light"].waitForExistence(timeout: 3),
                               "The highlighted picker must still accept taps.")
+            }
+            app.terminate()
+        }
+    }
+
+    func testSettingsSearchOpensRelocatedPlaybackPreferences() {
+        for (label, id, title) in [
+            ("Chapters", "player-tab-chapters", "Player tabs"),
+            ("Remember subtitles per series", "subtitle-remember", "Subtitles"),
+            ("Sync watch state across servers", "cross-server-watch-sync", "Trackers")
+        ] {
+            launch(settingsRoot: true)
+            let field = app.searchFields.firstMatch
+            if !field.waitForExistence(timeout: 2) { app.buttons["Search"].tap() }
+            field.tap()
+            field.typeText(label)
+            let result = app.buttons["settings-search-result-\(id)"]
+            XCTAssertTrue(result.waitForExistence(timeout: 5))
+            result.tap()
+            let page = app.navigationBars[title]
+            let target = app.switches[id == "cross-server-watch-sync" ? id : label].firstMatch
+            XCTAssertTrue(page.waitForExistence(timeout: 5))
+            XCTAssertTrue(target.wait(for: \.isHittable, toEqual: true, timeout: 5))
+            XCTAssertGreaterThanOrEqual(target.frame.minY, page.frame.maxY)
+            XCTAssertLessThanOrEqual(target.frame.maxY, app.frame.maxY)
+            if id == "cross-server-watch-sync" {
+                let description = app.staticTexts["Keep watched status and playback progress in sync."]
+                XCTAssertTrue(description.exists)
+                XCTAssertGreaterThanOrEqual(description.frame.minY, target.frame.maxY)
+                capture("cross-server-watch-sync")
             }
             app.terminate()
         }
@@ -1221,14 +1245,72 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertFalse(app.buttons["Micro"].exists)
     }
 
-    func testTrackersHideUnreleasedWetrakr() {
-        openSettingsPage("Trackers")
-        let wetrakr = NSPredicate(format: "label CONTAINS[c] %@", "WeTrakr")
-        for _ in 0..<3 {
-            XCTAssertEqual(app.buttons.matching(wetrakr).count, 0, app.debugDescription)
-            XCTAssertEqual(app.staticTexts.matching(wetrakr).count, 0, app.debugDescription)
-            app.collectionViews.firstMatch.swipeUp()
+    func testConfiguredTrackersShowEveryInteriorDivider() throws {
+        app.launchEnvironment["WETRAKR_CLIENT_ID"] = "fixture"
+        openSettingsPage("Trackers", verifyTitleLayout: false)
+        let ids = ["trakt", "simkl", "wetrakr", "anilist", "mal", "publicmetadb"]
+        let rows = ids.map { app.buttons["settings-page-\($0)"] }
+        for row in rows { XCTAssertTrue(row.waitForExistence(timeout: 3), row.identifier) }
+        let screenshot = app.screenshot()
+        capture("configured-tracker-list")
+        let scale = CGFloat(try XCTUnwrap(screenshot.image.cgImage).width) / app.frame.width
+        for (upper, lower) in zip(rows, rows.dropFirst()) {
+            let middle = (upper.frame.maxY + lower.frame.minY) / 2
+            let x = upper.frame.midX
+            func sample(_ y: CGFloat) throws -> [UInt8] {
+                try backgroundColor(screenshot, in: CGRect(x: x, y: y, width: 12, height: 1 / scale))
+            }
+            let fill = try sample(middle - 5)
+            let contrasts = try (-6...6).map { offset in
+                let color = try sample(((middle * scale).rounded() + CGFloat(offset)) / scale)
+                return zip(color, fill).map { abs(Int($0) - Int($1)) }.max() ?? 0
+            }
+            XCTAssertGreaterThan(contrasts.max() ?? 0, 5, "Missing divider between \(upper.label) and \(lower.label)")
         }
+    }
+
+    func testTrackersOpenNamedAccountPagesAndReturnToOneList() {
+        openSettingsPage("Trackers")
+        XCTAssertFalse(app.buttons["settings-page-wetrakr"].exists)
+        XCTAssertFalse(app.buttons["settings-page-lastfm"].exists)
+        XCTAssertFalse(app.buttons["publicmetadb.pair"].exists, "The index has links, not account controls.")
+        for (id, title) in [("trakt", "Trakt"), ("simkl", "Simkl"), ("anilist", "AniList"),
+                            ("mal", "MyAnimeList"), ("publicmetadb", "PublicMetaDB")] {
+            let row = app.buttons["settings-page-\(id)"]
+            reveal(row)
+            row.tap()
+            let bar = app.navigationBars[title]
+            XCTAssertTrue(bar.waitForExistence(timeout: 5), app.debugDescription)
+            if id == "publicmetadb" {
+                XCTAssertTrue(app.buttons["publicmetadb.pair"].waitForExistence(timeout: 5))
+            } else {
+                XCTAssertFalse(app.buttons["publicmetadb.pair"].exists)
+            }
+            bar.buttons["BackButton"].tap()
+            XCTAssertTrue(app.navigationBars["Trackers"].waitForExistence(timeout: 5))
+        }
+    }
+
+    func testTrackerSearchOpensAccountControlWithoutVisitingIndex() {
+        launchNavigation(directPresentation: true)
+        app.buttons["fixture-open-settings"].tap()
+        let field = app.searchFields.firstMatch
+        if !field.waitForExistence(timeout: 2) { app.buttons["Search"].tap() }
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("PublicMetaDB API key")
+        let result = app.buttons["settings-search-result-publicmetadb-account"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        result.tap()
+        let bar = app.navigationBars["PublicMetaDB"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5))
+        let connect = app.buttons["publicmetadb.pair"]
+        XCTAssertTrue(connect.waitForExistence(timeout: 5))
+        XCTAssertTrue(connect.isHittable, "The connection prerequisite must be visible without scrolling.")
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            bar.buttons["BackButton"].tap()
+        }
+        XCTAssertTrue(result.waitForExistence(timeout: 5), "Search must not add Trackers to the back stack.")
     }
 
     func testRootOrganizationMatchesAcrossAdaptiveLayouts() {
@@ -2104,28 +2186,78 @@ final class SettingsInteractionTests: XCTestCase {
         openSettingsPage("Playback")
         let backward = button("Skip backward")
         let forward = button("Skip forward")
-        let rewind = button("Resume rewind")
-        reveal(backward)
-        let forwardBefore = forward.label
+        let rewind = button("Rewind on resume")
+        reveal(rewind, fullyVisible: true)
         let rewindBefore = rewind.label
+        reveal(backward, fullyVisible: true)
+        let forwardBefore = forward.label
         backward.tap()
         let five = seconds(5)
         XCTAssertTrue(app.buttons[five].waitForExistence(timeout: 3))
         app.buttons[five].tap()
         XCTAssertTrue(backward.staticTexts[five].exists)
         XCTAssertEqual(forward.label, forwardBefore)
-        XCTAssertEqual(rewind.label, rewindBefore)
+        reveal(forward, fullyVisible: true)
         forward.tap()
         let sixty = seconds(60)
         app.buttons[sixty].tap()
         XCTAssertTrue(forward.staticTexts[sixty].exists)
         XCTAssertTrue(backward.staticTexts[five].exists)
+        reveal(rewind, towardTop: true, fullyVisible: true)
+        XCTAssertEqual(rewind.label, rewindBefore)
         rewind.tap()
         let two = seconds(2)
         XCTAssertTrue(app.buttons[two].waitForExistence(timeout: 3))
         app.buttons[two].tap()
         XCTAssertTrue(rewind.staticTexts[two].exists)
+        reveal(forward, fullyVisible: true)
         XCTAssertTrue(forward.staticTexts[sixty].exists)
+    }
+
+    func testPlaybackGroupsPlayerSeekingAndAudioControlsByTopic() {
+        launchPlayback("--custom-zoom-fixture")
+        XCTAssertTrue(app.switches["Autoplay next episode"].isHittable)
+        capturePlaybackScreen("Playback-first-screen")
+        let seek = app.switches["Seek without pausing"].firstMatch
+        reveal(seek, fullyVisible: true)
+        let seeking = app.cells.containing(.switch, identifier: "Seek without pausing").firstMatch
+        XCTAssertTrue(seeking.staticTexts["Skip backward"].exists)
+        XCTAssertTrue(seeking.staticTexts["Skip forward"].exists)
+
+        let tabs = app.buttons["playback-player-tabs"]
+        reveal(tabs, fullyVisible: true)
+        let player = app.cells.containing(.button, identifier: "default-video-zoom").firstMatch
+        XCTAssertTrue(player.sliders["custom-video-zoom"].waitForExistence(timeout: 5))
+        XCTAssertTrue(player.staticTexts["Auto-hide controls"].exists)
+        XCTAssertTrue(player.switches["playback-volume-brightness-gestures"].exists)
+        XCTAssertEqual(player.buttons["playback-orientation"].exists, UIDevice.current.userInterfaceIdiom == .phone)
+
+        XCTAssertTrue(player.buttons["playback-player-tabs"].exists)
+        XCTAssertFalse(app.switches["Chapters"].exists)
+        tabs.tap()
+        let child = app.navigationBars["Player tabs"]
+        XCTAssertTrue(child.waitForExistence(timeout: 5))
+        for title in ["Chapters", "Cast", "Episodes", "Playlist", "Continue Watching"] {
+            XCTAssertTrue(app.switches[title].isHittable, title)
+        }
+        capturePlaybackScreen("Playback-player-tabs")
+        child.buttons.firstMatch.tap()
+        XCTAssertTrue(tabs.wait(for: \.isHittable, toEqual: true, timeout: 5))
+
+        let background = app.switches["Background Audio"].firstMatch
+        reveal(background, fullyVisible: true)
+        let audio = app.cells.containing(.switch, identifier: "Background Audio").firstMatch
+        XCTAssertTrue(audio.switches["Remember audio language per series"].exists)
+        XCTAssertTrue(audio.switches["lossless-surround-toggle"].exists)
+        XCTAssertTrue(audio.switches["Identify songs"].exists)
+        XCTAssertFalse(audio.switches["Remember subtitles per series"].exists)
+    }
+
+    private func capturePlaybackScreen(_ name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     func testPlayerOrientationChoicesStayInPlaybackSettingsOnIPhone() {
@@ -2137,8 +2269,8 @@ final class SettingsInteractionTests: XCTestCase {
         }
         let orientation = app.buttons["playback-orientation"]
         reveal(orientation)
-        XCTAssertTrue(orientation.staticTexts["Landscape"].exists)
-        for choice in ["Landscape", "Portrait", "Auto"] {
+        XCTAssertTrue(orientation.staticTexts["Landscape auto"].exists)
+        for choice in ["Landscape left", "Landscape right", "Portrait", "Follow device orientation", "Landscape auto"] {
             orientation.tap()
             XCTAssertTrue(app.buttons[choice].waitForExistence(timeout: 3))
             app.buttons[choice].tap()
@@ -2149,7 +2281,8 @@ final class SettingsInteractionTests: XCTestCase {
     func testPlaybackSettingsKeepTechnicalDetailsInAdvanced() {
         launchPlayback()
         let advanced = app.buttons["streaming-advanced"]
-        XCTAssertTrue(advanced.waitForExistence(timeout: 5), app.debugDescription)
+        let local = button("Local network")
+        reveal(local, fullyVisible: true)
         XCTAssertFalse(app.buttons["streaming-codec"].exists)
         XCTAssertFalse(app.switches["streaming-force-transcoding"].exists)
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(
@@ -2160,7 +2293,6 @@ final class SettingsInteractionTests: XCTestCase {
         )).firstMatch.exists)
         capture("playback-simplified")
 
-        let local = button("Local network")
         XCTAssertTrue(local.isEnabled)
         XCTAssertFalse(app.buttons["streaming-unavailable"].exists)
         XCTAssertFalse(app.staticTexts["Unavailable for network shares."].exists)
@@ -2170,6 +2302,7 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Playback"].exists, "Quality menus must not open Advanced.")
         let remoteBefore = button("Remote Wi-Fi / Ethernet").label
         let cellularBefore = button("Cellular").label
+        reveal(advanced, fullyVisible: true)
         advanced.tap()
         XCTAssertTrue(app.navigationBars["Streaming quality"].waitForExistence(timeout: 5))
         for prefix in ["Lets the server", "Uses your server", "Silo currently", "Limits apply"] {
@@ -2205,6 +2338,7 @@ final class SettingsInteractionTests: XCTestCase {
     func testCustomQualityEditorCancelKeepsTheExistingQuality() {
         launchPlayback()
         let local = button("Local network")
+        reveal(local, fullyVisible: true)
         let original = local.value as? String
         local.tap()
         app.buttons["Custom…"].tap()
@@ -2232,7 +2366,7 @@ final class SettingsInteractionTests: XCTestCase {
     func testStreamingQualityMakesShareOnlyRestrictionExplicit() {
         launchPlayback("--share-only-playback")
         let quality = app.buttons["streaming-unavailable"]
-        XCTAssertTrue(quality.waitForExistence(timeout: 5))
+        reveal(quality, fullyVisible: true)
         XCTAssertFalse(quality.isEnabled)
         XCTAssertTrue(quality.staticTexts["Original quality"].exists)
         XCTAssertTrue(app.staticTexts["Unavailable for network shares."].exists)
@@ -2240,8 +2374,10 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertFalse(button("Remote Wi-Fi / Ethernet").exists)
         XCTAssertFalse(button("Cellular").exists)
         XCTAssertFalse(app.buttons["streaming-advanced"].exists)
-        XCTAssertTrue(app.buttons["playback-read-ahead"].isEnabled)
         capture("playback-quality-unavailable")
+        let buffer = app.buttons["playback-read-ahead"]
+        reveal(buffer, towardTop: true, fullyVisible: true)
+        XCTAssertTrue(buffer.isEnabled)
     }
 
     func testUnavailableStreamingQualityExplanationRemainsVisibleAtAccessibilitySize() {
@@ -2258,7 +2394,9 @@ final class SettingsInteractionTests: XCTestCase {
 
     func testPlaybackAdvancedKeepsUnsupportedCodecsDisabled() {
         launchPlayback("--silo-streaming")
-        app.buttons["streaming-advanced"].tap()
+        let advanced = app.buttons["streaming-advanced"]
+        reveal(advanced, fullyVisible: true)
+        advanced.tap()
         let codec = app.buttons["streaming-codec"]
         XCTAssertTrue(codec.waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(
@@ -2299,7 +2437,10 @@ final class SettingsInteractionTests: XCTestCase {
 
     func testPlaybackPrivacyDisclosureRemainsVisibleAtAccessibilitySize() throws {
         launchPlayback("--large-text")
-        let copy = "Looks up missing markers on IntroDB and TheIntroDB using IMDb/TMDB IDs."
+        let customize = app.buttons["skip-marker-settings"]
+        reveal(customize, fullyVisible: true)
+        customize.tap()
+        let copy = "From IntroDB and TheIntroDB when your server has none. Shares IMDb/TMDB IDs."
         let disclosure = app.staticTexts[copy]
         reveal(disclosure, fullyVisible: true)
         XCTAssertTrue(disclosure.isHittable)
@@ -2319,6 +2460,11 @@ final class SettingsInteractionTests: XCTestCase {
         launchPlayback("--share-only-playback", "--reset-read-ahead")
         let picker = app.buttons["playback-read-ahead"]
         reveal(picker, fullyVisible: true)
+        let video = app.cells.containing(.button, identifier: "playback-read-ahead").firstMatch
+        for id in ["video-upscaling", "live-playback-buffer"] {
+            XCTAssertTrue(video.buttons[id].exists, "\(id) belongs in the same Video section as the video buffer.")
+        }
+        XCTAssertFalse(video.buttons["default-video-zoom"].exists, "Zoom is a Player preference.")
         XCTAssertTrue(picker.staticTexts["Automatic"].exists)
         for choice in ["1 minute", "5 minutes", "10 minutes", "Maximum available", "Automatic", "10 minutes"] {
             picker.tap()
@@ -2344,9 +2490,7 @@ final class SettingsInteractionTests: XCTestCase {
         XCTAssertTrue(app.buttons["Maximum available"].waitForExistence(timeout: 3))
         app.buttons["Maximum available"].tap()
         XCTAssertTrue(picker.staticTexts["Maximum available"].exists)
-        let explanation = app.staticTexts[
-            "Larger buffers use more storage. Unavailable with Apple’s native player."
-        ]
+        let explanation = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Larger buffers")).firstMatch
         reveal(explanation, fullyVisible: true)
         XCTAssertTrue(explanation.isHittable)
         capture("read-ahead-maximum-large-text")
@@ -2441,7 +2585,7 @@ final class SettingsInteractionTests: XCTestCase {
     }
 
     func testSpoilerSwitchesAndMenuRemainIndependent() {
-        openSettingsPage("Spoiler Protection", verifyTitleLayout: false)
+        openSettingsPage("All screens", verifyTitleLayout: false)
         let protection = app.switches["Protect unwatched episodes"]
         let ratings = app.switches["Hide ratings until watched"]
         let treatment = button("Thumbnail treatment")
@@ -3046,7 +3190,7 @@ final class SettingsInteractionTests: XCTestCase {
     ) {
         launch(settingsRoot: true, arguments: arguments)
         let parent: String? = switch title {
-        case "Customize Home", "Customize Libraries", "App navigation", "Detail Page", "Spoiler Protection":
+        case "Customize Home", "Customize Libraries", "App navigation", "Detail Page", "All screens":
             "Screens & Navigation"
         case "Music player", "Circadian Mode": "Appearance"
         default: nil

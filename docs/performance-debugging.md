@@ -231,8 +231,9 @@ crash-reporting consent and limited to one warning per category per reporter
 lifecycle. These measurements diagnose an unavailable input; a screenshot of the
 generic import error alone cannot establish which limit was reached.
 
-Automatic IPTV setup reports are enabled for **all TestFlight builds**, including
-hotfixes, and local Debug verification, never App Store builds. There is no
+Automatic IPTV setup reports are available on recognized **TestFlight installs**,
+including hotfixes, and local Debug builds, never on an App Store install of the
+same binary. See [install channel detection](release-versioning.md). There is no
 build-number allowlist or automatic build-based expiry; retire the investigation
 explicitly once the setup issues are resolved. This is not a remote configuration
 switch. They reuse Share Crash Reports (including explicit opt-outs), not the

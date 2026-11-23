@@ -26,9 +26,12 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
     private let applyTrakt: @Sendable (TraktScrobbleIntent) async throws -> Void
     private let applySimkl: @Sendable (TraktScrobbleIntent) async throws -> Void
     private let currentWetrakrAccountIdentity: @Sendable () -> String?
+    private let capturedTrackerAdmissions: @Sendable () -> [String: String]?
+    public var trackerPlaybackAdmissions: [String: String]? { capturedTrackerAdmissions() }
     private let applyWetrakr: @Sendable (TraktScrobbleIntent, Date, String, String) async throws -> Void
     private let applyAniList: @Sendable (TraktScrobbleIntent) async throws -> Void
     private let applyMAL: @Sendable (TraktScrobbleIntent) async throws -> Void
+    private let applyTrackerPlayback: @Sendable (TrackerPlaybackDelivery) async throws -> Void
     /// The **active** `Account.id`s (the set the identity index warms and that
     /// Home/Search fan out over), so episode twin expansion knows which *other*
     /// servers to probe and identity expansion can conclude once they're all
@@ -86,9 +89,13 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
         applySimkl: @escaping @Sendable (TraktScrobbleIntent) async throws -> Void,
         applyAniList: @escaping @Sendable (TraktScrobbleIntent) async throws -> Void,
         applyMAL: @escaping @Sendable (TraktScrobbleIntent) async throws -> Void,
+        trackerPlaybackAdmissions: @escaping @Sendable () -> [String: String]? = { nil },
         wetrakrAccountIdentity: @escaping @Sendable () -> String? = { nil },
         applyWetrakr: @escaping @Sendable (TraktScrobbleIntent, Date, String, String) async throws -> Void = { _, _, _, _ in
             throw AppError.invalidResponse
+        },
+        applyTrackerPlayback: @escaping @Sendable (TrackerPlaybackDelivery) async throws -> Void = { _ in
+            throw TrackerPlaybackDeliveryError.unsupportedIdentity
         },
         allAccountIDs: @escaping @Sendable () async -> [String] = { [] },
         indexedSeriesSources: @escaping @Sendable (MediaItem) -> [IndexedSource] = { _ in [] },
@@ -103,9 +110,11 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
         self.applyTrakt = applyTrakt
         self.applySimkl = applySimkl
         self.currentWetrakrAccountIdentity = wetrakrAccountIdentity
+        self.capturedTrackerAdmissions = trackerPlaybackAdmissions
         self.applyWetrakr = applyWetrakr
         self.applyAniList = applyAniList
         self.applyMAL = applyMAL
+        self.applyTrackerPlayback = applyTrackerPlayback
         self.allAccountIDs = allAccountIDs
         self.indexedSeriesSources = indexedSeriesSources
         self.indexedSources = indexedSources
@@ -116,6 +125,13 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
 
     public func requireServerScope(_ scope: WatchMutationServerScope) async throws {
         try await validateServerScope(scope)
+    }
+
+    public func reportTrackerPlayback(_ delivery: TrackerPlaybackDelivery) async throws {
+        guard await isActive() else { throw WatchMutationServerScopeError.unavailable }
+        try await validateServerScope(delivery.serverScope)
+        try await WatchMutationDeliveryAuthorization.check()
+        try await applyTrackerPlayback(delivery)
     }
 
     public func serverPlaybackSupersedes(_ mutation: WatchMutation, on target: WatchMutationTarget) async throws -> Bool {
@@ -171,6 +187,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
             FanoutDiagnostics.emit("write.setPlayed acct=\(target.accountID) item=\(target.itemID) -> provider=\(provider.kind.rawValue) NOT WatchStateProviding (no write, treated success)")
             return
         }
+        try await WatchMutationDeliveryAuthorization.checkSourcePrecondition(provider: provider, target: target)
         try await watch.setPlayed(played, itemID: target.itemID, kind: kind, capturedAt: capturedAt)
     }
 
@@ -200,6 +217,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
             FanoutDiagnostics.emit("write.setResume acct=\(target.accountID) item=\(target.itemID) -> provider=\(provider.kind.rawValue) NOT ResumeStateWriting (no write, treated success)")
             return
         }
+        try await WatchMutationDeliveryAuthorization.checkSourcePrecondition(provider: provider, target: target)
         // Clearing a position and dismissing a title are different acts, and the
         // difference is worth having: a server that can dismiss hides the title
         // while REMEMBERING where the viewer got to, so playing it again a year
@@ -229,7 +247,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
     public func scrobbleTrakt(_ intent: TraktScrobbleIntent) async throws {
         guard await isActive() else { throw AppError.serverUnreachable }
         try await WatchMutationDeliveryAuthorization.check()
-        try await applyTrakt(intent)
+        try await intent.withCapturedAdmissions { try await applyTrakt(intent) }
     }
 
     public func scrobbleTrakt(_ intent: TraktScrobbleIntent, source: WatchMutationTarget?) async throws {
@@ -277,7 +295,7 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
     public func scrobbleSimkl(_ intent: TraktScrobbleIntent) async throws {
         guard await isActive() else { throw AppError.serverUnreachable }
         try await WatchMutationDeliveryAuthorization.check()
-        try await applySimkl(intent)
+        try await intent.withCapturedAdmissions { try await applySimkl(intent) }
     }
 
     public var wetrakrAccountIdentity: String? { currentWetrakrAccountIdentity() }
@@ -288,19 +306,19 @@ public struct AppShellWatchMutationApplier: WatchMutationAuthorizationEnforcing 
     ) async throws {
         guard await isActive() else { throw AppError.serverUnreachable }
         try await WatchMutationDeliveryAuthorization.check()
-        try await applyWetrakr(intent, capturedAt, idempotencyKey, expectedAccountIdentity)
+        try await intent.withCapturedAdmissions { try await applyWetrakr(intent, capturedAt, idempotencyKey, expectedAccountIdentity) }
     }
 
     public func scrobbleAniList(_ intent: TraktScrobbleIntent) async throws {
         guard await isActive() else { throw AppError.serverUnreachable }
         try await WatchMutationDeliveryAuthorization.check()
-        try await applyAniList(intent)
+        try await intent.withCapturedAdmissions { try await applyAniList(intent) }
     }
 
     public func scrobbleMAL(_ intent: TraktScrobbleIntent) async throws {
         guard await isActive() else { throw AppError.serverUnreachable }
         try await WatchMutationDeliveryAuthorization.check()
-        try await applyMAL(intent)
+        try await intent.withCapturedAdmissions { try await applyMAL(intent) }
     }
 
     /// Resolves the cross-server twins for a queued mutation. Branches on the

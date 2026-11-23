@@ -80,7 +80,11 @@ struct FocusHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--ass-sync-capture") {
+            if ProcessInfo.processInfo.arguments.contains("--tracker-history-import-fixture") {
+                TrackerHistoryImportFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--publicmetadb-pairing-fixture") {
+                PublicMetaDBPairingFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--ass-sync-capture") {
                 ASSSyncCapture().ignoresSafeArea()
             } else if ProcessInfo.processInfo.arguments.contains("--upcoming-capture-fixture") {
                 UpcomingCaptureFixture()
@@ -200,6 +204,8 @@ struct FocusHostApp: App {
                 }
             } else if ProcessInfo.processInfo.arguments.contains("--live-jellyfin-home") {
                 LiveJellyfinHomeFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--native-sidebar-detail-fixture") {
+                NativeSidebarDetailFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--production-home-fixture") {
                 ProductionHomeFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--native-artwork-focus-comparison") {

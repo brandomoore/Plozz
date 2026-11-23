@@ -14,17 +14,23 @@ public enum WetrakrConnectionPhase: Equatable, Sendable {
 
 @MainActor
 @Observable
-public final class WetrakrService {
+public final class WetrakrService: TrackerHistorySyncReading {
+    public let historySyncTrackerID = "wetrakr"
+    public private(set) var historySyncNamespace: String?
+    @ObservationIgnored public var onHistorySyncDisconnect: (@MainActor () throws -> Void)?
     public private(set) var phase: WetrakrConnectionPhase
     public private(set) var codeLifetime: TimeInterval = 600
     @ObservationIgnored public let watchlistDestination: WetrakrWatchlistDestination?
     @ObservationIgnored public var onConnectionChanged: (@MainActor @Sendable () -> Void)?
+    @ObservationIgnored public var makeHistoryExport: (@MainActor () throws -> TrackerHistoryExportSession<WetrakrHistoryExportTarget>)?
     @ObservationIgnored private let config: WetrakrConfig
     @ObservationIgnored private let client: WetrakrClient
     @ObservationIgnored private let auth: WetrakrAuthService
     @ObservationIgnored private let tokenStore: any TrackerTokenStoring
+    @ObservationIgnored private let activation: TrackerActivationStore
     @ObservationIgnored private let coordinator: TrackerTokenCoordinator
     @ObservationIgnored private let generation = TrackerProfileGeneration()
+    @ObservationIgnored private let historyReader = WetrakrHistoryReader()
     @ObservationIgnored var connectTask: Task<Void, Never>?
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private var activeNamespace: String??
@@ -48,20 +54,23 @@ public final class WetrakrService {
 
     public convenience init(
         config: WetrakrConfig, http: any HTTPClient = URLSessionHTTPClient(),
-        tokenStore: any TrackerTokenStoring
+        tokenStore: any TrackerTokenStoring, namespace: String? = nil
     ) {
-        self.init(config: config, http: http, tokenStore: tokenStore, coordinator: .shared)
+        self.init(config: config, http: http, tokenStore: tokenStore, coordinator: .shared, namespace: namespace)
     }
 
     init(
         config: WetrakrConfig, http: any HTTPClient,
         tokenStore: any TrackerTokenStoring, coordinator: TrackerTokenCoordinator,
+        namespace: String? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
+        historySyncNamespace = namespace
         self.config = config
         self.client = WetrakrClient(config: config, http: http)
         self.auth = WetrakrAuthService(client: client)
         self.tokenStore = tokenStore
+        self.activation = TrackerActivationStore(historySyncTrackerID, namespace: namespace)
         self.coordinator = coordinator
         self.now = now
         phase = config.isConfigured ? .unknown : .unavailable
@@ -72,21 +81,105 @@ public final class WetrakrService {
 
     public var isConfigured: Bool { config.isConfigured }
 
+    public var historyActivationID: String? { activation.observedAdmission(for: historySyncIdentity?.connectionID) }
+    public var trackerEnabled: Bool { historyActivationID != nil }
+    public func setTrackerEnabled(_ enabled: Bool) throws {
+        try activation.setEnabled(enabled, for: historySyncIdentity?.connectionID)
+    }
+
     public var accountIdentity: String? {
         config.isConfigured ? tokenStore.load()?.stableAccountIdentity : nil
     }
 
+    public var historyConnectionID: String? {
+        guard case .connected = phase, let tokens = tokenStore.load() else { return nil }
+        return "\(tokenStore.coordinationID)#\(generation.current)#\(tokens.stableAccountIdentity)"
+    }
+
+    public var historySyncIdentity: TrackerHistorySyncIdentity? {
+        guard case .connected = phase, let tokens = tokenStore.load() else { return nil }
+        return .init(trackerID: historySyncTrackerID, connectionID: tokens.stableAccountIdentity)
+    }
+
+    public func historySnapshot(expectedConnectionID: String) async throws -> TrackerHistorySnapshot {
+        let current: @MainActor @Sendable () throws -> Void = { [weak self] in
+            try Task.checkCancellation()
+            guard self?.historyConnectionID == expectedConnectionID else { throw TrackerHistoryError.scopeChanged }
+        }
+        try current()
+        let store = tokenStore.snapshot()
+        guard let access = try await coordinator.accessToken(store: store, auth: auth) else { throw AppError.unauthorized }
+        try current()
+        return try await historyReader.snapshot(
+            client: client, accessToken: access, connectionID: expectedConnectionID,
+            validateScope: { try await current() }
+        )
+    }
+
     public func playbackScrobbler() -> WetrakrScrobbler {
-        WetrakrScrobbler(client: client, tokenStore: tokenStore.snapshot(), coordinator: coordinator)
+        WetrakrScrobbler(client: client, tokenStore: tokenStore.snapshot(), coordinator: coordinator,
+                         activation: activation.snapshot())
+    }
+
+    public func makeHistoryExportSession(
+        source: TrackerServerHistorySource, store: DurableLocalStateStore
+    ) throws -> TrackerHistoryExportSession<WetrakrHistoryExportTarget> {
+        guard let connection = historyConnectionID, let identity = historySyncIdentity,
+              source.scope.profileID == (historySyncNamespace ?? ProfileStore.defaultProfileID) else {
+            throw TrackerHistoryError.scopeChanged
+        }
+        let current: @MainActor @Sendable () throws -> Void = { [weak self] in
+            try Task.checkCancellation()
+            try source.requireCurrent()
+            guard self?.historyConnectionID == connection else { throw TrackerHistoryError.scopeChanged }
+        }
+        let access: @MainActor @Sendable () async throws -> String = { [weak self] in
+            try current()
+            guard let self, let token = try await self.coordinator.accessToken(
+                store: self.tokenStore.snapshot(), auth: self.auth
+            ) else { throw AppError.unauthorized }
+            try current()
+            return token
+        }
+        let validate: @Sendable () async throws -> Void = { try await current() }
+        let adapter = WetrakrHistoryExportAdapter(client: client)
+        return .init(
+            trackerID: historySyncTrackerID, trackerName: "WeTrakr",
+            connectionID: identity.connectionID, snapshotConnectionID: connection,
+            source: source, store: store, preservesWatchDates: true,
+            isConnected: { [weak self] in self?.historyConnectionID == connection },
+            supports: { WetrakrHistoryExportAdapter.supports($0) },
+            readAll: {
+                try await adapter.snapshot(accessToken: access(), connectionID: connection, validateScope: validate)
+            },
+            resolve: {
+                try await adapter.resolve($0, accessToken: access(), validateScope: validate)
+            },
+            readTarget: {
+                try await adapter.state($0, accessToken: access(), validateScope: validate)
+            },
+            write: { [client] target, date, key, authorize in
+                try await client.exportHistory(
+                    target, date: date, idempotencyKey: key, accessToken: access(),
+                    authorize: {
+                        try await validate()
+                        try await authorize()
+                    }, validateScope: validate
+                )
+            }
+        )
     }
 
     public func setActiveProfile(namespace: String?) async {
+        historySyncNamespace = namespace
         if let activeNamespace, activeNamespace == namespace {
             await refreshStatus()
             return
         }
         activeNamespace = .some(namespace)
-        let version = generation.advance { tokenStore.setNamespace(namespace) }
+        let version = generation.advance {
+            activation.setNamespace(namespace) { tokenStore.setNamespace(namespace) }
+        }
         invalidateStatus()
         connectTask?.cancel()
         connectTask = nil
@@ -221,8 +314,10 @@ public final class WetrakrService {
                 guard version == generation.current else { return }
                 tokens.accountIdentity = UUID().uuidString
                 phase = .savingConnection
+                try onHistorySyncDisconnect?()
                 try await coordinator.save(tokens, store: store, context: context)
                 guard version == generation.current else { return }
+                activation.didConnect(tokens.stableAccountIdentity)
                 await watchlistDestination?.clearCache()
                 guard version == generation.current else { return }
                 phase = .connected(username: "WeTrakr")
@@ -270,6 +365,7 @@ public final class WetrakrService {
         connectTask = nil
         let store = tokenStore.snapshot()
         do {
+            try onHistorySyncDisconnect?()
             let tokens = try await coordinator.disconnect(store: store)
             guard version == generation.current else { return }
             await watchlistDestination?.clearCache()
@@ -295,6 +391,11 @@ public final class WetrakrService {
 
     private func show(_ error: Error) {
         publishedScope = nil
+        if (error as? TrackerHistorySyncError) == .revocationFailed {
+            PlozzLog.app.error("WeTrakr history permission revocation failed")
+            phase = .error("Sync is paused. Retry before closing the app.")
+            return
+        }
         if error is CancellationError || (error as? AppError) == .cancelled {
             phase = tokenStore.load() == nil ? .disconnected : .unknown
             return
@@ -356,6 +457,6 @@ public enum WetrakrServiceFactory {
     ) -> WetrakrService {
         let store = tokenStore ?? KeychainTrackerTokenStore(account: "wetrakr.oauth")
         store.setNamespace(namespace)
-        return WetrakrService(config: config, http: http, tokenStore: store)
+        return WetrakrService(config: config, http: http, tokenStore: store, namespace: namespace)
     }
 }

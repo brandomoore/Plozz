@@ -31,6 +31,7 @@ public extension EnvironmentValues {
 
 struct MediaRowRefreshIndicator: View {
     static let size: CGFloat = 44
+    static let headingSpacing: CGFloat = 8
     @Environment(\.mediaRowRefreshStatus) private var status
     @Environment(\.themePalette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

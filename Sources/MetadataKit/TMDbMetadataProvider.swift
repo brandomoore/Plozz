@@ -65,6 +65,48 @@ public struct TMDbMetadataProvider: ArtworkProvider {
 
     public var isEnabled: Bool { access.isEnabled }
 
+    /// Exact catalog evidence, not a playable server item or permission to change its numbering.
+    public func episodeIdentity(seriesID: Int, season: Int, episode: Int) async throws -> MediaItem? {
+        guard seriesID > 0, season >= 0, episode > 0 else { throw AppError.invalidResponse }
+        guard isEnabled else { return nil }
+        try Task.checkCancellation()
+        guard let episodeURL = url("/3/tv/\(seriesID)/season/\(season)/episode/\(episode)?append_to_response=external_ids"),
+              let seriesURL = url("/3/tv/\(seriesID)/external_ids") else { throw AppError.invalidResponse }
+        guard let child = try await detailResponse(EpisodeIdentityResponse.self, url: episodeURL) else { return nil }
+        guard child.id > 0, child.season_number == season, child.episode_number == episode else {
+            throw MetadataDiscoveryHTTPError.invalidResponse
+        }
+        guard let parent = try await detailResponse(IdentityExternalIDs.self, url: seriesURL) else { return nil }
+        guard parent.id == seriesID else { throw MetadataDiscoveryHTTPError.invalidResponse }
+        try Task.checkCancellation()
+        var ids = ["Tmdb": String(child.id), "SeriesTmdb": String(seriesID)]
+        for (prefix, value) in [("", child.external_ids), ("Series", parent)] {
+            if let imdb = value.imdb_id, !imdb.isEmpty { ids[prefix + "Imdb"] = imdb }
+            if let tvdb = value.tvdb_id {
+                guard tvdb > 0 else { throw MetadataDiscoveryHTTPError.invalidResponse }
+                ids[prefix + "Tvdb"] = String(tvdb)
+            }
+        }
+        return MediaItem(
+            id: "tmdb:episode:\(child.id)", title: "", kind: .episode,
+            seasonNumber: season, episodeNumber: episode, episodeOrdering: .tmdb,
+            providerIDs: ids, availability: .unknown, locallyValidatedPlayableSource: false
+        )
+    }
+
+    private struct EpisodeIdentityResponse: Decodable, Sendable {
+        let id: Int
+        let season_number: Int
+        let episode_number: Int
+        let external_ids: IdentityExternalIDs
+    }
+
+    private struct IdentityExternalIDs: Decodable, Sendable {
+        let id: Int?
+        let imdb_id: String?
+        let tvdb_id: Int?
+    }
+
     /// Trailer links from TMDB's documented videos API; no YouTube requests or media extraction.
     public func trailerVideoIDs(for query: MetadataQuery, limit: Int = 6) async throws -> [String] {
         guard isEnabled, limit > 0,

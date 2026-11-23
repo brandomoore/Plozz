@@ -56,6 +56,12 @@ representatives in one grouped catalog query rather than one lookup per movie.
 The earliest member still owns the group projection even when only another
 member has explicit IDs; conflicting IDs remain omitted.
 
+For regular files, NFS listings and stat expose the server's filesystem and file
+IDs, size, and full modification/change timestamps as one catalog change token.
+An unchanged scan can keep a parsed NFO's identity available during foreground
+history comparison. A changed token invalidates that evidence; missing usable
+attributes retain the scan-bound reread. The token is not a playback ETag.
+
 ## Device-wide scan budget
 
 The app's catalog coordinator admits at most two directory scans at once across

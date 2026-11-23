@@ -63,6 +63,23 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
     }
     #if DEBUG
     private(set) var guideDocumentDecodesForTesting = 0
+    var guideSQLWorkForTesting: GuideSQLWorkForTesting {
+        connection?.guideSQLWorkForTesting ?? .init()
+    }
+
+    struct GuideSQLWorkForTesting: Sendable {
+        var documentSelects = 0
+        var documentBytesCopied = 0
+        var lastDocumentBytesCopied = 0
+        var programmeSelects = 0
+    }
+
+    private var beforeMemoProgrammeSnapshotForTesting: (@Sendable () throws -> Void)?
+
+    func setBeforeMemoProgrammeSnapshotForTesting(_ body: @escaping @Sendable () throws -> Void) {
+        beforeMemoProgrammeSnapshotForTesting = body
+    }
+
     private var guideImportProgressForTesting: (@Sendable (Int) throws -> Void)?
 
     func setGuideImportProgressForTesting(_ observer: (@Sendable (Int) throws -> Void)?) {
@@ -79,13 +96,35 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
         let preferredLanguage: String?
     }
 
-    private var openedGuide: (binding: String?, payload: Data, document: GuideDocument)?
-    private var openedSpellings: [String: [String]]?
+    private struct GuideMemoKey: Equatable {
+        let sourceID: String
+        let binding: String?
+        let connectionID: UUID
+        let dataVersion: Double
+    }
+
+    private struct GuideMemo {
+        let key: GuideMemoKey
+        let document: GuideDocument
+        var spellings: [String: [String]]?
+    }
+
+    private var openedGuide: GuideMemo?
 
     private struct GuideDocument: Codable {
         let guide: LiveTVGuideImport?
         let settings: GuideSettings?
         var index: LiveTVGuideIndexState? = nil
+
+        var reusableState: LiveTVGuideIndexState? {
+            guard var state = index else { return nil }
+            // Rebuild old zero-row indexes once to establish the source count.
+            if let guide, guide.sourceProgramCount == nil, guide.programCount == 0 { return nil }
+            if guide?.sourceProgramCount == 0, let checkedAt = state.cacheMetadata?.checkedAt {
+                state.expiresAt = min(state.expiresAt, checkedAt.addingTimeInterval(XMLTVGuideCacheMetadata.emptyResultMaximumAge))
+            }
+            return state
+        }
     }
 
     public init(
@@ -107,6 +146,7 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
         do {
             try connection?.close()
             connection = nil
+            openedGuide = nil
             portableRevisionState = nil
             portableRevision = UUID()
         } catch {
@@ -490,9 +530,9 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
                 guard let binding,
                       try storedSourceBinding(kind: "guide", sourceID: guide.id, database: db) == binding,
                       let row = try db.rows(
-                        "SELECT payload FROM documents WHERE kind='guide' AND source=?", [.text(guide.id)]
+                        LiveTVCacheConnection.guideDocumentSelect, [.text(guide.id)]
                       ).first else { return nil }
-                let document = try open(row.blob(0), as: GuideDocument.self, binding: binding)
+                let document = try openGuideDocument(row.blob(0), binding: binding)
                 guard let summary = document.guide else { return nil }
                 return PortableGuideCandidate(
                     localID: guide.id,
@@ -593,9 +633,9 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
         let binding = try sourceBinding(kind: "guide", sourceID: sourceID, url: sourceURL)
         guard try storedSourceBinding(kind: "guide", sourceID: sourceID, database: db) == binding else { return nil }
         guard let data = try db.rows(
-            "SELECT payload FROM documents WHERE kind='guide' AND source=?", [.text(sourceID)]
+            LiveTVCacheConnection.guideDocumentSelect, [.text(sourceID)]
         ).first?.blob(0) else { return nil }
-        let document = try open(data, as: GuideDocument.self, binding: binding)
+        let document = try openGuideDocument(data, binding: binding)
         let overrides = try mappingOverrides().filter { $0.value.guideSourceID == sourceID }
             .mapValues(\.guideChannelID)
         let settings = try guideSettings(
@@ -609,14 +649,18 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
     public func removeDownloadedGuide(sourceID: String, sourceURL: URL? = nil) throws {
         let db = try database()
         let binding = try sourceBinding(kind: "guide", sourceID: sourceID, url: sourceURL)
-        guard try storedSourceBinding(kind: "guide", sourceID: sourceID, database: db) == binding else { return }
+        try db.checkFileIdentity()
         try db.transaction {
+            try db.checkFileIdentity()
+            guard try storedSourceBinding(kind: "guide", sourceID: sourceID, database: db) == binding else { return }
             try db.execute("DELETE FROM program_search WHERE source=?", [.text(sourceID)])
             try db.execute("DELETE FROM programs WHERE source=?", [.text(sourceID)])
             try db.execute("DELETE FROM guide_channels WHERE source=?", [.text(sourceID)])
             try db.execute("DELETE FROM documents WHERE kind='guide' AND source=?", [.text(sourceID)])
             try writeSourceBinding(nil, kind: "guide", sourceID: sourceID, database: db)
+            try db.checkFileIdentity()
         }
+        openedGuide = nil
     }
 
     /// XML parser calls the sink synchronously inside this actor's transaction.
@@ -640,7 +684,9 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
         )
         var result: LiveTVGuideImport?
         var insertedProgramCount = 0
+        try db.checkFileIdentity()
         try db.transaction {
+            try db.checkFileIdentity()
             try db.execute("DELETE FROM program_search WHERE source=?", [.text(sourceID)])
             try db.execute("DELETE FROM programs WHERE source=?", [.text(sourceID)])
             try db.execute("DELETE FROM guide_channels WHERE source=?", [.text(sourceID)])
@@ -697,7 +743,9 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
                  .text(UUID().uuidString), .real(now.timeIntervalSince1970)]
             )
             try writeSourceBinding(binding, kind: "guide", sourceID: sourceID, database: db)
+            try db.checkFileIdentity()
         }
+        openedGuide = nil
         guard let result else { throw LiveTVCacheError.invalidRecord }
         // A source may finish loading after sync already attempted its pending
         // mappings. Retry from the durable journal, not from a stale importer.
@@ -709,79 +757,106 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
 
     func guideIndexState(sourceID: String, sourceURL: URL) throws -> LiveTVGuideIndexState? {
         let db = try database()
-        guard let document = try guideIndexDocument(sourceID: sourceID, sourceURL: sourceURL, database: db),
-              var state = document.index else { return nil }
-        // Rebuild old zero-row indexes once to establish the source count; a
-        // digest-only revalidation would leave that distinction unknown.
-        if let guide = document.guide, guide.sourceProgramCount == nil, guide.programCount == 0 { return nil }
-        if document.guide?.sourceProgramCount == 0, let checkedAt = state.cacheMetadata?.checkedAt {
-            state.expiresAt = min(state.expiresAt, checkedAt.addingTimeInterval(XMLTVGuideCacheMetadata.emptyResultMaximumAge))
+        let binding = try sourceBinding(kind: "guide", sourceID: sourceID, url: sourceURL)
+        try db.checkFileIdentity()
+        let key = try guideMemoKey(sourceID: sourceID, binding: binding, database: db)
+        // Metadata alone is linearized at the version sample; there is no second SQL
+        // snapshot to reconcile. The programme read checks eligibility again.
+        if let openedGuide, openedGuide.key == key {
+            try db.checkFileIdentity()
+            return openedGuide.document.reusableState
         }
-        return state
+        return try readGuideSnapshot(key: key, database: db) { $0?.document.reusableState }
     }
 
-    private func guideIndexDocument(
-        sourceID: String, sourceURL: URL, database db: LiveTVCacheConnection
+    private func guideMemoKey(
+        sourceID: String, binding: String?, database db: LiveTVCacheConnection
+    ) throws -> GuideMemoKey {
+        try Task.checkCancellation()
+        return try GuideMemoKey(sourceID: sourceID, binding: binding, connectionID: db.id, dataVersion: db.dataVersion())
+    }
+
+    private func readGuideDocument(
+        sourceID: String, binding: String?, database db: LiveTVCacheConnection
     ) throws -> GuideDocument? {
-        let binding = try sourceBinding(kind: "guide", sourceID: sourceID, url: sourceURL)
         guard try storedSourceBinding(kind: "guide", sourceID: sourceID, database: db) == binding,
-              let row = try db.rows(
-                "SELECT payload FROM documents WHERE kind='guide' AND source=?", [.text(sourceID)]
-              ).first else { return nil }
-        // Every guide lookup reads this document. Unsealing and decoding thousands of
-        // stations costs far more than the lookup, so an unchanged payload is decoded once.
-        let payload = try row.blob(0)
-        if let openedGuide, openedGuide.binding == binding, openedGuide.payload == payload {
-            return openedGuide.document
+              let row = try db.rows(LiveTVCacheConnection.guideDocumentSelect, [.text(sourceID)]).first else {
+            return nil
         }
-        let document = try open(payload, as: GuideDocument.self, binding: binding)
-        #if DEBUG
-        guideDocumentDecodesForTesting += 1
-        #endif
-        openedGuide = (binding, payload, document)
-        openedSpellings = nil
-        return document
+        return try openGuideDocument(row.blob(0), binding: binding)
+    }
+
+    private func readGuideSnapshot<T>(
+        key: GuideMemoKey, database db: LiveTVCacheConnection, _ body: (inout GuideMemo?) throws -> T
+    ) throws -> T {
+        openedGuide = nil
+        var candidate: GuideMemo?
+        let result = try db.readTransaction {
+            if let document = try readGuideDocument(sourceID: key.sourceID, binding: key.binding, database: db) {
+                candidate = GuideMemo(key: key, document: document)
+            }
+            return try body(&candidate)
+        }
+        // A concurrent commit doesn't invalidate a coherent cold snapshot, but
+        // we can't associate what it read with the *new* token.
+        let version = try db.dataVersion()
+        try db.checkFileIdentity()
+        try Task.checkCancellation()
+        if version == key.dataVersion { openedGuide = candidate }
+        return result
     }
 
     func revalidateGuideIndex(
-        sourceID: String, sourceURL: URL, state: LiveTVGuideIndexState
+        sourceID: String, sourceURL: URL, previous: LiveTVGuideIndexState, state: LiveTVGuideIndexState
     ) throws {
         let db = try database()
+        let binding = try sourceBinding(kind: "guide", sourceID: sourceID, url: sourceURL)
+        try db.checkFileIdentity()
         try db.transaction {
-            guard var document = try guideIndexDocument(sourceID: sourceID, sourceURL: sourceURL, database: db),
-                  document.index?.generation == state.generation else { throw LiveTVGuideIndexError.generationChanged }
-            document.index = state
-            let binding = try sourceBinding(kind: "guide", sourceID: sourceID, url: sourceURL)
+            try db.checkFileIdentity()
+            // The HTTP request ran outside this transaction. Even the same
+            // generation may have acquired different validators in the meantime.
+            guard var document = try readGuideDocument(sourceID: sourceID, binding: binding, database: db),
+                  document.reusableState == previous else { throw LiveTVGuideIndexError.generationChanged }
+            document.index?.expiresAt = state.expiresAt
+            document.index?.cacheMetadata = state.cacheMetadata
             try db.execute(
                 "UPDATE documents SET payload=?,refreshed=? WHERE kind='guide' AND source=?",
                 [.blob(try seal(document, binding: binding)), .real(Date().timeIntervalSince1970), .text(sourceID)]
             )
+            try db.checkFileIdentity()
         }
+        openedGuide = nil
     }
 
     func indexedAccountPrograms(
         sourceID: String, sourceURL: URL, generation: UUID,
-        channels: [LiveTVPrototypeChannel], range: DateInterval, trustsGuideIDs: Bool = false
+        channels: [LiveTVPrototypeChannel], range: DateInterval, trustsGuideIDs: Bool = false,
+        expectedState: LiveTVGuideIndexState? = nil,
+        isEligible: (@Sendable (LiveTVGuideIndexState) -> Bool)? = nil
     ) throws -> [LiveTVPrototypeProgram] {
         guard channels.count <= 2_000, range.duration > 0, range.duration <= 172_800 else {
             throw LiveTVCacheError.invalidRange
         }
-        if channels.isEmpty { return [] }
         let db = try database()
-        return try db.readTransaction {
-            guard let document = try guideIndexDocument(sourceID: sourceID, sourceURL: sourceURL, database: db),
-                  let state = document.index, state.generation == generation,
-                  state.contains(range), let guide = document.guide else {
+        let binding = try sourceBinding(kind: "guide", sourceID: sourceID, url: sourceURL)
+        try db.checkFileIdentity()
+        let key = try guideMemoKey(sourceID: sourceID, binding: binding, database: db)
+        func read(_ memo: inout GuideMemo?) throws -> [LiveTVPrototypeProgram] {
+            guard let document = memo?.document, let state = document.reusableState,
+                  state.generation == generation, state.contains(range), let guide = document.guide,
+                  expectedState == nil || expectedState == state || expectedState == document.index,
+                  isEligible?(state) != false else {
                 throw LiveTVGuideIndexError.generationChanged
             }
-            if trustsGuideIDs, openedSpellings == nil {
-                openedSpellings = LiveTVGuideMatcher.spellings(of: guide.guideChannels)
+            if channels.isEmpty { return [] }
+            if trustsGuideIDs, memo?.spellings == nil {
+                memo?.spellings = LiveTVGuideMatcher.spellings(of: guide.guideChannels)
             }
             let matches = LiveTVGuideMatcher(provider: LiveTVGuideSource.provider(for: sourceURL)).match(
                 channels: channels, guideChannels: guide.guideChannels, trustsGuideIDs: trustsGuideIDs,
-                spellings: trustsGuideIDs ? openedSpellings : nil
+                spellings: trustsGuideIDs ? memo?.spellings : nil
             )
-            let binding = try sourceBinding(kind: "guide", sourceID: sourceID, url: sourceURL)
             var result: [LiveTVPrototypeProgram] = []
             var textBytes = 0
             // With trusted IDs a channel may be offered several spellings of its station.
@@ -797,7 +872,7 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
                 var offset = 0
                 while true {
                     let rows = try db.rows(
-                        "SELECT payload FROM programs WHERE source=? AND channel=? AND start<? AND end>? ORDER BY start,id LIMIT 512 OFFSET ?",
+                        LiveTVCacheConnection.accountProgrammePageSelect,
                         [.text(sourceID), .text(guideID), .real(range.end.timeIntervalSince1970),
                          .real(range.start.timeIntervalSince1970), .integer(offset)]
                     )
@@ -828,6 +903,30 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
             }
             return result.sorted { ($0.start, $0.id) < ($1.start, $1.id) }
         }
+
+        if let memo = openedGuide, memo.key == key {
+            var candidate: GuideMemo? = memo
+            #if DEBUG
+            let beforeSnapshot = beforeMemoProgrammeSnapshotForTesting
+            beforeMemoProgrammeSnapshotForTesting = nil
+            try beforeSnapshot?()
+            #endif
+            let speculative = Result { try db.readTransaction { try read(&candidate) } }
+            // BEGIN is deferred in WAL mode, and data_version inside a read
+            // transaction can describe its pinned snapshot. Sample after COMMIT
+            // (or rollback) to catch a writer between memo lookup and first read.
+            let version = try db.dataVersion()
+            try db.checkFileIdentity()
+            try Task.checkCancellation()
+            if version == key.dataVersion {
+                let result = try speculative.get()
+                openedGuide = candidate
+                return result
+            }
+            let changedKey = GuideMemoKey(sourceID: sourceID, binding: binding, connectionID: db.id, dataVersion: version)
+            return try readGuideSnapshot(key: changedKey, database: db, read)
+        }
+        return try readGuideSnapshot(key: key, database: db, read)
     }
 
     public func programs(
@@ -1081,6 +1180,14 @@ public actor LiveTVIndexedCache: ApplicationStorageParticipant {
         return data
     }
 
+    private func openGuideDocument(_ data: Data, binding: String?) throws -> GuideDocument {
+        let document = try open(data, as: GuideDocument.self, binding: binding)
+        #if DEBUG
+        guideDocumentDecodesForTesting += 1
+        #endif
+        return document
+    }
+
     private func open<T: Decodable>(_ data: Data, as type: T.Type, binding: String? = nil) throws -> T {
         let authenticatedData = Data((scope + (binding.map { "\u{1f}" + $0 } ?? "")).utf8)
         let plaintext = try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: key(), authenticating: authenticatedData)
@@ -1191,6 +1298,15 @@ private struct LiveTVCacheRow {
 
 /// Follows the existing CatalogConnection ownership pattern without importing ProviderShare.
 private final class LiveTVCacheConnection {
+    static let guideDocumentSelect = "SELECT payload FROM documents WHERE kind='guide' AND source=?"
+    static let accountProgrammePageSelect =
+        "SELECT payload FROM programs WHERE source=? AND channel=? AND start<? AND end>? ORDER BY start,id LIMIT 512 OFFSET ?"
+
+    #if DEBUG
+    private(set) var guideSQLWorkForTesting = LiveTVIndexedCache.GuideSQLWorkForTesting()
+    #endif
+
+    let id = UUID()
     private var handle: OpaquePointer?
     private var statements: [String: OpaquePointer] = [:]
     private let url: URL
@@ -1213,6 +1329,13 @@ private final class LiveTVCacheConnection {
         sqlite3_busy_timeout(handle, 5_000)
         installProgressHandler()
         do {
+            openedFile = try LiveTVSyncFileRevision.read(url)
+            var moved: Int32 = 0
+            let fileControl = sqlite3_file_control(handle, "main", SQLITE_FCNTL_HAS_MOVED, &moved)
+            guard (fileControl == SQLITE_OK && moved == 0) || fileControl == SQLITE_NOTFOUND else {
+                throw LiveTVCacheError.unavailable
+            }
+            try checkFileIdentity()
             try execute("PRAGMA journal_mode=WAL")
             try execute("PRAGMA synchronous=FULL")
             try execute("PRAGMA foreign_keys=ON")
@@ -1231,7 +1354,7 @@ private final class LiveTVCacheConnection {
                 try execute("CREATE VIRTUAL TABLE IF NOT EXISTS program_search USING fts5(source UNINDEXED,id UNINDEXED,title,tokenize='unicode61')")
                 try execute("PRAGMA user_version=1")
             }
-            openedFile = try LiveTVSyncFileRevision.read(url)
+            try checkFileIdentity()
         } catch {
             for statement in statements.values { sqlite3_finalize(statement) }
             statements.removeAll()
@@ -1261,6 +1384,11 @@ private final class LiveTVCacheConnection {
     func checkFileIdentity() throws {
         guard let openedFile, let current = try LiveTVSyncFileRevision.read(url),
               current.isSameFile(as: openedFile) else { throw LiveTVCacheError.unavailable }
+    }
+
+    func dataVersion() throws -> Double {
+        guard let row = try rows("PRAGMA main.data_version").first else { throw LiveTVCacheError.unavailable }
+        return try row.real(0)
     }
 
     func transaction(_ body: () throws -> Void) throws {
@@ -1302,6 +1430,11 @@ private final class LiveTVCacheConnection {
         try storageLifecycle.checkAccess()
         let statement = try prepare(sql, bindings)
         defer { sqlite3_reset(statement); sqlite3_clear_bindings(statement) }
+        #if DEBUG
+        let isGuideDocument = sql == Self.guideDocumentSelect
+        if isGuideDocument { guideSQLWorkForTesting.documentSelects += 1 }
+        if sql == Self.accountProgrammePageSelect { guideSQLWorkForTesting.programmeSelects += 1 }
+        #endif
         var result: [LiveTVCacheRow] = []
         while true {
             let code = sqlite3_step(statement)
@@ -1320,6 +1453,12 @@ private final class LiveTVCacheConnection {
                         throw LiveTVCacheError.invalidRecord
                     }
                     values.append(.blob(Data(bytes: bytes, count: count)))
+                    #if DEBUG
+                    if isGuideDocument {
+                        guideSQLWorkForTesting.documentBytesCopied += count
+                        guideSQLWorkForTesting.lastDocumentBytesCopied = count
+                    }
+                    #endif
                 case SQLITE_FLOAT, SQLITE_INTEGER:
                     values.append(.real(sqlite3_column_double(statement, column)))
                 default:

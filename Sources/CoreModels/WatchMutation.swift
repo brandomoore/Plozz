@@ -46,6 +46,9 @@ public struct EpisodeOrigin: Codable, Hashable, Sendable {
 /// neutral (no `TraktService` types) so it can live in the outbox file and be
 /// replayed at launch by whatever scrobbler the app wires in.
 public struct TraktScrobbleIntent: Codable, Hashable, Sendable {
+    /// nil only for pre-activation outboxes/legacy adapters. An empty map
+    /// explicitly admits no destinations, including after restart or re-enable.
+    package var trackerAdmissions: [String: String]?
     public var kind: MediaItemKind
     public var title: String?  // l10n:content — media title
     /// Series title for episodes, so anime trackers can title-search brand-new
@@ -77,6 +80,10 @@ public struct TraktScrobbleIntent: Codable, Hashable, Sendable {
         self.episodeNumber = episodeNumber
         self.providerIDs = providerIDs
         self.progress = progress
+    }
+
+    package func withCapturedAdmissions<T>(_ deliver: () async throws -> T) async rethrows -> T {
+        try await TrackerActivationStore.$capturedAdmissions.withValue(trackerAdmissions, operation: deliver)
     }
 }
 
@@ -532,10 +539,37 @@ public struct WatchMutation: Codable, Hashable, Sendable, Identifiable {
     ) -> WatchMutation {
         var result = self
         let previous = authorization
-        result.authorization = WatchMutationAuthorization {
-            if let previous, !(await previous.allows()) { return false }
-            return await validator()
-        }
+        result.authorization = WatchMutationAuthorization(
+            validator: {
+                if let previous, !(await previous.allows()) { return false }
+                return await validator()
+            },
+            sourcePrecondition: { provider, target in
+                try await previous?.requireSourcePrecondition(provider: provider, target: target)
+            }
+        )
+        return result
+    }
+
+    public func requiringAuthorization<Owner: AnyObject & Sendable>(
+        owner: Owner,
+        sourcePrecondition: @escaping @Sendable (Owner, any MediaProvider, WatchMutationTarget) async throws -> Void,
+        validator: @escaping @Sendable (Owner) async -> Bool
+    ) -> WatchMutation {
+        var result = self
+        let previous = authorization
+        result.authorization = WatchMutationAuthorization(
+            validator: { [weak owner] in
+                guard let owner else { return false }
+                if let previous, !(await previous.allows()) { return false }
+                return await validator(owner)
+            },
+            sourcePrecondition: { [weak owner] provider, target in
+                guard let owner else { throw WatchMutationAuthorizationError.denied }
+                try await previous?.requireSourcePrecondition(provider: provider, target: target)
+                try await sourcePrecondition(owner, provider, target)
+            }
+        )
         return result
     }
 

@@ -1,59 +1,125 @@
 #if os(iOS)
 import AniListService
+import CoreModels
 import CoreUI
 import MALService
 import SimklService
 import SwiftUI
 import TraktService
 import WetrakrService
+import FeatureSettings
 
 struct PlozziOSTrackerSettingsView: View {
     let appModel: PlozziOSAppModel
+    @State private var destination: SettingsSearchPage?
+
+    private var pages: [SettingsSearchPage] {
+        let pages: [SettingsSearchPage] = [.trakt, .simkl, .wetrakr, .anilist, .myanimelist, .publicMetaDB]
+        return pages.filter { $0 != .wetrakr || appModel.wetrakrService.isConfigured }
+    }
 
     var body: some View {
+        @Bindable var playback = appModel.settings.playback
         List {
-            Text(
-                """
-                Connections are stored separately for each Plozz profile. \
-                Playback progress is sent to every connected tracker.
-                """
-            )
-            .font(.footnote)
-            .plozzForeground(.secondary)
-            .listRowInsets(EdgeInsets())
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
-
-            SettingsSectionGroup(verbatim: "Trakt") {
-                TraktSettingsContent(service: appModel.traktService)
-            }
-
-            SettingsSectionGroup(verbatim: "Simkl") {
-                SimklSettingsContent(service: appModel.simklService)
-            }
-            if appModel.wetrakrService.isConfigured {
-                SettingsSectionGroup(verbatim: "WeTrakr") {
-                    WetrakrSettingsContent(service: appModel.wetrakrService)
+            SettingsSectionGroup {
+                SettingsDescribedControl {
+                    Toggle("Sync across servers", isOn: $playback.settings.syncWatchAcrossServers)
+                        .accessibilityIdentifier("cross-server-watch-sync")
+                        .settingsSearchAnchor("cross-server-watch-sync")
+                } description: {
+                    Text("Keep watched status and playback progress in sync.")
                 }
             }
+            .settingsSearchGroup(["cross-server-watch-sync"])
 
-            SettingsSectionGroup(verbatim: "AniList") {
-                AniListSettingsContent(service: appModel.anilistService)
-            }
-
-            SettingsSectionGroup(verbatim: "MyAnimeList") {
-                MALSettingsContent(service: appModel.malService)
+            SettingsSectionGroup {
+                ForEach(pages, id: \.self) { page in
+                    if let account = page.trackerAccount {
+                        Button { destination = page } label: {
+                            SettingsDisclosureLabel { Text(verbatim: account.name) }
+                        }
+                        .settingsActionRow()
+                        .accessibilityIdentifier("settings-page-\(account.rowID)")
+                    }
+                }
+            } footer: {
+                Text("Connect a tracker to report what you watch in this profile. Syncing history to media shares is optional.")
             }
         }
         .settingsPageSurface()
         .navigationTitle("Trackers")
-        .task {
-            async let trakt: Void = appModel.traktService.refreshStatus()
-            async let simkl: Void = appModel.simklService.refreshStatus()
-            async let wetrakr: Void = appModel.wetrakrService.refreshStatus()
-            async let anilist: Void = appModel.anilistService.refreshStatus()
-            async let mal: Void = appModel.malService.refreshStatus()
-            _ = await (trakt, simkl, wetrakr, anilist, mal)
+        .navigationDestination(item: $destination) { page in
+            PlozziOSTrackerAccountPage(page: page, appModel: appModel)
+        }
+    }
+}
+
+struct PlozziOSTrackerAccountPage: View {
+    let page: SettingsSearchPage
+    let appModel: PlozziOSAppModel
+
+    var body: some View {
+        if let account = page.trackerAccount, page != .lastfm,
+           page != .wetrakr || appModel.wetrakrService.isConfigured {
+            List {
+                accountSection
+                    .settingsSearchGroup(SettingsSearchCatalog.targets(on: page))
+            }
+            .settingsPageSurface()
+            .navigationTitle(Text(verbatim: account.name))
+            .task { await refreshStatus() }
+        } else {
+            ContentUnavailableView("Setting unavailable", systemImage: "magnifyingglass")
+        }
+    }
+
+    @ViewBuilder private var accountSection: some View {
+        if page == .publicMetaDB {
+            PublicMetaDBSettingsContent(
+                service: appModel.publicMetaDBService, makeHistoryImport: appModel.makePublicMetaDBHistoryImport
+            )
+        } else {
+            switch page {
+            case .trakt:
+                account(appModel.traktService, appModel.makeTraktHistoryImport) { TraktSettingsContent(service: appModel.traktService) }
+            case .simkl:
+                account(appModel.simklService, appModel.makeSimklHistoryImport) { SimklSettingsContent(service: appModel.simklService) }
+            case .wetrakr:
+                account(appModel.wetrakrService, appModel.makeWetrakrHistoryImport) { WetrakrSettingsContent(service: appModel.wetrakrService) }
+            case .anilist:
+                account(appModel.anilistService, appModel.makeAniListHistoryImport) { AniListSettingsContent(service: appModel.anilistService) }
+            case .myanimelist:
+                account(appModel.malService, appModel.makeMALHistoryImport) { MALSettingsContent(service: appModel.malService) }
+            default: EmptyView()
+            }
+        }
+    }
+
+    @ViewBuilder private func account<Content: View>(
+        _ tracker: any TrackerHistorySyncReading, _ makeSession: @escaping @MainActor () -> TrackerHistoryImportSession,
+        @ViewBuilder credentials: () -> Content
+    ) -> some View {
+        if let connection = tracker.historyConnectionID {
+            TrackerAccountSettingsRows(tracker: tracker, makeSession: makeSession).id(connection)
+        }
+        SettingsSectionGroup("Account", content: credentials)
+    }
+
+    private func refreshStatus() async {
+        // Returning from a browser or reopening a page must not abandon a pending code.
+        switch page {
+        case .trakt: await appModel.traktService.refreshStatus()
+        case .wetrakr: await appModel.wetrakrService.refreshStatus()
+        case .simkl:
+            if case .connecting = appModel.simklService.phase { return }
+            await appModel.simklService.refreshStatus()
+        case .anilist:
+            if case .awaitingToken = appModel.anilistService.phase { return }
+            await appModel.anilistService.refreshStatus()
+        case .myanimelist:
+            if case .awaitingAuthorizationCode = appModel.malService.phase { return }
+            await appModel.malService.refreshStatus()
+        default: break
         }
     }
 }
@@ -125,6 +191,7 @@ private struct TraktSettingsContent: View {
                 Task { await service.refreshStatus() }
             }
             .settingsActionRow()
+            .trackerConnectionSearchTarget(.trakt)
             if canReconnect {
                 Button("Reconnect Trakt") { confirmingReconnect = true }
                     .settingsActionRow()
@@ -135,6 +202,7 @@ private struct TraktSettingsContent: View {
     private var connectButton: some View {
         Button("Connect Trakt", action: connect)
             .settingsActionRow()
+            .trackerConnectionSearchTarget(.trakt)
     }
 
     private func connect() {
@@ -163,7 +231,9 @@ private struct WetrakrSettingsContent: View {
             } message: {
                 Text("Try Retry first. Reconnecting replaces this profile's WeTrakr connection on all your Plozz devices. Other profiles are not affected.")
             }
-            .onChange(of: service.phase) { _, _ in confirmingReconnect = false }
+            .onChange(of: service.phase) { _, _ in
+                confirmingReconnect = false
+            }
     }
 
     @ViewBuilder private var content: some View {
@@ -175,6 +245,7 @@ private struct WetrakrSettingsContent: View {
         case .disconnected:
             Button("Connect WeTrakr", action: connect)
                 .settingsActionRow()
+                .trackerConnectionSearchTarget(.wetrakr)
         case .authorizing:
             loadingStatus
             Button("Cancel", role: .cancel) { service.cancelConnect() }
@@ -199,10 +270,12 @@ private struct WetrakrSettingsContent: View {
             errorStatus(message)
             Button("Connect WeTrakr", action: connect)
                 .settingsActionRow()
+                .trackerConnectionSearchTarget(.wetrakr)
         case let .syncError(message, canReconnect):
             errorStatus(message)
             Button("Retry") { Task { await service.refreshStatus() } }
                 .settingsActionRow()
+                .trackerConnectionSearchTarget(.wetrakr)
             if canReconnect {
                 Button("Reconnect WeTrakr") { confirmingReconnect = true }
                     .settingsActionRow()
@@ -264,6 +337,7 @@ private struct SimklSettingsContent: View {
             service.connect()
         }
         .settingsActionRow()
+        .trackerConnectionSearchTarget(.simkl)
     }
 }
 
@@ -306,6 +380,7 @@ private struct AniListSettingsContent: View {
             service.connect()
         }
         .settingsActionRow()
+        .trackerConnectionSearchTarget(.anilist)
     }
 
     @ViewBuilder
@@ -388,6 +463,14 @@ private struct MALSettingsContent: View {
             service.connect()
         }
         .settingsActionRow()
+        .trackerConnectionSearchTarget(.myanimelist)
+    }
+}
+
+private extension View {
+    /// When account controls don't exist yet, reveal their connection prerequisite instead.
+    func trackerConnectionSearchTarget(_ page: SettingsSearchPage) -> some View {
+        settingsSearchAnchor("connect-\(page.rawValue)", fallbackFor: SettingsSearchCatalog.targets(on: page))
     }
 }
 
@@ -405,8 +488,7 @@ private var unavailableStatus: some View {
 }
 
 private func connectedStatus(username: String) -> some View {
-    Label("Connected as \(username)", systemImage: "checkmark.circle.fill")
-        .foregroundStyle(.green)
+    TrackerConnectedStatus(username: username)
 }
 
 private func errorStatus(_ message: LocalizedStringResource) -> some View {

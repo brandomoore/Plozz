@@ -1400,6 +1400,8 @@ is no prior in-memory history to migrate on the first updated launch.
   of filter saves; legacy saved values alone do not count as a choice. Inactive,
   backgrounded, or unauthorized profiles cannot answer the prompt. iPhone and iPad
   retain tap-to-play and do not show this prompt.
+  The loading and populated guide share one view so loading the first channel
+  after unlock doesn't clear its focus and cancel an authorized preview.
   On Apple TV, Back from a guide row focuses Search without scrolling the list.
   Back from the controls goes to the
   surrounding app navigation. Holding Select on a channel/program also opens

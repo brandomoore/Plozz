@@ -1,3 +1,4 @@
+import CoreModels
 import Foundation
 
 // MARK: - Stored tokens
@@ -5,9 +6,15 @@ import Foundation
 /// OAuth tokens persisted after a successful Simkl connection.
 public struct SimklTokens: Codable, Sendable, Equatable {
     public var accessToken: String
+    public var accountIdentity: String?
 
-    public init(accessToken: String) {
+    public init(accessToken: String, accountIdentity: String? = nil) {
         self.accessToken = accessToken
+        self.accountIdentity = accountIdentity
+    }
+
+    public var stableAccountIdentity: String {
+        accountIdentity ?? WatchlistReconciliationIdentity.credential(accessToken)
     }
 }
 
@@ -90,10 +97,12 @@ struct SimklHistoryMovieEntry: Encodable, Equatable {
     var year: Int?
     var ids: SimklIDs
     var watchedAt: String?
+    var isRewatch: Bool?
 
     enum CodingKeys: String, CodingKey {
         case title, year, ids
         case watchedAt = "watched_at"
+        case isRewatch = "is_rewatch"
     }
 }
 
@@ -155,7 +164,7 @@ struct SimklScrobbleEpisodeRef: Encodable, Equatable {
 /// One title in a Simkl list response. Simkl nests the work under `movie`/`show`
 /// alongside per-user fields, so the decoder reaches through to the ids.
 struct SimklListEntry: Decodable, Equatable {
-    struct Title: Decodable, Equatable {
+    struct Title: Decodable, Equatable, Sendable {
         var title: String?   // l10n:content — provider-supplied media title
         var year: Int?
         var ids: SimklResponseIDs?
@@ -176,7 +185,7 @@ struct SimklListEntry: Decodable, Equatable {
 /// The id block Simkl returns. Deliberately separate from the `Encodable`
 /// ``SimklIDs`` the write path sends: reads can carry ids the app never writes,
 /// and a decoding type that must also round-trip is a type that fights both jobs.
-struct SimklResponseIDs: Decodable, Equatable {
+struct SimklResponseIDs: Decodable, Equatable, Sendable {
     var simkl: Int?
     var imdb: String?
     var tmdb: StringOrInt?
@@ -189,7 +198,7 @@ struct SimklResponseIDs: Decodable, Equatable {
 /// Simkl returns numeric ids as either a JSON number or a string depending on
 /// the field and the endpoint. Decoding either keeps one shape out of the rest of
 /// the code.
-struct StringOrInt: Decodable, Equatable {
+struct StringOrInt: Decodable, Equatable, Sendable {
     let value: String
 
     init(from decoder: Decoder) throws {

@@ -1,0 +1,109 @@
+import XCTest
+
+@MainActor
+enum PublicMetaDBLiveNavigation {
+    static func activation(in app: XCUIApplication) -> XCUIElement {
+        app.switches["publicmetadb.enabled"].firstMatch
+    }
+
+    enum Failure: Error {
+        case unavailableControl(String)
+    }
+
+    static func assertSingleListPage(in app: XCUIApplication, expectedRow: String,
+                                     file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(app.staticTexts[expectedRow].waitForExistence(timeout: 45),
+                      "The dedicated account's expected real list response did not appear.", file: file, line: line)
+        XCTAssertFalse(app.buttons["Previous page"].exists, file: file, line: line)
+        XCTAssertFalse(app.buttons["Next page"].exists, file: file, line: line)
+        if expectedRow != "No records" {
+            XCTAssertFalse(app.staticTexts["No records"].exists, file: file, line: line)
+        }
+    }
+
+    static func openSettings(in app: XCUIApplication) throws {
+        if app.buttons["publicmetadb.pair"].exists { return }
+        #if os(tvOS)
+        try openSettingsCategory("integrations", in: app)
+        try select(app.buttons["settings-page-publicmetadb"], moving: .down)
+        #else
+        throw Failure.unavailableControl("Open PublicMetaDB settings before this iOS run.")
+        #endif
+        guard app.buttons["publicmetadb.pair"].waitForExistence(timeout: 5) else {
+            throw Failure.unavailableControl("PublicMetaDB settings")
+        }
+    }
+
+    #if os(tvOS)
+    static func changeActivation(in app: XCUIApplication, from enabled: Bool) throws {
+        let control = activation(in: app)
+        try focus(app.buttons["settings-workspace-back"], moving: .up)
+        try focus(control, moving: .down)
+        guard control.value as? String == (enabled ? "1" : "0") else {
+            throw Failure.unavailableControl("Unexpected tracker state; refusing to toggle.")
+        }
+        XCUIRemote.shared.press(.select)
+        XCTAssertEqual(control.value as? String, enabled ? "0" : "1")
+    }
+
+    static func requirePairingEntry(in app: XCUIApplication) throws {
+        let manual = app.buttons["publicmetadb.pair.manual"]
+        guard manual.waitForExistence(timeout: 5), manual.isEnabled,
+              manual.wait(for: \.hasFocus, toEqual: true, timeout: 5),
+              app.staticTexts["plozz.app/pmdb"].exists,
+              !app.secureTextFields["publicmetadb.key"].exists, !app.keyboards.firstMatch.exists else {
+            throw Failure.unavailableControl("PublicMetaDB QR entry")
+        }
+    }
+
+    static func openSettingsCategory(_ identifier: String, in app: XCUIApplication) throws {
+        if app.buttons["live-tv-preview-disable"].exists {
+            try select(app.buttons["live-tv-preview-disable"], moving: .right)
+        }
+        let category = app.buttons["settings-section-\(identifier)"]
+        if !category.exists || !category.isEnabled {
+            let settings = app.buttons["Settings"]
+            guard settings.waitForExistence(timeout: 30) else {
+                throw Failure.unavailableControl("App Settings navigation")
+            }
+            for _ in 0..<4 {
+                if settings.exists && settings.isEnabled { break }
+                XCUIRemote.shared.press(.menu)
+            }
+            guard settings.exists, settings.isEnabled else {
+                throw Failure.unavailableControl("App navigation did not become available.")
+            }
+            try select(settings, moving: .down)
+        }
+        let direction: XCUIRemote.Button = category.frame.maxY < app.frame.minY ? .up : .down
+        try select(category, moving: direction)
+    }
+
+    static func select(
+        _ target: XCUIElement, moving direction: XCUIRemote.Button, maximumPresses: Int = 24
+    ) throws {
+        try focus(target, moving: direction, maximumPresses: maximumPresses)
+        XCUIRemote.shared.press(.select)
+    }
+
+    static func focus(
+        _ target: XCUIElement, moving direction: XCUIRemote.Button, maximumPresses: Int = 24
+    ) throws {
+        for _ in 0..<maximumPresses {
+            if hasFocus(target) { break }
+            XCUIRemote.shared.press(direction)
+        }
+        guard hasFocus(target) else {
+            throw Failure.unavailableControl("Required control did not become focused.")
+        }
+    }
+
+    private static func hasFocus(_ target: XCUIElement) -> Bool {
+        guard target.exists, target.isEnabled else { return false }
+        // Settings categories expose their actual native FocusState through selection.
+        if target.identifier.hasPrefix("settings-section-"), target.isSelected { return true }
+        return target.hasFocus || target.descendants(matching: .any)
+            .matching(NSPredicate(format: "hasFocus == true")).firstMatch.exists
+    }
+    #endif
+}

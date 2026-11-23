@@ -1,3 +1,4 @@
+import CoreModels
 import Foundation
 
 // MARK: - Stored session
@@ -8,6 +9,11 @@ import Foundation
 public struct LastFmTokens: Codable, Sendable, Equatable {
     public var sessionKey: String
     public var username: String
+    var accountIdentity: String?
+
+    var stableAccountIdentity: String {
+        accountIdentity ?? WatchlistReconciliationIdentity.credential(sessionKey)
+    }
 
     public init(sessionKey: String, username: String) {
         self.sessionKey = sessionKey

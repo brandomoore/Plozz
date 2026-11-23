@@ -40,6 +40,7 @@ struct SiloPlaybackPlan: Decodable, Sendable {
     struct Subtitle: Decodable, Sendable {
         let track_id: String
         let combined_index: Int
+        let stream_index: Int?
         let source: String
         let codec: String?
         let language: String?
@@ -369,13 +370,23 @@ extension SiloProvider: ProviderHTTPResourceResolving {
             for entry in plan.subtitle.inventory {
                 guard let url = resourceURL(entry.url), entry.delivery != "burn_in_only" else { continue }
                 let source = try locator(url: url, key: "subtitle", purpose: .subtitle)
-                subtitles.append(MediaTrack(
+                var track = MediaTrack(
                     id: entry.combined_index, kind: .subtitle,
                     displayTitle: entry.label ?? entry.language ?? entry.codec ?? String(entry.combined_index),
                     sourceTitle: entry.label, language: entry.language, codec: entry.codec,
                     isDefault: plan.subtitle.track_id == entry.track_id && plan.subtitle.mode == "render",
                     isForced: entry.forced, isHearingImpaired: entry.hearing_impaired,
-                    deliverySource: .authenticatedHTTP(source), isExternal: true))
+                    deliverySource: .authenticatedHTTP(source), isExternal: true)
+                track.providerSubtitleID = entry.track_id.isEmpty ? nil : entry.track_id
+                if delivery == .directFile, entry.source == "embedded" {
+                    let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+                    let index = entry.stream_index ?? query?.first { $0.name == "embedded_stream_index" }?.value.flatMap(Int.init)
+                    if let index, index >= 0 {
+                        track.originalSubtitleStreamIndex = index
+                        track.isExternal = false
+                    }
+                }
+                subtitles.append(track)
                 if let storedID = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
                     .first(where: { $0.name == "downloaded_subtitle_id" })?.value,
                    let track = subtitles.last {

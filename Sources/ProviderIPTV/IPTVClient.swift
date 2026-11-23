@@ -6,8 +6,8 @@ import os
 
 actor IPTVClient: ApplicationStorageParticipant {
     private static let playlistCatalogScope = "playlist-v5"
-    private var cachedLineup: (revision: String?, dataVersion: Int64, entries: [IPTVLineupEntry])?
-    private var cachedGuideLineup: (revision: String?, dataVersion: Int64, lineup: SavedGuideLineup)?
+    private var cachedLineup: (stamp: LiveLineupStamp, entries: [IPTVLineupEntry])?
+    private var cachedGuideLineup: SavedGuideLineup?
     let credential: IPTVCredential
     private let http: IPTVHTTP
     private let artworkSecrets: [String]
@@ -104,6 +104,8 @@ actor IPTVClient: ApplicationStorageParticipant {
         refresh?.cancel()
         cancelRefreshAdmissions()
         didReclaimJournal = false
+        cachedLineup = nil
+        cachedGuideLineup = nil
         do { try catalog.closeForSuspension() }
         catch { PlozzLog.networking.error("IPTV catalogue suspension close failed") }
     }
@@ -635,60 +637,77 @@ actor IPTVClient: ApplicationStorageParticipant {
         return try committedLiveChannels()
     }
 
-    func guideCatalogRevision() throws -> String? {
-        if let revision = try catalog.state("live-revision") { return revision }
-        return try catalog.state("live").map { "legacy:\($0)" }
-    }
-
-    func guideChannels() async throws -> [IPTVProvider.IPTVGuideChannel] {
+    func guideLineup() async throws -> SavedGuideLineup {
         try await ensureCatalog("live")
-        return try committedGuideChannels()
+        guard let lineup = try savedGuideLineup() else { throw AppError.notFound }
+        return lineup
     }
 
-    /// The committed lineup as guide channels, without starting a catalogue refresh. Nil
-    /// until a lineup has been committed.
     func savedGuideChannels() throws -> [IPTVProvider.IPTVGuideChannel]? {
-        let scope = credential.mode == .xtream ? "live" : Self.playlistCatalogScope
-        let committed = credential.mode == .file
-            ? try catalog.state("playlist") != nil : try catalogCommittedAt(scope) != nil
-        return committed ? try committedGuideChannels() : nil
+        try savedGuideLineup()?.ordered
     }
 
-    /// The part of the committed lineup that guide lookups need, prepared once per lineup.
+    struct LiveLineupStamp: Equatable, Sendable {
+        let revision: String?
+        let dataVersion: Int64
+    }
+
+    /// Immutable guide identities in catalogue order, and a lookup including unguided IDs.
     struct SavedGuideLineup: Sendable {
-        /// Changes whenever the lineup does.
-        let revision: String
-        /// Only XMLTV identities; channels without them can still have native listings.
-        let guided: [String: IPTVProvider.IPTVGuideChannel]
+        fileprivate let stamp: LiveLineupStamp
+        /// Scoped to this client and observation, never a persisted projection digest.
+        let revision: String?
+        let ordered: [IPTVProvider.IPTVGuideChannel]
+        let byID: [String: IPTVProvider.IPTVGuideChannel]
+    }
+
+    func isCurrentGuideLineup(_ lineup: SavedGuideLineup) throws -> Bool {
+        try withLiveLineupSnapshot { $0 == lineup.stamp }
+    }
+
+    func guideLineupStillMatches(_ lineup: SavedGuideLineup) throws -> Bool {
+        if try isCurrentGuideLineup(lineup) { return true }
+        let matches = try savedGuideLineup()?.ordered == lineup.ordered
+        try Task.checkCancellation()
+        return matches
     }
 
     /// Nil until a lineup has been committed. Never starts a catalogue refresh.
     func savedGuideLineup() throws -> SavedGuideLineup? {
-        let dataVersion = try catalog.dataVersion()
-        let revision = try guideCatalogRevision()
-        if let cachedGuideLineup, cachedGuideLineup.revision == revision,
-           cachedGuideLineup.dataVersion == dataVersion { return cachedGuideLineup.lineup }
-        guard let channels = try savedGuideChannels() else { return nil }
-        var guided: [String: IPTVProvider.IPTVGuideChannel] = [:]
-        for channel in channels
-        where channel.guideID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
-            guided[channel.id] = guided[channel.id] ?? channel
+        let lineup: SavedGuideLineup? = try withLiveLineupSnapshot { stamp in
+            if stamp.revision != nil, let cachedGuideLineup, cachedGuideLineup.stamp == stamp {
+                return cachedGuideLineup
+            }
+            let scope = credential.mode == .xtream ? "live" : Self.playlistCatalogScope
+            let committed = credential.mode == .file
+                ? try catalog.state("playlist") != nil : try catalogCommittedAt(scope) != nil
+            guard committed else { return nil }
+            let entries = try readLiveLineup(stamp: stamp).entries
+            guard entries.count <= 100_000 else { throw LiveTVSourceImportError.guideTooLarge }
+            #if DEBUG
+            IPTVLineupProbe.record?(.fullClientMaps)
+            #endif
+            let ordered = entries.map {
+                IPTVProvider.IPTVGuideChannel(
+                    id: $0.id, name: $0.title, guideID: $0.guideID, guideName: $0.guideName, country: $0.guideCountry
+                )
+            }
+            #if DEBUG
+            IPTVLineupProbe.record?(.providerIDMaps)
+            #endif
+            var byID: [String: IPTVProvider.IPTVGuideChannel] = [:]
+            byID.reserveCapacity(ordered.count)
+            for channel in ordered {
+                try Task.checkCancellation()
+                byID[channel.id] = channel
+            }
+            try Task.checkCancellation()
+            return SavedGuideLineup(stamp: stamp, revision: stamp.revision.map { _ in UUID().uuidString },
+                                    ordered: ordered, byID: byID)
         }
-        let lineup = SavedGuideLineup(
-            revision: revision ?? "legacy", guided: guided
-        )
-        cachedGuideLineup = (revision, try catalog.dataVersion(), lineup)
+        try Task.checkCancellation()
+        cachedGuideLineup = lineup?.revision == nil ? nil : lineup
         return lineup
-    }
-
-    private func committedGuideChannels() throws -> [IPTVProvider.IPTVGuideChannel] {
-        let entries = try liveLineup()
-        guard entries.count <= 100_000 else { throw LiveTVSourceImportError.guideTooLarge }
-        return entries.map {
-            IPTVProvider.IPTVGuideChannel(
-                id: $0.id, name: $0.title, guideID: $0.guideID, guideName: $0.guideName, country: $0.guideCountry
-            )
-        }
     }
 
     /// Guide addresses known without contacting the provider or refreshing the catalogue.
@@ -827,33 +846,62 @@ actor IPTVClient: ApplicationStorageParticipant {
     /// The live lineup in catalogue order. Opening every sealed record costs seconds on a
     /// large lineup, so it is done once per catalogue state and then served from the saved copy.
     private func liveLineup() throws -> [IPTVLineupEntry] {
-        let dataVersion = try catalog.dataVersion()
-        if let cachedLineup, cachedLineup.revision == (try catalog.state("live-revision")),
-           cachedLineup.dataVersion == dataVersion { return cachedLineup.entries }
-        let token = try liveLineupToken()
-        var entries: [IPTVLineupEntry]
-        if let saved = try catalog.lineup(token: token) { entries = saved }
-        else {
-            entries = []
-            try catalog.execute("BEGIN")
-            do {
-                while true {
-                    try Task.checkCancellation()
-                    let page = try catalog.records(where: "live = 1", values: [], start: entries.count, limit: 1_000)
-                    entries += page.map(IPTVLineupEntry.init)
-                    if page.count < 1_000 { break }
-                }
-                try catalog.execute("COMMIT")
-            } catch {
-                try catalog.execute("ROLLBACK")
-                throw error
-            }
-            // The saved copy is an optimisation; the sealed records stay authoritative.
-            do { try catalog.saveLineup(entries, token: token) }
-            catch { PlozzLog.networking.error("IPTV lineup copy could not be saved") }
+        let (stamp, read) = try withLiveLineupSnapshot { stamp in
+            (stamp, try readLiveLineup(stamp: stamp))
         }
-        cachedLineup = ((try catalog.state("live-revision")), dataVersion, entries)
-        return entries
+        if let token = read.missingToken {
+            // Never write a copy from an older snapshot over a newer writer's lineup.
+            // The sealed records stay authoritative if this optional write fails.
+            do {
+                try catalog.execute("BEGIN IMMEDIATE")
+                do {
+                    if try liveLineupStamp() == stamp {
+                        try catalog.saveLineup(read.entries, token: token)
+                    }
+                    try catalog.execute("COMMIT")
+                } catch {
+                    try? catalog.execute("ROLLBACK")
+                    throw error
+                }
+            } catch { PlozzLog.networking.error("IPTV lineup copy could not be saved") }
+        }
+        try Task.checkCancellation()
+        if stamp.revision != nil { cachedLineup = (stamp, read.entries) }
+        return read.entries
+    }
+
+    private func withLiveLineupSnapshot<T>(_ read: (LiveLineupStamp) throws -> T) throws -> T {
+        try Task.checkCancellation()
+        try catalog.execute("BEGIN")
+        do {
+            let result = try read(liveLineupStamp())
+            try Task.checkCancellation()
+            try catalog.execute("COMMIT")
+            return result
+        } catch {
+            try? catalog.execute("ROLLBACK")
+            throw error
+        }
+    }
+
+    private func liveLineupStamp() throws -> LiveLineupStamp {
+        // The SELECT pins the SQLite snapshot before reading the connection's data_version.
+        let revision = try catalog.state("live-revision")
+        return LiveLineupStamp(revision: revision, dataVersion: try catalog.dataVersion())
+    }
+
+    /// Access only inside the caller's snapshot. Unversioned catalogues validate from records.
+    private func readLiveLineup(stamp: LiveLineupStamp) throws -> (entries: [IPTVLineupEntry], missingToken: String?) {
+        if stamp.revision != nil, let cachedLineup, cachedLineup.stamp == stamp { return (cachedLineup.entries, nil) }
+        let token = try stamp.revision.map { _ in try liveLineupToken() }
+        if let token, let saved = try catalog.lineup(token: token) { return (saved, nil) }
+        var entries: [IPTVLineupEntry] = []
+        while true {
+            try Task.checkCancellation()
+            let page = try catalog.records(where: "live = 1", values: [], start: entries.count, limit: 1_000)
+            entries += page.map(IPTVLineupEntry.init)
+            if page.count < 1_000 { return (entries, token) }
+        }
     }
 
     /// Identifies the committed catalogue a saved lineup was read from, so a copy left by

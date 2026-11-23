@@ -525,8 +525,8 @@ struct PlaybackDetailView: View {
         _ preference: AudioLanguagePreference
     ) -> Text {
         switch preference {
-        case .original: return Text("Original")
-        case .device: return Text("Device")
+        case .original: return Text("Original language")
+        case .device: return Text("Device language")
         case .language(let code):
             return Text(
                 verbatim: SubtitleLanguageCatalog.displayName(
@@ -628,13 +628,12 @@ struct PlaybackDetailView: View {
                 #endif
             },
             SettingsSplitRow(
-                id: "remember-series-version", title: "Remember series version choices",
-                description: "Reuse the version type you pick for later episodes. When choosing automatically, use the best available version if that type is missing."
+                id: "remember-series-version", title: "Remember series version choices"
             ) {
-                Toggle("Remember per series", isOn: $playback.settings.rememberVersionPerSeries)
+                Toggle("Remember series version choices", isOn: $playback.settings.rememberVersionPerSeries)
                     .accessibilityIdentifier("playback-remember-series-version")
                     .settingsSearchAnchor("remember-series-version")
-            }
+            }.labeledControl()
         ]
     }
 
@@ -642,64 +641,35 @@ struct PlaybackDetailView: View {
         #if os(tvOS)
         if inWorkspace {
             if section == .subtitles { return subtitleRows }
-            return [
-                SettingsSplitRow(id: "audio", title: "Audio") {
-                    SettingsConnectedControlGroups {
-                        ForEach(audioRows) { row in
-                            VStack(alignment: .leading, spacing: SettingsFormMetrics.relatedControlSpacing) {
-                                row.detail()
-                                if let description = row.description {
-                                    description.settingsHelperText().fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                        }
-                    }
-                }.groupedContent(),
-                SettingsSplitRow(id: "autoplay-up-next", title: "Autoplay & Up Next") {
-                    SettingsConnectedControlGroups {
-                        ForEach(upNextRows) { $0.detail() }
-                    }
-                }.groupedContent()
-            ] + zoomRows + playerTabRows + versionSelectionRows + videoUpscalingRows + readAheadRows + skipIntroRows + [
-                SettingsSplitRow(id: "seeking", title: "Seeking") {
-                    SettingsControlRows {
-                        ForEach(skipIntervalRows) { $0.detail() }
-                        ForEach(resumeRows) { $0.detail() }
-                        ForEach(scrubbingRows) { row in
-                            VStack(alignment: .leading, spacing: SettingsFormMetrics.relatedControlSpacing) {
-                                row.detail()
-                                if let description = row.description {
-                                    description.settingsHelperText().fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                        }
-                    }
-                }
-            ] + controlsAutoHideRows + displayFadeRows + discRows + advancedRows
+            return playbackFormRows
         }
         #endif
         return subtitleRows
             + audioRows
-            + zoomRows
             + versionSelectionRows
-            + videoUpscalingRows
+            + [zoomRow]
+            + pictureRows
+            + bufferRows
+            + [displayFadeGroup]
             + skipIntroRows
             + skipIntervalRows
             + resumeRows
-            + readAheadRows
             + scrubbingRows
-            + displayFadeRows
             + controlsAutoHideRows
             + upNextRows
-            + playerTabRows
+            + [SettingsSplitRow(id: "player-tabs", title: "Player tabs") { playerTabsLink }.labeledControl()]
             + discRows
             + advancedRows
     }
 
-    var playerTabRows: [SettingsSplitRow] {
-        [SettingsSplitRow(id: "player-tabs", title: "Player tabs") {
-            PlayerTabSettingsControls(model: playback)
-        }]
+    private var playerTabsLink: some View {
+        SettingsPageLink {
+            PlayerTabSettingsView(model: playback)
+        } label: {
+            SettingsDisclosureLabel { Text("Player tabs") }
+        }
+        .buttonStyle(SettingsFormButtonStyle())
+        .accessibilityIdentifier("playback-player-tabs")
     }
 
     private var controlsAutoHideRows: [SettingsSplitRow] {
@@ -713,17 +683,85 @@ struct PlaybackDetailView: View {
         }.labeledControl()]
     }
 
-    var zoomRows: [SettingsSplitRow] {
-        [SettingsSplitRow(id: "default-video-zoom", title: "Default zoom") {
-            DefaultVideoZoomControl(model: playback)
-        }.labeledControl()]
+    #if os(tvOS)
+    var playbackFormRows: [SettingsSplitRow] {
+        PlaybackFormSection.allCases.flatMap { section -> [SettingsSplitRow] in
+            switch section {
+            case .player:
+                [SettingsSplitRow(id: "player", title: section.title) {
+                    SettingsControlRows {
+                        zoomRow.detail()
+                        ForEach(controlsAutoHideRows) { $0.detail() }
+                        playerTabsLink
+                    }
+                }]
+            case .versions:
+                [SettingsSplitRow(id: "versions", title: section.title) {
+                    SettingsControlRows {
+                        ForEach(versionSelectionRows) { $0.detailWithInlineDescription }
+                    }
+                }]
+            case .resuming:
+                [SettingsSplitRow(id: "resuming-playback", title: section.title) {
+                    SettingsControlRows { ForEach(resumeRows) { $0.detail() } }
+                }]
+            case .seeking:
+                [SettingsSplitRow(id: "seeking", title: section.title) {
+                    SettingsControlRows {
+                        ForEach(skipIntervalRows) { $0.detail() }
+                        ForEach(scrubbingRows) { $0.detail() }
+                    }
+                }]
+            case .skipMarkers:
+                [SettingsSplitRow(id: "skip-intros-mode", title: section.title) {
+                    SkipMarkerSettingsControl(model: playback)
+                }]
+            case .autoplay:
+                [SettingsSplitRow(id: "autoplay-up-next", title: section.title) {
+                    SettingsConnectedControlGroups { ForEach(upNextRows) { $0.detail() } }
+                }.groupedContent()]
+            case .video: [videoGroup]
+            case .streaming: [] // Network-specific quality preferences are mobile-only.
+            case .audio:
+                [SettingsSplitRow(id: "audio", title: section.title) {
+                    SettingsConnectedControlGroups { ForEach(audioRows) { $0.detailWithInlineDescription } }
+                }.groupedContent()]
+            case .discs: discRows
+            case .advanced: advancedRows
+            }
+        }
     }
 
-    var videoUpscalingRows: [SettingsSplitRow] {
+    var videoGroup: SettingsSplitRow {
+        SettingsSplitRow(id: "video", title: "Video") {
+            SettingsConnectedControlGroups {
+                SettingsControlRows {
+                    ForEach(pictureRows) { $0.detail() }
+                }
+                SettingsControlRows {
+                    ForEach(bufferRows) { $0.detail() }
+                }
+                displayFadeGroup.detail()
+            }
+        }.groupedContent()
+    }
+    #endif
+
+    var zoomRow: SettingsSplitRow {
+        SettingsSplitRow(id: "default-video-zoom", title: "Default player zoom") {
+            DefaultVideoZoomControl(model: playback)
+        }.labeledControl()
+    }
+
+    var pictureRows: [SettingsSplitRow] {
         [SettingsSplitRow(id: "video-upscaling", title: "Video upscaling") {
             VideoUpscalingControl(selection: $playback.settings.videoUpscaling)
                 .settingsSearchAnchor("video-upscaling")
-        }.labeledControl()]
+        }.labeledControl()] + (AppReleaseChannel.current.isBeta ? [
+            SettingsSplitRow(id: "dolby-vision-fel", title: "P7 FEL → P8.1 conversion") {
+                DolbyVisionFELConversionControl(isOn: $playback.settings.dolbyVisionFELConversion)
+            }.labeledControl()
+        ] : [])
     }
 
     private var advancedRows: [SettingsSplitRow] {
@@ -732,7 +770,7 @@ struct PlaybackDetailView: View {
         }]
     }
 
-    private var readAheadRows: [SettingsSplitRow] {
+    var bufferRows: [SettingsSplitRow] {
         [
             SettingsSplitRow(id: "read-ahead", title: "Video buffer") {
                 PlaybackReadAheadControl()
@@ -832,12 +870,11 @@ struct PlaybackDetailView: View {
 
         rows.append(SettingsSplitRow(
             id: "subtitle-remember",
-            title: "Remember subtitles per series",
-            description: "Reuse the subtitle you pick for the rest of a series."
+            title: "Remember subtitles per series"
         ) {
-            Toggle("Remember per series", isOn: $playback.settings.rememberSubtitleTrackPerSeries)
+            Toggle("Remember subtitles per series", isOn: $playback.settings.rememberSubtitleTrackPerSeries)
                 .settingsSearchAnchor("subtitle-remember")
-        })
+        }.labeledControl())
 
         #if os(tvOS)
         rows.insert(contentsOf: subtitleStyleRows, at: 1)
@@ -858,8 +895,7 @@ struct PlaybackDetailView: View {
             },
             SettingsSplitRow(
                 id: "live-subtitle-style",
-                title: "Live TV subtitle style",
-                description: "Use the same subtitle appearance everywhere, or choose a separate look for Live TV."
+                title: "Live TV subtitle style"
             ) {
                 SettingsControlRows {
                     Toggle("Use a separate style for Live TV", isOn: $subtitleStyle.usesSeparateLiveTVStyle)
@@ -923,15 +959,7 @@ struct PlaybackDetailView: View {
                     .settingsSearchAnchor("identify-songs")
                 }
             }
-        ] + (AppReleaseChannel.current.isBeta ? [
-            SettingsSplitRow(id: "dolby-vision-fel", title: "Video") {
-                SettingsDescribedControl {
-                    Toggle("P7 FEL → P8.1 conversion", isOn: $playback.settings.dolbyVisionFELConversion)
-                } description: {
-                    Text("Approximates enhancement-layer brightness without full FEL reconstruction. Turn off to use HDR10.")
-                }
-            }
-        ] : [])
+        ]
     }
 
     private var skipIntroRows: [SettingsSplitRow] {
@@ -961,14 +989,14 @@ struct PlaybackDetailView: View {
                     SettingsStepper(
                         options: SkipInterval.allCases,
                         selection: $playback.settings.skipBackwardInterval,
-                        label: "Backward",
+                        label: "Skip backward",
                         verbatimTitle: { $0.title(locale: locale) }
                     )
                     .settingsSearchAnchor("skip-backward")
                     SettingsStepper(
                         options: SkipInterval.allCases,
                         selection: $playback.settings.skipForwardInterval,
-                        label: "Forward",
+                        label: "Skip forward",
                         verbatimTitle: { $0.title(locale: locale) }
                     )
                     .settingsSearchAnchor("skip-forward")
@@ -1005,7 +1033,7 @@ struct PlaybackDetailView: View {
                 Toggle("Ask to resume or start over", isOn: $playback.settings.askBeforeResuming)
                     .accessibilityIdentifier("playback-ask-before-resuming")
                     .settingsSearchAnchor("ask-before-resuming")
-            },
+            }.labeledControl(),
             SettingsSplitRow(
                 id: "resume-rewind",
                 title: "Rewind on resume",
@@ -1043,10 +1071,7 @@ struct PlaybackDetailView: View {
         [
             SettingsSplitRow(
                 id: "seek-without-pausing",
-                title: "Seek without pausing",
-                description: playback.settings.seekWithoutPausing
-                    ? "Swipe to scrub while a title is playing and it resumes the moment you land — faster, but a stray swipe can move your position."
-                    : "You must pause before you can scrub — a swipe while playing won't seek or pause. Pause (Play/Pause, or center-press the scrubber), scrub, then press Play to resume. Prevents accidental seeks.",
+                title: "Seek without pausing"
             ) {
                 Toggle("Seek without pausing", isOn: $playback.settings.seekWithoutPausing)
                     .settingsSearchAnchor("seek-without-pausing")
@@ -1054,30 +1079,25 @@ struct PlaybackDetailView: View {
         ]
     }
 
-    /// Both display fades live in ONE row. They're the same idea — hide the blank
-    /// your TV shows while it renegotiates the picture — and splitting them made
-    /// the page imply a "Display Transitions" grouping the flat master list never
-    /// renders. The toggles are labelled by what they cover, so they need no
-    /// headers or per-toggle paragraphs above them.
-    private var displayFadeRows: [SettingsSplitRow] {
-        [
-            SettingsSplitRow(
-                id: "display-fades",
-                title: "Fade on display changes",
-                description: "If you don't match dynamic range or frame rate on your Apple TV, turn these off for faster transitions.",
-            ) {
-                SettingsControlRows {
-                    // "HDR" and "Dolby Vision" are both `neverTranslate` brands, so
-                    // this label must reach the UI verbatim rather than entering the
-                    // catalog where a translator would have no way to know that.
-                    Toggle(isOn: $playback.settings.fadeOnDynamicRangeChange) {
-                        Text(verbatim: "HDR & Dolby Vision")
-                    }.settingsSearchAnchor("fade-hdr")
-                    Toggle("Frame rate", isOn: $playback.settings.fadeOnFrameRateChange).settingsSearchAnchor("fade-frame-rate")
+    private var displayFadeGroup: SettingsSplitRow {
+        SettingsSplitRow(id: "display-fades", title: "Fade on display changes") {
+            SettingsControlRows {
+                SettingsDescribedControl {
+                    Toggle("Fade when switching between SDR, HDR, and Dolby Vision",
+                           isOn: $playback.settings.fadeOnDynamicRangeChange)
+                        .settingsSearchAnchor("fade-hdr")
+                } description: {
+                    Text("If Match Dynamic Range is off, turn this off for faster transitions.")
                 }
-                .settingsSearchAnchor("display-fades")
+                SettingsDescribedControl {
+                    Toggle("Fade when switching frame rates", isOn: $playback.settings.fadeOnFrameRateChange)
+                        .settingsSearchAnchor("fade-frame-rate")
+                } description: {
+                    Text("If Match Frame Rate is off, turn this off for faster transitions.")
+                }
             }
-        ]
+            .settingsSearchAnchor("display-fades")
+        }
     }
 
     /// Autoplay and the Up Next card, in that order: whether the next episode

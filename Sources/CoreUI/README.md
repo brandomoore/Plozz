@@ -89,11 +89,16 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 Mobile Settings roots and detail pages share `MobileSettingsMetrics`: 16-point
 page/row insets, 28-point section gaps, 52-point minimum rows and 26-point
 continuous group corners. Rows grow with their content and Dynamic Type.
+Each updating library in the Settings scan card gets the normal row padding above
+its name and below its counts; the bar keeps the group's full content width.
+[Settings copy and placement](../../docs/swiftui-guidelines.md#settings-copy-and-placement)
+explains when a row needs a helper instead of a group footer.
 `SettingsDescribedControl` keeps a control and its helper in one row, so the
 separator follows the description rather than splitting it from the control.
-The control keeps the same top clearance as a plain row, and the helper retains
-the matching bottom inset. On mobile, no extra gap separates the control's
-minimum-height area from its helper. Supporting copy uses `SettingsRowMetrics.descriptionFont`
+On Apple TV, leave slightly less space below the last line of help than between
+the title and the help. Rows without help keep their normal height. On mobile,
+no extra gap separates the control's minimum-height area from its helper.
+Supporting copy uses `SettingsRowMetrics.descriptionFont`
 through `settingsHelperText()` (including group footers); do not add local font
 sizes or manually spaced control/description stacks.
 `SettingsIconLabelStyle` supplies title anchors for one-pixel group separators:
@@ -450,9 +455,17 @@ Loading placeholders share `shimmering()`. Its static gradient band is rasterize
 before the animated translation, avoiding repeated gradient work without
 rasterizing the placeholder content or changing the sweep, masking, or intensity.
 Inactive placeholders remain unmodified; Reduce Motion retains the static dim.
+Covered pages can set `shimmerAnimationsEnabled` to false to remove the animated
+overlay while retaining placeholder geometry. Mobile Home ties this to its
+existing frontmost-page signal and active scene, so opening Settings stops hidden
+loading animation, including during new-profile setup. Returning to Home restores
+the normal sweep; other callers remain enabled by default.
+
 Eager scroll containers can set `plozzShimmerEnabled` to false for offscreen
 rows, retaining their static geometry without mounting animated gradient layers.
-Visible rows resume the same sweep; the Reduce Motion appearance is unchanged.
+Visible rows resume the same sweep only when the page also allows it; row
+visibility does not change the Reduce Motion appearance.
+
 The simulator lab's `skeletons-idle` and `skeletons-static` scenarios isolate this
 cost from loaded cards and network/provider work.
 
@@ -875,7 +888,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   a control and its helper in one child view; the divider belongs after both.
   Conditional rows keep their SwiftUI identity, and separators add no focus or
   accessibility stops. Focus fills stay within row bounds, with the shared
-  8pt `dividerFocusClearance` on each side of the line. Icon-led category lists
+  8pt `dividerFocusClearance` on each side of the line. In TV form cards,
+  `SettingsDescribedControl` leaves one 28pt gap from the description to the
+  next divider or the card bottom, counting the inset already supplied there.
+  Settings screens should not add padding below descriptions. Icon-led category lists
   start their dividers at `SettingsRowMetrics.iconTitleInset`, sharing the actual
   row icon width, gap and content padding; leading alignment also follows RTL.
   Illustrated Settings groups instead use a 16pt gap and 16pt padding without
@@ -1355,6 +1371,11 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   existing spoiler-safe title inside the artwork slot. Loaded art remains
   label-free, visible captions are not duplicated, and loading/failure never
   changes card height. Spoiler blur applies to images, not fallback names.
+  The mobile series episode rail and Episode Info use `EpisodeArtworkSource`.
+  Blur obscures an unstarted episode's still; Placeholder Art selects only show
+  artwork or a neutral placeholder, even after the real still was cached.
+  In-progress episodes keep their still, but their title and synopsis remain
+  protected until watched. Hiding ratings is a separate profile preference.
 - **Content state** — `ContentStateView` renders the `LoadState`
   loading / loaded / empty / failed states identically across features.
 - **Mobile settings surfaces** — `SettingsPageSurface` keeps the native scroll

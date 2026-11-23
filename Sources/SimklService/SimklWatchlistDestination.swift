@@ -50,22 +50,32 @@ public actor SimklWatchlistDestination:
         http: HTTPClient,
         tokenStore: SimklTokenStoring
     ) {
+        self.init(client: SimklClient(config: config, http: http), tokenStore: tokenStore)
+    }
+
+    init(client: SimklClient, tokenStore: SimklTokenStoring) {
         id = WatchlistDestinationID(rawValue: "simkl")!
-        client = SimklClient(config: config, http: http)
+        self.client = client
         self.tokenStore = tokenStore
     }
 
     public func fetchEntries() async throws -> [WatchlistDestinationEntry] {
+        let generation = tokenStore.authorizationGeneration
         let token = try accessToken()
-        async let movieResponse = client.planToWatch(
+        let validate: @Sendable () async throws -> Void = { [tokenStore] in
+            guard tokenStore.authorizationGeneration == generation,
+                  tokenStore.load()?.accessToken == token,
+                  tokenStore.authorizationGeneration == generation else { throw AppError.unauthorized }
+        }
+        let movies = try await client.planToWatch(
             type: "movies",
-            accessToken: token
+            accessToken: token, validate: validate
         )
-        async let showResponse = client.planToWatch(
+        let shows = try await client.planToWatch(
             type: "shows",
-            accessToken: token
+            accessToken: token, validate: validate
         )
-        let (movies, shows) = try await (movieResponse, showResponse)
+        try await validate()
         let movieValues = movies.movies ?? []
         let showValues = shows.shows ?? []
         let movieEntries = try movieValues.enumerated().map {
@@ -152,6 +162,7 @@ public actor SimklWatchlistDestination:
         to binding: WatchlistDestinationBinding,
         expectedReconciliationScope: String
     ) async throws {
+        let generation = tokenStore.authorizationGeneration
         guard binding.destinationID == id,
               let parsed = Self.parse(binding.opaqueValue) else {
             throw WatchlistDestinationError.permanent
@@ -169,14 +180,17 @@ public actor SimklWatchlistDestination:
             ? SimklListMutationBody(movies: [entry], shows: nil)
             : SimklListMutationBody(movies: nil, shows: [entry])
         let token = try accessToken()
-            guard reconciliationScope == expectedReconciliationScope else {
-                throw WatchlistDestinationError.authenticationRequired
-            }
-            do {
+        let validate: @Sendable () async throws -> Void = { [self] in
+            guard tokenStore.authorizationGeneration == generation,
+                  reconciliationScope == expectedReconciliationScope,
+                  tokenStore.load()?.accessToken == token,
+                  tokenStore.authorizationGeneration == generation else { throw AppError.unauthorized }
+        }
+        do {
             if desiredState == .present {
-                try await client.addToList(body: body, accessToken: token)
+                try await client.addToList(body: body, accessToken: token, validate: validate)
             } else {
-                try await client.removeFromList(body: body, accessToken: token)
+                try await client.removeFromList(body: body, accessToken: token, validate: validate)
             }
         } catch AppError.unauthorized {
             throw WatchlistDestinationError.authenticationRequired

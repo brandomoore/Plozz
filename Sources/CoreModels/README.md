@@ -3,6 +3,116 @@
 The Foundation-only, **zero-dependency** core of Plozz. Defines the domain
 language every other module speaks.
 
+## Tracker activation
+
+For Trakt, Simkl, WeTrakr, AniList, MyAnimeList and Last.fm, `TrackerActivationStore`
+keeps the device's pause decision separate from the credential, scoped to the
+profile and connection. Legacy credentials without a decision remain enabled.
+Connecting again creates a fresh grant; refreshing a token does not. Video watch
+intents capture which grants were enabled and recheck them on replay. Resuming
+a tracker admits new activity, not watches captured while it was paused. Last.fm
+uses the same gate for music and has no durable video destination.
+
+## Ongoing tracker import
+
+`TrackerHistorySyncController` keeps device-local, profile/tracker/server-user
+consent and delivery receipts. Ongoing imports target `.mediaShare` accounts
+only. Mixed or server-only grants cannot run, including grants saved before
+this restriction. Reviewed one-time imports and playback reporting are independent.
+Enrollment excludes existing tracker observations; it does not backfill. The
+direct Settings entry reads a complete tracker baseline on opt-in, then rechecks
+it through the same scope and grant fences as enrollment from a comparison.
+It does not need to inventory or modify managed servers. New forward resume updates and watched completion may
+continue a previously synchronized resume only when the fresh destination
+baseline exactly matches its persisted confirmed fingerprint. That baseline
+includes the available played/history flags, resume, runtime, last-played date
+and identities, not a reconstructed server play log.
+
+Confirmed write readbacks and already-matching resume observations establish
+proof. Independent destination changes, rewinds, incompatible runtimes, competing
+tracker records and active playback remain protected. Every continuation still
+uses the existing fresh-tracker, scope and dispatch-time baseline checks.
+Uncertain targets stay held until readback proof and all receipts are durable.
+An explicit reviewed import can restore continuation for its original enabled
+grant; revoked or replacement grants cannot inherit that approval. Legacy
+ledgers without proof remain readable but never authorize an inferred override.
+Only that proven continuation may disregard competing observations already in
+the enrollment baseline or confirmed/matched receipts. Without proof, existing
+history still requires review. New and unresolved competing records remain
+protected, including those outside the current write batch or consented
+categories. Manual comparisons and dispatch revalidation retain the full
+snapshot; historical records are not deleted or rewritten to permit continuation.
+
+`updateSelection(accountIDs:categories:)` edits an enabled grant. Both sets must
+be nonempty; use `disable()` for revocation. Removing choices needs no tracker
+read. Adding choices requires a complete current snapshot, but never compares
+or writes server items during the edit. Existing share/category pairs keep their
+receipts, resume proof and unprocessed observations. New categories exclude
+their current observations; new or re-added shares get a separate baseline and
+cannot inherit another viewer’s proof.
+
+The edit cancels this controller's old delivery and publishes a new grant ID
+only after all ledger pages are durable. Other controllers honor the existing
+grant until publication; stale edits cannot replace a revoked or newer grant.
+A read or storage failure leaves the existing grant usable. Already dispatched
+writes cannot be undone. Uncertain deliveries remain held for review, so the
+review count can include work for a removed selection.
+
+History comparisons reuse a freshly read parent series only within that one
+comparison and account/provider. Every episode's state is still read separately.
+This avoids fetching the same series once per episode; it is not a persistent
+metadata cache. A new comparison, dispatch precondition and delivery readback all
+fetch fresh parent evidence. Scope/cancellation checks and exact parent/child
+identity validation remain required, including when comparison metadata is reused.
+
+## Reviewed tracker export
+
+`TrackerHistoryExportSession` reads one explicitly selected server-user/library
+through `TrackerServerHistorySource`, then requires selection and confirmation
+for 1–50 watched titles. Adapters own exact canonical targets, complete reads,
+historical/status writes and target-specific readback. Full reads are capped at
+100,000 observations and indexed by identity before conservative matching;
+the existing server inventory retains its 50,000-item bound. No title search,
+server writes, playback reports, play-count reconstruction or ongoing enrollment
+occurs. Existing tracker watches and conflicting progress are not selectable.
+Historical completion (`hasBeenPlayed`) remains exportable during an unfinished
+rewatch even though current `isPlayed` is false. Its watch date remains unknown;
+the partial viewing's recency is not the previous completion date. A first
+unfinished viewing cannot create a watched export.
+
+Server inventory traversal probes the advertised end. Emby's empty end response
+may report a zero total; this is accepted only after the previously advertised
+item count has been collected exactly. Premature empty pages, changing nonempty
+totals, duplicate identities and additional items beyond that end still fail
+closed rather than publishing a partial export.
+
+`TrackerHistoryListState` retains planning, watching, waiting, paused, dropped
+and completed list membership without fabricating a watch, episode count or
+resume position. Even a completed list state cannot authorize a server change.
+Export comparisons protect matching list entries and episodes whose exactly
+matched parent series is planned, paused or dropped. Derived parent states
+(watching, waiting and completed) do not prevent copying other missing episodes.
+A series list observation may carry a nonnegative season to protect only that
+season's episodes. Season-scoped watches/counts remain invalid; list membership
+does not fabricate completed-season history.
+Parent matching requires explicit `Series*` IDs, rejects
+contradictory namespaces, and never uses titles or ordinary inherited episode IDs.
+Other series observations, including aggregate counts, do not become episode
+history or parent-list protections.
+
+All selected rows are preflighted before dispatch. Source scope, playback and
+baseline plus remote evidence are checked again for each write and within the
+adapter's immediate pre-dispatch authorization callback. Durable, profile/
+connection/canonical-target receipts are saved after the final asynchronous
+checks and before dispatch, with another receipt check at that boundary.
+Cancellation or stale evidence before authorization does not create a delivery
+hold; a competing session's receipt is never overwritten or removed. Any prior
+attempt blocks replay, including a confirmed watch subsequently removed remotely. Only a proven
+non-delivery may remove its receipt. An uncertain response requires independent
+readback; presence alone does not establish who wrote it or preserve a date.
+Readback failure retains the receipt and stops the batch. These are optimistic
+checks, not an atomic transaction with either remote service.
+
 ## Responsibility
 
 - Domain value types: `MediaItem`, `MediaLibrary`, `MediaServer`,
@@ -13,6 +123,9 @@ language every other module speaks.
 - The dual-provider abstraction: `MediaProvider` protocol, `ProviderKind`,
   `ProviderRegistry` / `ProviderResolving`, `ResolvedAccount`.
 - Cross-cutting UI state: `LoadState`, `AppError`.
+- `AppReleaseChannel.current` is the effective install channel for both diagnostics
+  and beta features. Both app roots resolve it before constructing their models;
+  [release identity](../../docs/release-versioning.md) documents the fallback.
 - `ApplicationStorageLifecycle` fences process-wide storage admission before
   asynchronously closing registered actor-owned stores. Owners register before
   opening files, reject inactive access, and ignore stale cleanup after resume.
@@ -307,7 +420,12 @@ Transferable preferences use byte-stable sync values. JSON object keys and
 Hero's set-valued `randomLibraryKeys` are canonicalized on capture and apply,
 including legacy blobs. User-ordered arrays such as Hero sources and unknown
 fields retain their meaning; native preferred-version dictionaries stay
-dictionaries rather than becoming JSON data.
+dictionaries rather than becoming JSON data. Native collections use sorted XML
+property-list transport when it round-trips losslessly; scalars, blobs and
+collections XML cannot preserve exactly retain binary transport. Both formats
+keep the legacy single-element array wrapper and remain readable by older
+clients. XML-incompatible future values retain their original semantics rather
+than being truncated to obtain stable bytes.
 
 Any profile may be deleted while at least one remains. Both cloud adapters apply
 the original/default profile's deletion and omit deleted profiles, membership and

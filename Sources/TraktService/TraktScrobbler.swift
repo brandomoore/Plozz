@@ -7,7 +7,7 @@ import CoreNetworking
 /// Best-effort by contract — like the in-app progress report, a scrobble must
 /// never interrupt or fail playback, so `scrobble(...)` is non-throwing and
 /// swallows every error.
-public protocol TraktScrobbling: Sendable {
+public protocol TraktScrobbling: TrackerPlaybackAdmitting {
     /// Records a playback event for `item` at `progress` (watched percent, 0...100).
     func scrobble(item: MediaItem, progress: Double, event: PlaybackEvent) async
 
@@ -43,6 +43,11 @@ public actor TraktScrobbler: TraktScrobbling {
     private let auth: TraktAuthService
     private let tokenStore: TraktTokenStoring
     private let profileGeneration: TraktProfileGeneration
+    private let activation: TrackerActivationStore
+
+    public nonisolated var playbackAdmissionID: String? {
+        activation.admission(for: tokenStore.load()?.stableAccountIdentity)
+    }
 
     public init(
         config: TraktConfig,
@@ -61,12 +66,14 @@ public actor TraktScrobbler: TraktScrobbling {
         config: TraktConfig,
         http: HTTPClient,
         tokenStore: TraktTokenStoring,
-        profileGeneration: TraktProfileGeneration
+        profileGeneration: TraktProfileGeneration,
+        activation: TrackerActivationStore = .init("trakt")
     ) {
         self.client = TraktClient(config: config, http: http)
         self.auth = TraktAuthService(config: config, http: http)
         self.tokenStore = tokenStore
         self.profileGeneration = profileGeneration
+        self.activation = activation
     }
 
     public func scrobble(item: MediaItem, progress: Double, event: PlaybackEvent) async {
@@ -115,11 +122,13 @@ public actor TraktScrobbler: TraktScrobbling {
     /// Only a missing credential is disconnected. Refresh failures must retry.
     private func validAccessToken() async throws -> String? {  // l10n:content — returns an OAuth access token
         let generation = profileGeneration.current
+        guard let admission = playbackAdmissionID else { return nil }
         let token = try await TraktTokenCoordinator.shared.accessToken(
             store: tokenStore.snapshot(), auth: auth
         )
         try Task.checkCancellation()
         guard generation == profileGeneration.current else { throw CancellationError() }
+        guard admission == playbackAdmissionID else { return nil }
         return token
     }
 

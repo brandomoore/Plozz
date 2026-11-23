@@ -612,8 +612,10 @@ final class PlayerMoreMenuPresentationTests: XCTestCase {
             actions.selectAudio = { state.audioSelections.append($0) }
             actions.setQuality = { state.qualitySelections.append($0) }
             return PlayerMoreMenuButton(
-                model: state.controls, availability: .init(maximumSpeed: 2, quality: state.qualityAvailable ? .original : nil,
-                                                           qualitySupport: state.support),
+                model: state.controls, availability: .init(
+                    maximumSpeed: 2, quality: state.qualityAvailable ? .original : nil,
+                    qualitySupport: state.support
+                ),
                 presentation: state.presentation, layout: state.layout, actions: actions
             )
             .environment(\.locale, .init(identifier: "en"))

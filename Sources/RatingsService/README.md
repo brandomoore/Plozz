@@ -2,7 +2,8 @@
 
 External-ratings enrichment for `MediaItem`s. Adds rating badges (IMDb, RT,
 Metacritic, AniList) on top of any score the user's own server already
-provides, with a strong preference for **keyless** sources.
+provides. External services are optional quality improvements, not a prerequisite
+for browsing or playback.
 
 ## Responsibility
 
@@ -26,8 +27,8 @@ provides, with a strong preference for **keyless** sources.
 
 - **Non-throwing at the seam.** Missing key, absent external id, or
   network error always returns `[]`.
-- **Keyless by default.** Plozz pursues a keyless app — AniList is on by
-  default; OMDb activates only when a key is supplied.
+- **Configured sources coexist.** AniList is available without a key; TMDB and
+  OMDb activate when configured. No permanent keyless-first ordering is implied.
 - **No UI imports.** Pure logic, Linux-portable.
 - **No secrets logged.** API keys are never written to logs.
 
@@ -37,3 +38,7 @@ provides, with a strong preference for **keyless** sources.
 - `RatingsServiceFactory.swift` — how `AppShell` composes the active
   provider set.
 - `RatingsCache.swift` — persistent enrichment cache.
+- `AppRuntime/PublicMetaDBRatingsProvider.swift` wraps the ordinary provider with
+  an opt-in PublicMetaDB overall community score. It preserves the cache-only
+  Home contract, keeps profile/key-scoped results outside the shared disk cache
+  and leaves other source badges intact when PublicMetaDB is unavailable.

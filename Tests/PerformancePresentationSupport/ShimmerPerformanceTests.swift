@@ -28,6 +28,47 @@ final class ShimmerPerformanceTests: XCTestCase {
         XCTAssertEqual(try fixture.snapshot(), first)
     }
 
+    func testReducedMotionShimmerRemainsStatic() async throws {
+        let fixture = try await Fixture(
+            content: RoundedRectangle(cornerRadius: 18)
+                .fill(Color.gray)
+                .frame(width: 200, height: 300)
+                .shimmering()
+                .environment(\._accessibilityReduceMotion, true)
+        )
+        defer { fixture.close() }
+        try await assertMotion(fixture, expected: false)
+    }
+
+    func testCoveredShimmerStopsAndRestartsWithoutChangingLayout() async throws {
+        let state = ShimmerState()
+        state.rowVisible = true
+        let fixture = try await Fixture(content: ControlledShimmer(state: state))
+        defer { fixture.close() }
+        let visibleFrame = state.frame
+        XCTAssertFalse(visibleFrame.isEmpty)
+        try await assertMotion(fixture, expected: true)
+        state.pageVisible = false
+        try await Task.sleep(for: .milliseconds(150))
+        try await assertMotion(fixture, expected: false)
+        XCTAssertEqual(state.frame, visibleFrame)
+        state.pageVisible = true
+        try await Task.sleep(for: .milliseconds(150))
+        try await assertMotion(fixture, expected: true)
+        XCTAssertEqual(state.frame, visibleFrame)
+    }
+
+    private func assertMotion(_ fixture: Fixture, expected: Bool) async throws {
+        let first = try fixture.snapshot()
+        var changed = false
+        for _ in 0..<6 {
+            try await Task.sleep(for: .milliseconds(350))
+            let next = try fixture.snapshot()
+            changed = changed || next != first
+        }
+        XCTAssertEqual(changed, expected)
+    }
+
     func testEnvironmentPausesAndRestartsShimmer() async throws {
         let state = ShimmerState()
         let fixture = try await Fixture(content: ControlledShimmer(state: state))
@@ -36,17 +77,10 @@ final class ShimmerPerformanceTests: XCTestCase {
             let paused = try fixture.snapshot()
             try await Task.sleep(for: .milliseconds(600))
             XCTAssertEqual(try fixture.snapshot(), paused)
-            state.enabled = true
+            state.rowVisible = true
             try await Task.sleep(for: .milliseconds(100))
-            let first = try fixture.snapshot()
-            var changed = false
-            for _ in 0..<8 {
-                try await Task.sleep(for: .milliseconds(300))
-                let next = try fixture.snapshot()
-                changed = changed || first != next
-            }
-            XCTAssertTrue(changed, "Visible placeholders must resume their loading animation.")
-            state.enabled = false
+            try await assertMotion(fixture, expected: true)
+            state.rowVisible = false
             try await Task.sleep(for: .milliseconds(200))
         }
     }
@@ -57,15 +91,17 @@ final class ShimmerPerformanceTests: XCTestCase {
         let fixture = try await Fixture(content: ControlledShimmer(state: state))
         defer { fixture.close() }
         let paused = try fixture.snapshot()
-        state.enabled = true
+        state.rowVisible = true
         try await Task.sleep(for: .milliseconds(600))
         XCTAssertEqual(try fixture.snapshot(), paused)
     }
 
     @MainActor @Observable
-    final class ShimmerState {
-        var enabled = false
+    fileprivate final class ShimmerState {
+        var pageVisible = true
+        var rowVisible = false
         var reduceMotion = false
+        var frame = CGRect.zero
     }
 
     private struct ControlledShimmer: View {
@@ -76,7 +112,11 @@ final class ShimmerPerformanceTests: XCTestCase {
                 .fill(Color.gray)
                 .frame(width: 200, height: 300)
                 .shimmering()
-                .environment(\.plozzShimmerEnabled, state.enabled)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                    state.frame = $0
+                }
+                .environment(\.shimmerAnimationsEnabled, state.pageVisible)
+                .environment(\.plozzShimmerEnabled, state.rowVisible)
                 .environment(\._accessibilityReduceMotion, state.reduceMotion)
         }
     }

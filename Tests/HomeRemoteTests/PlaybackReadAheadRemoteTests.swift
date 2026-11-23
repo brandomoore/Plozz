@@ -60,7 +60,7 @@ final class PlaybackReadAheadRemoteTests: XCTestCase {
         ]
         app.launch()
         defer { app.terminate() }
-        let row = app.buttons["settings-group-read-ahead"]
+        let row = app.buttons.matching(NSPredicate(format: "label == %@", "Video buffer")).firstMatch
         XCTAssertTrue(app.staticTexts["read-ahead-saved"].waitForExistence(timeout: 10))
         for _ in 0..<35 {
             if hasFocus(row) { break }
@@ -120,7 +120,7 @@ final class PlaybackReadAheadRemoteTests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["live-buffer-saved"].waitForExistence(timeout: 10))
-        let row = app.buttons["settings-group-live-buffer"]
+        let row = app.buttons.matching(NSPredicate(format: "label == %@", "Live TV buffer")).firstMatch
         for _ in 0..<40 {
             if hasFocus(row) { break }
             XCUIRemote.shared.press(.down)

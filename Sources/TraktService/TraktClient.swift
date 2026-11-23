@@ -11,17 +11,19 @@ import CoreNetworking
 struct TraktClient: Sendable {
     let config: TraktConfig
     let http: HTTPClient
+    let historyRead: TraktHistoryReadAttempt?
 
-    init(config: TraktConfig, http: HTTPClient) {
+    init(config: TraktConfig, http: HTTPClient, historyRead: TraktHistoryReadAttempt? = nil) {
         self.config = config
         self.http = http
+        self.historyRead = historyRead
     }
 
     private var baseURL: URL { config.apiBaseURL }
 
     /// Headers required on every Trakt request. The bearer token is optional —
     /// OAuth endpoints are unauthenticated.
-    private func headers(accessToken: String? = nil) -> [String: String] {
+    func headers(accessToken: String? = nil) -> [String: String] {
         var headers = [
             "Content-Type": "application/json",
             "trakt-api-version": "2",
@@ -119,7 +121,7 @@ struct TraktClient: Sendable {
         return response
     }
 
-    private func oauthError(data: Data, response: HTTPURLResponse) -> AppError {
+    func oauthError(data: Data, response: HTTPURLResponse) -> AppError {
         struct OAuthError: Decodable { let error: String }
         if response.statusCode == 400,
            (try? JSONDecoder().decode(OAuthError.self, from: data).error) == "invalid_grant" {
@@ -280,37 +282,171 @@ struct TraktClient: Sendable {
         try validateWatchlistStatus(response, idempotentMutation: true)
     }
 
-    private func watchlistGET<T: Decodable & TraktWatchlistIdentifiable>(
+    func historySnapshot(
+        accessToken: String, connectionID: String,
+        cache: TraktHistoryCache? = nil, cacheScope: String? = nil,
+        validateScope: @escaping @Sendable () async throws -> Void
+    ) async throws -> TrackerHistorySnapshot {
+        let before = try await historyActivity(accessToken: accessToken, validateScope: validateScope)
+        var entries: [TraktHistoryGroup: TraktHistoryCache.Entry] = [:]
+        if let cache, let cacheScope { entries = await cache.load(scope: cacheScope) }
+        var updates: [TraktHistoryGroup: TraktHistoryCache.Entry] = [:]
+        for playback in [false, true] {
+            let groups = TraktHistoryGroup.allCases.filter { $0.playback == playback }
+            let changed = groups.filter { entries[$0]?.stamp != $0.stamp(before) }
+            if changed.isEmpty { continue }
+            if groups.allSatisfy({ entries[$0] == nil }) {
+                let all: [TraktHistoryRecord]
+                do {
+                    all = try await paginatedGET(
+                        path: playback ? "/sync/playback" : "/users/me/history", accessToken: accessToken,
+                        requiresCompleteEvidence: true, reportCorrectedWatchTotal: !playback, validateScope: validateScope
+                    )
+                } catch let correction as TraktCorrectedWatchTotal {
+                    all = try await verifyWatchRanges(correction, accessToken: accessToken, validateScope: validateScope)
+                }
+                guard all.allSatisfy({ $0.type == "movie" || $0.type == "episode" }) else {
+                    throw TrackerHistoryError.invalidObservation
+                }
+                for group in groups {
+                    updates[group] = try .init(group, stamp: group.stamp(before), records: all.filter { $0.type == group.type })
+                }
+            } else {
+                for group in changed {
+                    let records = try await refreshedRecords(
+                        group, prior: entries[group], revision: group.stamp(before), token: accessToken, validate: validateScope
+                    )
+                    updates[group] = try .init(group, stamp: group.stamp(before), records: records)
+                }
+            }
+        }
+        if !updates.isEmpty {
+            let after = try await historyActivity(accessToken: accessToken, validateScope: validateScope)
+            guard before.sameHistory(as: after) else { throw TraktHistoryDiagnostics.incomplete("activity", "changed-during-read") }
+            entries.merge(updates) { _, new in new }
+        }
+        let snapshot = try TrackerHistorySnapshot(
+            trackerID: "trakt", connectionID: connectionID, observations: TraktHistoryGroup.allCases.flatMap { entries[$0]?.observations ?? [] },
+            completeness: .apiCount(entries.values.reduce(0) { $0 + $1.records.count }),
+            isStillCurrent: { try await self.historyActivity(accessToken: accessToken, validateScope: validateScope).sameHistory(as: before) }
+        )
+        try await validateScope()
+        if !updates.isEmpty, let cache, let cacheScope { await cache.save(updates, scope: cacheScope) }
+        await historyRead?.reportSnapshotRequests()
+        return snapshot
+    }
+
+    private func historyActivity(
+        accessToken: String, validateScope: @Sendable () async throws -> Void
+    ) async throws -> TraktHistoryActivity {
+        try Task.checkCancellation()
+        try await validateScope()
+        let endpoint = Endpoint(method: .get, path: "/sync/last_activities", headers: headers(accessToken: accessToken))
+        let (data, response) = try await readPage(endpoint, validate: validateScope)
+        try Task.checkCancellation()
+        try await validateScope()
+        guard response.statusCode == 200 else { throw oauthError(data: data, response: response) }
+        let activity: TraktHistoryActivity
+        do { activity = try JSONDecoder().decode(TraktHistoryActivity.self, from: data) }
+        catch { throw AppError.decoding }
+        try activity.validate()
+        return activity
+    }
+
+    private func watchlistGET<T: Decodable & TraktPageIdentifiable>(
         path: String,
         accessToken: String
     ) async throws -> [T] {
-        let limit = 100
-        let maximumPages = 1_000
+        try await paginatedGET(path: path, accessToken: accessToken, requiresCompleteEvidence: false, validateScope: {})
+    }
+
+    func paginatedGET<T: Decodable & TraktPageIdentifiable>(
+        path: String, accessToken: String?, requiresCompleteEvidence: Bool,
+        query: [URLQueryItem] = [], maximumResponseBytes: Int? = nil,
+        reportCorrectedWatchTotal: Bool = false,
+        validateScope: @Sendable () async throws -> Void
+    ) async throws -> [T] {
+        let limit = historyRead != nil && (path == "/users/me/history" || path.hasPrefix("/users/me/history/")) ? 250 : 100
+        let maximumPages = 100_000 / limit
         var page = 1
         var result: [T] = []
         var seenIDs: Set<Int> = []
         var expectedItemCount: Int?
         var expectedPageCount: Int?
         while page <= maximumPages {
-            let endpoint = Endpoint(
+            try Task.checkCancellation()
+            try await validateScope()
+            var endpoint = Endpoint(
                 method: .get,
                 path: path,
-                queryItems: [
+                queryItems: query + [
                     URLQueryItem(name: "page", value: String(page)),
                     URLQueryItem(name: "limit", value: String(limit)),
                 ],
                 headers: headers(accessToken: accessToken)
             )
-            let (data, response) = try await http.sendRaw(
-                endpoint,
-                baseURL: baseURL
-            )
-            try validateWatchlistStatus(response, idempotentMutation: false)
+            if let maximumResponseBytes {
+                endpoint.maximumResponseBytes = maximumResponseBytes
+                endpoint.redirectPolicy = .sameOrigin
+                endpoint.redactsURLForLogging = true
+            }
+            if path.hasPrefix("/users/me/history/") {
+                endpoint.redirectPolicy = .sameOrigin
+                endpoint.redactsURLForLogging = true
+            }
+            let (data, response) = try await readPage(endpoint, validate: validateScope)
+            try Task.checkCancellation()
+            try await validateScope()
+            if let maximumResponseBytes, data.count > maximumResponseBytes {
+                throw TrackerHistoryError.incompleteSnapshot
+            }
+            if requiresCompleteEvidence {
+                guard response.statusCode == 200 else { throw oauthError(data: data, response: response) }
+            } else {
+                try validateWatchlistStatus(response, idempotentMutation: false)
+            }
             let entries: [T]
             do {
                 entries = try JSONDecoder.plozz.decode([T].self, from: data)
             } catch {
                 throw AppError.decoding
+            }
+            if requiresCompleteEvidence {
+                // Log only fixed labels, not the request path, account, headers or media records.
+                let source: StaticString = path == "/users/me/history" ? "watches" : path == "/sync/playback" ? "playback" : "other"
+                guard response.value(forHTTPHeaderField: "X-Pagination-Page").flatMap(Int.init) == page,
+                      response.value(forHTTPHeaderField: "X-Pagination-Limit").flatMap(Int.init) == limit,
+                      let count = response.value(forHTTPHeaderField: "X-Pagination-Item-Count").flatMap(Int.init),
+                      let pages = response.value(forHTTPHeaderField: "X-Pagination-Page-Count").flatMap(Int.init) else {
+                    throw TraktHistoryDiagnostics.incomplete(source, "pagination-headers")
+                }
+                // Some unfiltered watch histories advertise a larger total until the last page.
+                // Never return that read. Supply only its IDs for a separately verified read.
+                if reportCorrectedWatchTotal, let original = expectedItemCount, count < original,
+                   expectedPageCount == pages, page == pages, page > 1,
+                   !entries.isEmpty, entries.count <= limit, seenIDs.count + entries.count == count {
+                    let ids = seenIDs.union(entries.map(\.id))
+                    guard ids.count == count else { throw TraktHistoryDiagnostics.incomplete(source, "duplicate-record") }
+                    throw TraktCorrectedWatchTotal(ids: ids)
+                }
+                guard (0...(limit * maximumPages)).contains(count),
+                      (expectedItemCount == nil || expectedItemCount == count),
+                      (expectedPageCount == nil || expectedPageCount == pages) else {
+                    throw TraktHistoryDiagnostics.incomplete(source, "pagination-totals")
+                }
+                guard (count == 0 && page == 1 && (pages == 0 || pages == 1))
+                        || (count > 0 && pages == (count + limit - 1) / limit && page <= pages),
+                      entries.count == min(limit, max(0, count - (page - 1) * limit)) else {
+                    throw TraktHistoryDiagnostics.incomplete(source, "page-size")
+                }
+                guard Set(entries.map(\.id)).count == entries.count,
+                      entries.allSatisfy({ !seenIDs.contains($0.id) }) else {
+                    throw TraktHistoryDiagnostics.incomplete(source, "duplicate-record")
+                }
+                if path == "/users/me/history", pages > 0 {
+                    await TrackerHistoryReadDetail.report?(query.isEmpty ? .watches(page: page, total: pages)
+                        : .verifyingRange(page: page, total: pages))
+                } else { await TrackerHistoryReadDetail.report?(nil) }
             }
             for entry in entries {
                 guard seenIDs.insert(entry.id).inserted else {
@@ -364,10 +500,11 @@ struct TraktClient: Sendable {
             }
             page += 1
         }
+        if requiresCompleteEvidence { throw TrackerHistoryError.incompleteSnapshot }
         throw WatchlistDestinationError.transient
     }
 
-    private static func parseTimestamp(_ value: String) -> Date? {
+    static func parseTimestamp(_ value: String) -> Date? {
         let fractional = ISO8601DateFormatter()
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let date = fractional.date(from: value) { return date }
@@ -404,9 +541,10 @@ struct TraktClient: Sendable {
 
 }
 
-private protocol TraktWatchlistIdentifiable {
+protocol TraktPageIdentifiable: Sendable {
     var id: Int { get }
 }
 
-extension TraktWatchlistMovieEntry: TraktWatchlistIdentifiable {}
-extension TraktWatchlistShowEntry: TraktWatchlistIdentifiable {}
+extension TraktWatchlistMovieEntry: TraktPageIdentifiable {}
+extension TraktWatchlistShowEntry: TraktPageIdentifiable {}
+extension TraktHistoryRecord: TraktPageIdentifiable {}

@@ -53,28 +53,31 @@ private struct DiagnosticsSharingSettingsFixture: View {
                         .disabled(!isConfigured)
                         .accessibilityIdentifier("diagnostics-sharing-toggle")
                 }
-                SettingsSectionGroup("Send Diagnostics", accessory: { DiagnosticsInfoButton() }) {
-                    TextField(text: $message, axis: .vertical) { Text(SettingsCopy.diagnosticsMessage) }
-                        .lineLimit(2...4)
-                        .accessibilityIdentifier("diagnostics-message")
-                        .disabled(!isConfigured)
-                    DiagnosticsSendButton(
-                        sharingEnabled: $sharingEnabled, isConfigured: isConfigured,
-                        hasMessage: CrashDiagnostics.normalizedNote(message) != nil,
-                        isSending: ProcessInfo.processInfo.arguments.contains("--diagnostics-sending"),
-                        isSubmitted: ProcessInfo.processInfo.arguments.contains("--diagnostics-submitted")
-                    ) { submissions += 1 }
-                } footer: {
-                    if !isConfigured {
-                        Text(SettingsCopy.diagnosticSharingUnavailable)
-                    } else if !sharingEnabled {
-                        Text(SettingsCopy.diagnosticSharingRequired)
+                if !ProcessInfo.processInfo.arguments.contains("--diagnostics-sending"),
+                   !ProcessInfo.processInfo.arguments.contains("--diagnostics-submitted") {
+                    MobileDiagnosticsSubmissionSection(sharingEnabled: $sharingEnabled, isConfigured: isConfigured) { _ in
+                        submissions += 1
+                        return !ProcessInfo.processInfo.arguments.contains("--diagnostics-fail")
                     }
-                    Text(SettingsCopy.diagnosticsMessagePrivacy)
+                } else {
+                    buttonStateFixture
                 }
             }
             .settingsPageSurface()
             .navigationTitle("Help & Diagnostics")
+        }
+    }
+
+    private var buttonStateFixture: some View {
+        SettingsSectionGroup("Send Diagnostics", accessory: { DiagnosticsInfoButton() }) {
+            TextField(text: $message, axis: .vertical) { Text(SettingsCopy.diagnosticsMessage) }
+                .accessibilityIdentifier("diagnostics-message")
+            DiagnosticsSendButton(
+                sharingEnabled: $sharingEnabled, isConfigured: isConfigured,
+                hasMessage: CrashDiagnostics.normalizedNote(message) != nil,
+                isSending: ProcessInfo.processInfo.arguments.contains("--diagnostics-sending"),
+                isSubmitted: ProcessInfo.processInfo.arguments.contains("--diagnostics-submitted")
+            ) { submissions += 1 }
         }
     }
 }
