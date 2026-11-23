@@ -57,7 +57,7 @@ private struct PublicMetaDBContentPresentation: ViewModifier {
 struct PublicMetaDBContentView: View {
     let service: PublicMetaDBService
     let content: PublicMetaDB.Content
-    var title: String?
+    var title: String? // l10n:content — provider-supplied media title
 
     var body: some View {
         GroupedSettingsPage(title: "\(title ?? "PublicMetaDB")", backIdentifier: "publicmetadb.title.back") {

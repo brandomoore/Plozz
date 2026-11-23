@@ -106,7 +106,7 @@ private struct PublicMetaDBEpisodeRatingsEditor: View {
 
     private struct Draft {
         let ratings: [PublicMetaDB.EpisodeRatingInput]
-        let label: String
+        let label: String // l10n:content — user-entered rating label sent to PublicMetaDB
         let connection: UUID
     }
 

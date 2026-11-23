@@ -2586,8 +2586,8 @@ struct PlozziOSDetailHeroForeground: View {
                 onTapBreadcrumb: parentNavigationEntry.map { entry in
                     { perform(entry) }
                 },
-                subjectTitle: presentsEpisodeStill
-                    ? (hidesText ? String(localized: spoilers.maskedTitle(for: item)) : item.title) : nil,
+                subjectTitle: presentsEpisodeStill && !hidesText ? item.title : nil,
+                maskedSubjectTitle: presentsEpisodeStill && hidesText ? spoilers.maskedTitle(for: item) : nil,
                 hiddenOverviewMode: hidesText ? spoilers.mode : nil,
                 scheduleLine: scheduleLine,
                 logoFallback: PlozziOSHeroMetadata.tmdbLogoFallback(for: rootItem),
@@ -3152,6 +3152,7 @@ struct PlozziOSHeroMetadata: View {
     var onTapBreadcrumb: (() -> Void)? = nil
     /// The subject's own title, when it differs from `presentation.title`.
     var subjectTitle: String? = nil
+    var maskedSubjectTitle: LocalizedStringResource? = nil
     var hiddenOverviewMode: SpoilerSettings.Mode? = nil
     /// The air-schedule badge above the title ("New episode every Wednesday"), or
     /// `nil` when there is nothing truthful to say. Matches tvOS.
@@ -3236,11 +3237,11 @@ struct PlozziOSHeroMetadata: View {
                     .accessibilityLabel(Text("Go to \(seriesBreadcrumb)"))
 
                 }
-                if let subjectTitle {
+                if let title = maskedSubjectTitle.map({ Text($0) }) ?? subjectTitle.map({ Text(verbatim: $0) }) {
                     // `presentation.title` resolves an episode to its *show's* name,
                     // which is right when a series hero fronts an episode but wrong
                     // here: the breadcrumb above already names the show.
-                    Text(verbatim: subjectTitle)
+                    title
                         .font(textScale == 1 ? .largeTitle : .system(size: titleFontSize * textScale))
                         .fontWeight(.bold)
                         .foregroundStyle(palette.primaryText)
