@@ -16,10 +16,10 @@ final class TraktHistorySnapshotTests: XCTestCase {
         ]
     }
 
-    private func activity(_ stamp: String? = nil) -> String {
+    private func activity(_ stamp: String? = nil, movieWatch: String? = nil, moviePause: String? = nil) -> String {
         let stamp = stamp ?? date
         return """
-        {"all":"\(stamp)","movies":{"watched_at":"\(stamp)","paused_at":"\(stamp)"},
+        {"all":"\(stamp)","movies":{"watched_at":"\(movieWatch ?? stamp)","paused_at":"\(moviePause ?? stamp)"},
          "episodes":{"watched_at":"\(stamp)","paused_at":"\(stamp)"}}
         """
     }
@@ -225,6 +225,120 @@ final class TraktHistorySnapshotTests: XCTestCase {
         do { _ = try await task.value; XCTFail("Cancellation must not become an empty snapshot") }
         catch { XCTAssertTrue(error is CancellationError) }
         XCTAssertTrue(http.sentPaths.isEmpty)
+    }
+
+    @MainActor
+    func testUnchangedRepeatDoesNotRequestAnyWatchOrPlaybackPages() async throws {
+        let store = InMemoryTraktTokenStore(tokens: .init(
+            accessToken: "fixture", refreshToken: "fixture-refresh", expiresAt: .distantFuture, accountIdentity: "grant"
+        ))
+        let http = http(history: "[\(watch())]", historyCount: 1, watchLimit: 250)
+        let service = TraktService(config: .init(clientID: "fixture"), http: http, tokenStore: store)
+        await service.refreshStatus()
+        let connection = try XCTUnwrap(service.historyConnectionID)
+        let first = try await service.historySnapshot(expectedConnectionID: connection)
+        let initial = http.sentPaths.count
+        let next = try await service.historySnapshot(expectedConnectionID: connection)
+        XCTAssertEqual(next.observations, first.observations)
+        XCTAssertEqual(Array(http.sentPaths.dropFirst(initial)), ["/sync/last_activities"])
+    }
+
+    func testPersistedMultiPageHistoryReopensWithOneGETAndPauseOnlyRefreshesMovies() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        func read(_ transport: RecordingHTTPClient, scope: String = "first-grant") async throws -> TrackerHistorySnapshot {
+            try await TraktClient(config: .init(clientID: "fixture"), http: transport).historySnapshot(
+                accessToken: "fixture", connectionID: "ephemeral", cache: .init(directory: folder),
+                cacheScope: scope, validateScope: {}
+            )
+        }
+        let source = http(history: "[" + (1...100).map { watch($0) }.joined(separator: ",") + "]", historyCount: 101)
+        source.stub(pathSuffix: "/users/me/history", json: "[\(watch(101))]", headers: headers(page: 2, count: 101))
+        let original = try await read(source)
+        XCTAssertEqual(original.observations.count, 101)
+        let control = RecordingHTTPClient()
+        control.stub(pathSuffix: "/sync/last_activities", json: activity())
+        let reopened = try await read(control)
+        XCTAssertEqual(reopened.observations, original.observations)
+        XCTAssertEqual(control.sentPaths, ["/sync/last_activities"])
+
+        let moved = "2026-10-25T12:00:00Z"
+        let pause = #"{"id":9,"progress":32.5,"paused_at":"\#(moved)","type":"movie","movie":{"ids":{"tmdb":550}}}"#
+        let updated = RecordingHTTPClient()
+        updated.stub(pathSuffix: "/sync/last_activities", json: activity(moviePause: moved))
+        updated.stub(pathSuffix: "/sync/playback/movies", json: "[\(pause)]", headers: headers(count: 1))
+        let paused = try await read(updated)
+        XCTAssertEqual(paused.observations.count, 102)
+        XCTAssertEqual(paused.observations.last?.fact, .pausedPercentage(percent: 32.5, updatedAt: TraktClient.parseTimestamp(moved)))
+        XCTAssertEqual(updated.sentPaths, ["/sync/last_activities", "/sync/playback/movies", "/sync/last_activities"])
+
+        let replacement = http()
+        let empty = try await read(replacement, scope: "replacement-grant")
+        XCTAssertTrue(empty.observations.isEmpty)
+        XCTAssertTrue(replacement.sentPaths.contains("/users/me/history"))
+    }
+
+    func testChangedWatchUsesTitleRevisionNotWatchDateAndFailedReadDoesNotAdvanceCache() async throws {
+        let cache = TraktHistoryCache()
+        func read(_ transport: RecordingHTTPClient) async throws -> TrackerHistorySnapshot {
+            try await TraktClient(config: .init(clientID: "fixture"), http: transport).historySnapshot(
+                accessToken: "fixture", connectionID: "grant", cache: cache, cacheScope: "test", validateScope: {}
+            )
+        }
+        func movie(_ id: Int, title: Int) -> String {
+            watch(id, media: #""type":"movie","movie":{"ids":{"trakt":\#(title),"tmdb":550}}"#)
+        }
+        let initial = http(history: "[\(movie(1, title: 10)),\(movie(2, title: 20)),\(movie(3, title: 30))]", historyCount: 3)
+        _ = try await read(initial)
+        let old = "2000-01-01T12:00:00Z", revised = "2026-10-25T12:00:00Z"
+        let summaries = """
+        [{"movie":{"ids":{"trakt":10}},"plays":1,"last_updated_at":"\(old)"},
+         {"movie":{"ids":{"trakt":20}},"plays":1,"last_updated_at":"\(revised)"}]
+        """
+        for complete in [false, true] {
+            let transport = RecordingHTTPClient()
+            transport.stub(pathSuffix: "/sync/last_activities", json: activity(movieWatch: revised))
+            transport.stub(pathSuffix: "/users/me/watched/movies", json: summaries)
+            let new = movie(4, title: 20).replacingOccurrences(of: date, with: old)
+            transport.stub(pathSuffix: "/users/me/history/movies/20", json: complete ? "[\(new)]" : "[]", headers: headers(count: 1))
+            if complete {
+                let changed = try await read(transport)
+                XCTAssertEqual(Set(changed.observations.map(\.recordID)), ["watched/1", "watched/4"])
+                XCTAssertEqual(transport.sentPaths, ["/sync/last_activities", "/users/me/watched/movies",
+                                                      "/users/me/history/movies/20", "/sync/last_activities"])
+            } else {
+                do { _ = try await read(transport); XCTFail("Incomplete changed title") }
+                catch { XCTAssertEqual(error as? TrackerHistoryError, .incompleteSnapshot) }
+            }
+        }
+    }
+
+    func testNewEpisodeInAnotherShowDoesNotPageThroughUnchangedEpisodeHistory() async throws {
+            let cache = TraktHistoryCache()
+            func read(_ transport: RecordingHTTPClient) async throws -> TrackerHistorySnapshot {
+                try await TraktClient(config: .init(clientID: "fixture"), http: transport).historySnapshot(
+                    accessToken: "fixture", connectionID: "grant", cache: cache, cacheScope: "test", validateScope: {}
+                )
+            }
+            func episode(_ play: Int, show: Int) -> String {
+                watch(play, media: #""type":"episode","episode":{"season":0,"number":1,"ids":{"trakt":\#(show+1)}},"show":{"ids":{"trakt":\#(show)}}"#)
+            }
+            let path = "/users/me/history"
+            let seed = http(history: "[" + (1...100).map { episode($0, show: 10) }.joined(separator: ",") + "]", historyCount: 101)
+            seed.stub(pathSuffix: path, json: "[\(episode(101, show: 10))]", headers: headers(page: 2, count: 101))
+            _ = try await read(seed)
+            let transport = RecordingHTTPClient(), later = "2026-10-25T12:00:00Z"
+            let activity = #"{"all":"\#(later)","movies":{"watched_at":"\#(date)","paused_at":"\#(date)"},"episodes":{"watched_at":"\#(later)","paused_at":"\#(date)"}}"#
+            transport.stub(pathSuffix: "/sync/last_activities", json: activity)
+            transport.stub(pathSuffix: "/users/me/watched/shows", json: """
+                [{"show":{"ids":{"trakt":10}},"plays":101,"last_updated_at":"2026-10-10T12:00:00Z"},
+                 {"show":{"ids":{"trakt":20}},"plays":1,"last_updated_at":"\(later)"}]
+                """)
+            transport.stub(pathSuffix: path + "/shows/20", json: "[\(episode(102, show: 20))]", headers: headers(count: 1))
+            let result = try await read(transport)
+            XCTAssertEqual(result.observations.count, 102)
+            XCTAssertEqual(result.observations.last?.recordID, "watched/102")
+            XCTAssertEqual(transport.sentPaths, ["/sync/last_activities", "/users/me/watched/shows", path + "/shows/20", "/sync/last_activities"])
     }
 
     @MainActor

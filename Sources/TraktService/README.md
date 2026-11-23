@@ -117,13 +117,28 @@ Provider-supported idempotency would be needed to eliminate that failure window.
 Older app versions must be upgraded to honor coordination.
 
 Playback reporting remains outbound; server resume state remains server-owned.
-Settings also offers an explicit, one-time history comparison on TV and mobile.
-It reads every page of `/users/me/history` and `/sync/playback`, requiring stable
+The history reader used by 2-way sync and Settings' one-time comparison starts
+without a baseline by reading every page of `/users/me/history` and `/sync/playback`, requiring stable
 pagination totals, exact page sizes and unique record IDs. The relevant
 `/sync/last_activities` timestamps must remain unchanged across the read. Missing,
 capped, malformed or changing results fail the comparison instead of becoming a
 partial import. Reads reuse coordinated OAuth refresh and retain profile/grant
 fences before and after each request.
+
+Later checks compare `/sync/last_activities` with the four saved revisions:
+movie watches, episode watches, movie pauses, and episode pauses. With an intact
+baseline, an unchanged foreground check or relaunch needs one activity GET and no
+history or playback pages. Pending local work can still require pre-write validation.
+An updated pause refreshes only the relevant current playback list. A watched
+change reads the affected kind's [watched-title summary](https://github.com/trakt/trakt-api/blob/dab7797de4e30bdd3fa0f98c0f8b5d8509845991/projects/api/src/contracts/users/subroutes/watched.ts)
+and fetches individual movie or show histories that need verification. The
+summary is not a change feed: it includes unchanged titles, but not their
+individual plays. A watch-date cursor alone would miss backdated plays,
+deletions and equal-count replacements. Bulk edits can read the affected kind
+when that takes fewer pages. Missing baselines or missing native IDs also
+require a broader read; an invalid or changing response cannot advance a revision.
+Removing a tracker record does not authorize clearing a share. Cache files are
+local, disposable, isolated by profile and OAuth grant, and never contain tokens.
 If only the final watch page corrects the total downward and its size explains the
 correction exactly, Plozz discards that read and checks two open-ended date ranges.
 Both must paginate completely and together reproduce the exact set of individual
@@ -136,6 +151,8 @@ repeated throttles stop the check. No partial result is applied.
 When diagnostics are enabled, `TRAKT_HISTORY incomplete` records which check rejected
 the response (activity timestamps, pagination, or duplicate records). It uses fixed labels,
 never account identifiers, URLs, header values, or watch history.
+`TRAKT_HISTORY requests` counts activity, watch-page, playback-page and summary
+GETs for a completed snapshot, including retries but excluding later pre-write checks.
 
 The shared importer previews exact server users and requires selected-row
 confirmation before writing through the existing watch outbox. It rechecks server

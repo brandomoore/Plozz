@@ -55,6 +55,7 @@ public final class TraktService: TrackerHistorySyncReading {
     @ObservationIgnored private let auth: TraktAuthService
     @ObservationIgnored private let http: HTTPClient
     @ObservationIgnored private let historyCooldown = TraktHistoryReadCooldown()
+    @ObservationIgnored private let historyCache: TraktHistoryCache
     @ObservationIgnored private let tokenStore: TraktTokenStoring
     @ObservationIgnored private let activation: TrackerActivationStore
     @ObservationIgnored private let coordinator: TraktTokenCoordinator
@@ -71,9 +72,10 @@ public final class TraktService: TrackerHistorySyncReading {
 
     init(
         config: TraktConfig, http: HTTPClient, tokenStore: TraktTokenStoring,
-        coordinator: TraktTokenCoordinator, namespace: String? = nil
+        coordinator: TraktTokenCoordinator, namespace: String? = nil, historyCache: TraktHistoryCache = .init()
     ) {
         historySyncNamespace = namespace
+        self.historyCache = historyCache
         self.config = config
         self.auth = TraktAuthService(config: config, http: http)
         self.http = http
@@ -130,11 +132,22 @@ public final class TraktService: TrackerHistorySyncReading {
         }
         try current()
         try historyCooldown.requireReady()
+        guard let cacheScope = historyCacheScope else { throw TrackerHistoryError.scopeChanged }
         let store = tokenStore.snapshot()
         guard let access = try await coordinator.accessToken(store: store, auth: auth) else { throw AppError.unauthorized }
         try current()
-        return try await TraktClient(config: config, http: http, historyRead: .init(cooldown: historyCooldown)).historySnapshot(
-            accessToken: access, connectionID: expectedConnectionID, validateScope: { try await current() }
+        let snapshot = try await TraktClient(config: config, http: http, historyRead: .init(cooldown: historyCooldown)).historySnapshot(
+            accessToken: access, connectionID: expectedConnectionID, cache: historyCache, cacheScope: cacheScope,
+            validateScope: { try await current() }
+        )
+        try current()
+        return snapshot
+    }
+
+    private var historyCacheScope: String? {
+        guard let identity = tokenStore.load()?.stableAccountIdentity else { return nil }
+        return WatchlistReconciliationIdentity.credential(
+            "\(config.apiBaseURL.absoluteString)\u{0}\(tokenStore.coordinationID)\u{0}\(identity)"
         )
     }
 
@@ -351,6 +364,7 @@ public final class TraktService: TrackerHistorySyncReading {
 
     /// Disconnects: revokes the token server-side (best-effort) and clears it.
     public func disconnect() async {
+        let cacheScope = historyCacheScope
         let generation = profileGeneration.advance()
         connectTask?.cancel()
         connectTask = nil
@@ -358,6 +372,7 @@ public final class TraktService: TrackerHistorySyncReading {
         do {
             try onHistorySyncDisconnect?()
             let tokens = try await coordinator.disconnect(store: store)
+            if let cacheScope { await historyCache.remove(scope: cacheScope) }
             guard generation == profileGeneration.current else { return }
             phase = config.isConfigured ? .disconnected : .unavailable
             if let tokens {
@@ -433,7 +448,8 @@ public enum TraktServiceFactory {
     ) -> TraktService {
         let store = tokenStore ?? defaultTokenStore()
         store.setNamespace(namespace)
-        return TraktService(config: config, http: http, tokenStore: store, namespace: namespace)
+        return TraktService(config: config, http: http, tokenStore: store, coordinator: .shared, namespace: namespace,
+                            historyCache: .init(directory: TraktHistoryCache.appDirectory))
     }
 
     public static func defaultTokenStore() -> TraktTokenStoring {

@@ -284,33 +284,56 @@ struct TraktClient: Sendable {
 
     func historySnapshot(
         accessToken: String, connectionID: String,
+        cache: TraktHistoryCache? = nil, cacheScope: String? = nil,
         validateScope: @escaping @Sendable () async throws -> Void
     ) async throws -> TrackerHistorySnapshot {
         let before = try await historyActivity(accessToken: accessToken, validateScope: validateScope)
-        let watches: [TraktHistoryRecord]
-        do {
-            watches = try await paginatedGET(
-                path: "/users/me/history", accessToken: accessToken,
-                requiresCompleteEvidence: true, reportCorrectedWatchTotal: true, validateScope: validateScope
-            )
-        } catch let correction as TraktCorrectedWatchTotal {
-            watches = try await verifyWatchRanges(correction, accessToken: accessToken, validateScope: validateScope)
-        }
-        let resumes: [TraktHistoryRecord] = try await paginatedGET(
-            path: "/sync/playback", accessToken: accessToken,
-            requiresCompleteEvidence: true, validateScope: validateScope
-        )
-        let after = try await historyActivity(accessToken: accessToken, validateScope: validateScope)
-        guard before == after else { throw TraktHistoryDiagnostics.incomplete("activity", "changed-during-read") }
-        return try TrackerHistorySnapshot(
-            trackerID: "trakt", connectionID: connectionID,
-            observations: watches.map { try $0.observation(playback: false) }
-                + resumes.map { try $0.observation(playback: true) },
-            completeness: .apiCount(watches.count + resumes.count),
-            isStillCurrent: {
-                try await self.historyActivity(accessToken: accessToken, validateScope: validateScope) == after
+        var entries: [TraktHistoryGroup: TraktHistoryCache.Entry] = [:]
+        if let cache, let cacheScope { entries = await cache.load(scope: cacheScope) }
+        var updates: [TraktHistoryGroup: TraktHistoryCache.Entry] = [:]
+        for playback in [false, true] {
+            let groups = TraktHistoryGroup.allCases.filter { $0.playback == playback }
+            let changed = groups.filter { entries[$0]?.stamp != $0.stamp(before) }
+            if changed.isEmpty { continue }
+            if groups.allSatisfy({ entries[$0] == nil }) {
+                let all: [TraktHistoryRecord]
+                do {
+                    all = try await paginatedGET(
+                        path: playback ? "/sync/playback" : "/users/me/history", accessToken: accessToken,
+                        requiresCompleteEvidence: true, reportCorrectedWatchTotal: !playback, validateScope: validateScope
+                    )
+                } catch let correction as TraktCorrectedWatchTotal {
+                    all = try await verifyWatchRanges(correction, accessToken: accessToken, validateScope: validateScope)
+                }
+                guard all.allSatisfy({ $0.type == "movie" || $0.type == "episode" }) else {
+                    throw TrackerHistoryError.invalidObservation
+                }
+                for group in groups {
+                    updates[group] = try .init(group, stamp: group.stamp(before), records: all.filter { $0.type == group.type })
+                }
+            } else {
+                for group in changed {
+                    let records = try await refreshedRecords(
+                        group, prior: entries[group], revision: group.stamp(before), token: accessToken, validate: validateScope
+                    )
+                    updates[group] = try .init(group, stamp: group.stamp(before), records: records)
+                }
             }
+        }
+        if !updates.isEmpty {
+            let after = try await historyActivity(accessToken: accessToken, validateScope: validateScope)
+            guard before.sameHistory(as: after) else { throw TraktHistoryDiagnostics.incomplete("activity", "changed-during-read") }
+            entries.merge(updates) { _, new in new }
+        }
+        let snapshot = try TrackerHistorySnapshot(
+            trackerID: "trakt", connectionID: connectionID, observations: TraktHistoryGroup.allCases.flatMap { entries[$0]?.observations ?? [] },
+            completeness: .apiCount(entries.values.reduce(0) { $0 + $1.records.count }),
+            isStillCurrent: { try await self.historyActivity(accessToken: accessToken, validateScope: validateScope).sameHistory(as: before) }
         )
+        try await validateScope()
+        if !updates.isEmpty, let cache, let cacheScope { await cache.save(updates, scope: cacheScope) }
+        await historyRead?.reportSnapshotRequests()
+        return snapshot
     }
 
     private func historyActivity(
@@ -343,7 +366,7 @@ struct TraktClient: Sendable {
         reportCorrectedWatchTotal: Bool = false,
         validateScope: @Sendable () async throws -> Void
     ) async throws -> [T] {
-        let limit = historyRead != nil && path == "/users/me/history" ? 250 : 100
+        let limit = historyRead != nil && (path == "/users/me/history" || path.hasPrefix("/users/me/history/")) ? 250 : 100
         let maximumPages = 100_000 / limit
         var page = 1
         var result: [T] = []
@@ -364,6 +387,10 @@ struct TraktClient: Sendable {
             )
             if let maximumResponseBytes {
                 endpoint.maximumResponseBytes = maximumResponseBytes
+                endpoint.redirectPolicy = .sameOrigin
+                endpoint.redactsURLForLogging = true
+            }
+            if path.hasPrefix("/users/me/history/") {
                 endpoint.redirectPolicy = .sameOrigin
                 endpoint.redactsURLForLogging = true
             }

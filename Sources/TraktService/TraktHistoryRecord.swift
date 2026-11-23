@@ -30,7 +30,17 @@ final class TraktHistoryReadCooldown {
 final class TraktHistoryReadAttempt {
     let cooldown: TraktHistoryReadCooldown
     private var retried = false
+    private var activity = 0, history = 0, playback = 0, summaries = 0
     init(cooldown: TraktHistoryReadCooldown) { self.cooldown = cooldown }
+    func recordGET(_ path: String) {
+        if path == "/sync/last_activities" { activity += 1 }
+        else if path.hasPrefix("/users/me/history") { history += 1 }
+        else if path.hasPrefix("/sync/playback") { playback += 1 }
+        else if path.hasPrefix("/users/me/watched/") { summaries += 1 }
+    }
+    func reportSnapshotRequests() {
+        HandoffDiagnostics.emit("TRAKT_HISTORY requests activity=\(activity) watchPages=\(history) playbackPages=\(playback) summaries=\(summaries)")
+    }
     func pause(after delay: TimeInterval?) async throws {
         let until = cooldown.block(seconds: delay)
         let remaining = until.timeIntervalSinceNow
@@ -51,6 +61,7 @@ extension TraktClient {
             try await historyRead.cooldown.requireReady()
             try await validate()
             try Task.checkCancellation()
+            await historyRead.recordGET(endpoint.path)
             let result = try await http.sendRaw(endpoint, baseURL: config.apiBaseURL)
             guard result.1.statusCode == 429,
                   case .rateLimited(let delay) = oauthError(data: result.0, response: result.1) else { return result }
@@ -98,7 +109,7 @@ extension TraktClient {
     }
 }
 
-struct TraktHistoryRecord: Decodable, Equatable, Sendable {
+struct TraktHistoryRecord: Codable, Equatable, Sendable {
     let id: Int
     let type: String
     let movie: TraktMovieRef?
@@ -201,6 +212,10 @@ struct TraktHistoryActivity: Decodable, Equatable, Sendable {
     let all: String
     let movies: MediaActivity
     let episodes: MediaActivity
+
+    func sameHistory(as other: Self) -> Bool {
+        movies == other.movies && episodes == other.episodes
+    }
 
     func validate() throws {
         guard [all, movies.watchedAt, movies.pausedAt, episodes.watchedAt, episodes.pausedAt]
