@@ -26,6 +26,7 @@ public struct PlozziOSRootView: View {
     @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     @Environment(\.accessibilityReduceTransparency)
     private var systemReduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appModel: PlozziOSAppModel
     @State private var homeViewModelBox = LazyViewState<HomeViewModel>()
     @State private var contentRefreshCoordinator = ContentRefreshCoordinator(profile: .iOS)
@@ -41,6 +42,8 @@ public struct PlozziOSRootView: View {
     /// whether it is up before asking for another sheet.
     @State private var showingProfileSwitcher = false
     @State private var isSelectingLaunchProfile = false
+    @State private var homeEntrance: PlozziOSProfileHomeEntrance?
+    @State private var pickerRevision = 0
     /// A pairing link that arrived while a sheet was open — see
     /// `receivePairingURL`.
     @State private var deferredPairingURL: URL?
@@ -169,12 +172,11 @@ public struct PlozziOSRootView: View {
         Group {
             if !appModel.canEnterApp {
                 PlozziOSOnboardingView(appModel: appModel)
-            } else if showsLaunchProfilePicker {
-                PlozziOSProfileSelectionView(
-                    appModel: appModel,
-                    onSelectionStarted: { isSelectingLaunchProfile = true },
-                    onComplete: { isSelectingLaunchProfile = false }
-                )
+            } else if showsLaunchProfilePicker || (showingProfileSwitcher && !appModel.allowsHomeContentAccess)
+                || homeEntrance.map({ !$0.matches(appModel) || !appModel.allowsHomeContentAccess }) == true {
+                // The picker lives outside the shell identity. Don't construct
+                // the new viewer's tabs/model while a profile gate owns entry.
+                Color.clear
             } else if usesInlineStandaloneFirstRun, appModel.pendingFirstRunStep != nil {
                 PlozziOSFirstRunView(
                     step: appModel.pendingFirstRunStep,
@@ -189,6 +191,8 @@ public struct PlozziOSRootView: View {
                     onAddServer: showAddServer,
                     showingSettings: $showingSettings,
                     showingProfileSwitcher: $showingProfileSwitcher,
+                    homeEntrance: homeEntrance,
+                    onHomeEntranceReady: finishHomeEntrance,
                     deferredPairingURL: $deferredPairingURL,
                     onNotificationPresentationDismissed: { notificationDismissals.remove($0) },
                     systemColorScheme: systemColorScheme
@@ -263,7 +267,7 @@ public struct PlozziOSRootView: View {
         }
     }
 
-    private var setupPresentationContent: some View {
+    private var profileScopedPresentationContent: some View {
         profileAccessContent
         .plozzFullScreenCover(isPresented: $showDetectedCover, onDismiss: {
             if detectedFollowUpReceive {
@@ -322,6 +326,26 @@ public struct PlozziOSRootView: View {
         }
         .background { AppBackground(palette: resolvedPalette) }
         .id(presentationShellIdentity)
+    }
+
+    private var setupPresentationContent: some View {
+        // A modifier on the keyed Group can follow its changing child (and
+        // restart the picker's entire tile entrance). Give the picker its own
+        // sibling identity, independent of the picker -> tabs substitution.
+        ZStack {
+            profileScopedPresentationContent
+                .allowsHitTesting(homeEntrance == nil)
+                .accessibilityHidden(homeEntrance != nil)
+            if appModel.canEnterApp && (showsLaunchProfilePicker || homeEntrance?.origin == .launch) {
+                PlozziOSProfileSelectionView(
+                    appModel: appModel,
+                    onSelectionStarted: { isSelectingLaunchProfile = true },
+                    onComplete: { selectedProfile(from: .launch) }
+                )
+                .modifier(PlozziOSPickerReveal(entrance: homeEntrance))
+                .id(pickerRevision)
+            }
+        }
         .onChange(of: appModel.isSettingsPresented) { _, presented in
             if presented {
                 themeMusicController.stop()
@@ -348,9 +372,82 @@ public struct PlozziOSRootView: View {
         }) {
             PlozziOSProfileSelectionView(
                 appModel: appModel,
-                onComplete: { showingProfileSwitcher = false },
+                onComplete: { selectedProfile(from: .switcher) },
                 onCancel: { showingProfileSwitcher = false }
             )
+            .modifier(PlozziOSPickerReveal(entrance: homeEntrance))
+            .id(pickerRevision)
+            // Keep the normal Home attached under UIKit's cover; the picker
+            // paints its own opaque background, including during PIN checks.
+            .presentationBackground(.clear)
+        }
+        .task(id: homeEntrance?.id) {
+            guard let request = homeEntrance else { return }
+            do { try await ContinuousClock().sleep(until: request.deadline) } catch { return }
+            finishHomeEntrance(request, request.profileID)
+        }
+        .onChange(of: homeEntranceIsInvalid) { _, invalid in
+            if invalid, let request = homeEntrance { reconcileHomeEntrance(request) }
+        }
+        .onDisappear { homeEntrance = nil; isSelectingLaunchProfile = false }
+    }
+
+    private func selectedProfile(from origin: PlozziOSProfileHomeEntrance.Origin) {
+        if origin == .launch { isSelectingLaunchProfile = false }
+        guard canWaitForHome else {
+            if origin == .switcher { showingProfileSwitcher = false }
+            return
+        }
+        homeEntrance = .init(origin: origin, profileID: appModel.profiles.activeProfileID,
+                             generation: appModel.profiles.selectionGeneration)
+    }
+
+    // This is only a presentation delay, never another admission decision.
+    // Empty-account Home is the shell's own terminal landing (no Home view).
+    private var canWaitForHome: Bool {
+        appModel.allowsHomeContentAccess && !appModel.accounts.isEmpty
+            && !appModel.pendingStandaloneLiveTVEntry && !showingSettings && !appModel.isSettingsPresented
+            && !showingAddServer && !showDetectedCover && pairingServer == nil && !showReceiveFromDetected
+            && serverPromptFollowUp == nil && appModel.pendingSyncedServerPrompt == nil
+            && appModel.pendingPairingInvite == nil && deferredPairingURL == nil
+            && appModel.pendingSyncSetupOffer == nil && !releaseNotes.hasPendingStartupNotes
+            && downloadNotifications.pending == nil && downloadNotifications.presentation == nil
+    }
+
+    private var homeEntranceIsInvalid: Bool {
+        guard let request = homeEntrance else { return false }
+        return !request.matches(appModel) || !canWaitForHome || (request.origin == .switcher && !showingProfileSwitcher)
+    }
+
+    private func reconcileHomeEntrance(_ request: PlozziOSProfileHomeEntrance) {
+        guard homeEntrance?.id == request.id else { return }
+        homeEntrance = nil
+        if !request.matches(appModel) || appModel.activeProfileNeedsUnlock || appModel.mustChooseProfile
+            || appModel.lockedSwitch != nil || appModel.parentalSwitch != nil
+            || appModel.plexHomeUsers.pendingPlexPINRequest != nil {
+            // A timeout/old readiness callback must never dismiss into a
+            // replacement viewer. Return the owning picker to explicit choice.
+            pickerRevision += 1
+            if request.origin == .launch { isSelectingLaunchProfile = true }
+        } else if request.origin == .switcher {
+            showingProfileSwitcher = false
+        }
+    }
+
+    private func finishHomeEntrance(_ request: PlozziOSProfileHomeEntrance, _ profileID: String) {
+        guard homeEntrance?.id == request.id, profileID == request.profileID else { return }
+        if homeEntranceIsInvalid { reconcileHomeEntrance(request); return }
+        // Only the picker's opacity reads the animated property. The shell,
+        // its environment and profile/model identity do not change mid-fade.
+        request.reveal(reduceMotion: reduceMotion) {
+            guard homeEntrance?.id == request.id else { return }
+            if homeEntranceIsInvalid { reconcileHomeEntrance(request); return }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                homeEntrance = nil
+                if request.origin == .switcher { showingProfileSwitcher = false }
+            }
         }
     }
 
@@ -1022,6 +1119,48 @@ struct PlozziOSNavigationBackground: ViewModifier {
     }
 }
 
+@MainActor @Observable
+final class PlozziOSProfileHomeEntrance {
+    enum Origin { case launch, switcher }
+    let id = UUID()
+    let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+    let origin: Origin
+    let profileID: String
+    let generation: Int
+    private(set) var isRevealing = false
+
+    init(origin: Origin, profileID: String, generation: Int) {
+        self.origin = origin
+        self.profileID = profileID
+        self.generation = generation
+    }
+
+    func matches(_ app: PlozziOSAppModel) -> Bool {
+        app.profiles.activeProfileID == profileID && app.profiles.selectionGeneration == generation
+    }
+
+    func reveal(reduceMotion: Bool, completion: @escaping () -> Void) {
+        guard !isRevealing else { return }
+        withAnimation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), completionCriteria: .removed) {
+            isRevealing = true
+        } completion: {
+            completion()
+        }
+    }
+}
+
+private struct PlozziOSPickerReveal: ViewModifier {
+    let entrance: PlozziOSProfileHomeEntrance?
+
+    func body(content: Content) -> some View {
+        let revealing = entrance?.isRevealing == true
+        content
+            .opacity(revealing ? 0 : 1)
+            .allowsHitTesting(!revealing)
+            .accessibilityHidden(revealing)
+    }
+}
+
 struct PlozziOSTabShell: View {
     @Environment(\.locale) private var locale
     @Environment(\.scenePhase) private var scenePhase
@@ -1121,6 +1260,8 @@ struct PlozziOSTabShell: View {
     let onAddServer: () -> Void
     @Binding var showingSettings: Bool
     @Binding var showingProfileSwitcher: Bool
+    let homeEntrance: PlozziOSProfileHomeEntrance?
+    let onHomeEntranceReady: @MainActor (PlozziOSProfileHomeEntrance, String) -> Void
     /// A pairing link parked until this shell's sheets have closed — see
     /// `PlozziOSRootView.receivePairingURL`.
     @Binding var deferredPairingURL: URL?
@@ -1135,6 +1276,8 @@ struct PlozziOSTabShell: View {
         onAddServer: @escaping () -> Void,
         showingSettings: Binding<Bool>,
         showingProfileSwitcher: Binding<Bool>,
+        homeEntrance: PlozziOSProfileHomeEntrance? = nil,
+        onHomeEntranceReady: @escaping @MainActor (PlozziOSProfileHomeEntrance, String) -> Void = { _, _ in },
         deferredPairingURL: Binding<URL?>,
         onNotificationPresentationDismissed:
             @escaping (PlozziOSRootView.NotificationPresentation) -> Void = { _ in },
@@ -1146,6 +1289,8 @@ struct PlozziOSTabShell: View {
         self.onAddServer = onAddServer
         _showingSettings = showingSettings
         _showingProfileSwitcher = showingProfileSwitcher
+        self.homeEntrance = homeEntrance
+        self.onHomeEntranceReady = onHomeEntranceReady
         _deferredPairingURL = deferredPairingURL
         self.onNotificationPresentationDismissed = onNotificationPresentationDismissed
         self.systemColorScheme = systemColorScheme
@@ -1719,6 +1864,13 @@ struct PlozziOSTabShell: View {
             }
         )
         .environment(appModel.profiles)
+        .environment(\.plozzHomeEntranceReady, homeEntrance.map { request in
+            { profileID in onHomeEntranceReady(request, profileID) }
+        })
+        .onChange(of: bypassedHomeEntranceID, initial: true) { _, id in
+            guard let request = homeEntrance, request.id == id else { return }
+            onHomeEntranceReady(request, request.profileID)
+        }
         .onChange(
             of: PlozziOSDownloadNotificationNavigation.shared.presentation?.id, initial: true
         ) { _, _ in
@@ -1896,6 +2048,11 @@ struct PlozziOSTabShell: View {
     /// unspecified, which would leave the overlay stroke and the real corner
     /// slightly misaligned).
     private static let settingsSheetCornerRadius: CGFloat = 20
+
+    private var bypassedHomeEntranceID: UUID? {
+        guard let homeEntrance, effectiveSelectedDestination != .home || isShowingMorePage else { return nil }
+        return homeEntrance.id
+    }
 
     private var settingsPalette: ThemePalette {
         ThemePalette.palette(

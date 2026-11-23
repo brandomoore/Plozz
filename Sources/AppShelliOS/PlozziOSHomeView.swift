@@ -30,9 +30,23 @@ private struct PlozziOSHomeIsFrontmostKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
+    @Entry var plozzHomeEntranceReady: (@MainActor (String) -> Void)? = nil
+
     var plozziOSHomeIsFrontmost: Bool {
         get { self[PlozziOSHomeIsFrontmostKey.self] }
         set { self[PlozziOSHomeIsFrontmostKey.self] = newValue }
+    }
+}
+
+private struct HomeEntranceReadiness: ViewModifier {
+    @Environment(\.plozzHomeEntranceReady) private var report
+    let profileID: String
+    let ready: Bool
+
+    func body(content: Content) -> some View {
+        content.onChange(of: ready && report != nil ? profileID : nil, initial: true) { _, id in
+            if let id { report?(id) }
+        }
     }
 }
 
@@ -255,6 +269,7 @@ struct PlozziOSHomeView: View {
     @State private var editingHomeRow: PlozziOSHomeRowSettingsRoute?
     @State private var heroFreshnessRefresh = HeroFreshnessRefreshDriver()
     private let appModel: PlozziOSAppModel
+    private let entranceProfileID: String
     private let onAddServer: () -> Void
     private let onShowSettings: () -> Void
     private let heroMetadataEnricher: HeroMetadataEnricher
@@ -275,6 +290,7 @@ struct PlozziOSHomeView: View {
         onShowSettings: @escaping () -> Void
     ) {
         self.appModel = appModel
+        entranceProfileID = appModel.profiles.activeProfileID
         self.onAddServer = onAddServer
         self.onShowSettings = onShowSettings
         let heroAccounts = appModel.accountsProviders.resolvedActiveAccounts
@@ -393,6 +409,7 @@ struct PlozziOSHomeView: View {
         .task(id: viewModel.state.diagnosticName) {
             seedHeroFromCachedRowsIfNeeded()
         }
+        .modifier(HomeEntranceReadiness(profileID: entranceProfileID, ready: !hasScrollingContent))
         .modifier(
             HomePresentationDiagnostics(
                 frameKey: FanoutDiagnostics.isEnabled ? frameTelemetryKey : nil,
@@ -971,6 +988,10 @@ struct PlozziOSHomeView: View {
         }
         return scroll
             .id(ObjectIdentifier(viewModel))
+            .modifier(HomeEntranceReadiness(
+                profileID: entranceProfileID,
+                ready: heroSlotState == .content || presentationRows.first?.showsHomeMedia == true
+            ))
             .modifier(PlozziOSObserveHomeContent(
                 entrance: $contentEntrance, visibleContent: homePageIsVisible ? hasMedia : nil
             ))

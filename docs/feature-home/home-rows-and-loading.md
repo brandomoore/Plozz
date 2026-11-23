@@ -342,6 +342,15 @@ part of the curation task identity so a genuinely empty response still finishes
 curation and removes its placeholder. Existing profile, visibility, and
 resume-snapshot restrictions continue to govern cached heroes.
 
+On mobile, when the profile picker hands off to Home, the authorized viewer's
+ordinary Home loads behind the selected avatar. Home reports readiness from the
+same presentation it draws: a configured hero with a usable item, media in the
+first ordered shelf, or the final empty/error screen. A lower shelf arriving
+first does not count. This signal does not request artwork or rows, and it does
+not mean every image has finished decoding. The entrance can end early and
+cannot wait indefinitely for a slow source. Measure from the **profile tap**,
+including the transition, rather than starting the clock when Home is revealed.
+
 Mobile Home evaluates its `HOMEFRAME` diagnostic key only when fan-out tracing
 is enabled. Building that key can read and decode the persisted Home snapshot
 on the UI thread; normal scrolling does not need that diagnostic read.

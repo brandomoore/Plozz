@@ -15,12 +15,18 @@ struct PlozziOSProfileSelectionView: View {
     var onCancel: (() -> Void)?
 
     @State private var selectedProfileID: String?
+    @State private var pendingTap: PendingTap?
     @State private var profileOrder: [String] = []
     @State private var hasPresentedAuthorization = false
     @State private var selectionAllowsManagement = false
     @Namespace private var profileIdentity
     @Environment(\.themePalette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private struct PendingTap: Equatable {
+        let profileID: String
+        let generation: Int
+    }
 
     private var hasPendingAuthorization: Bool {
         appModel.parentalSwitch != nil || appModel.lockedSwitch != nil
@@ -30,14 +36,15 @@ struct PlozziOSProfileSelectionView: View {
     // A live Plex check blocks Home, but isn't a reason to move the avatar
     // onto a PIN page. Keep an already-presented local PIN in place when chained.
     private var isCheckingOnPicker: Bool {
-        selectedProfileID != nil && !hasPresentedAuthorization
+        pendingTap == nil && selectedProfileID != nil && !hasPresentedAuthorization
             && appModel.parentalSwitch == nil && appModel.lockedSwitch == nil
             && appModel.plexHomeUsers.pendingPlexPINRequest != nil
             && appModel.plexHomeUsers.plexPINEntryAvailability == .checking
     }
 
     private var presentsAuthorization: Bool {
-        selectedProfileID != nil && !isCheckingOnPicker && (hasPresentedAuthorization || hasPendingAuthorization)
+        pendingTap == nil && selectedProfileID != nil && !selectionCompleted
+            && !isCheckingOnPicker && (hasPresentedAuthorization || hasPendingAuthorization)
     }
 
     private var selectedProfile: Profile? {
@@ -58,7 +65,7 @@ struct PlozziOSProfileSelectionView: View {
     }
 
     private var selectionCompleted: Bool {
-        selectedProfileID != nil
+        pendingTap == nil && selectedProfileID != nil
             && selectedProfileID == appModel.profiles.activeProfileID
             && !hasPendingAuthorization
             && !appModel.activeProfileNeedsUnlock
@@ -71,6 +78,7 @@ struct PlozziOSProfileSelectionView: View {
                 profiles: displayedProfiles,
                 activeProfileID: appModel.profiles.activeProfileID,
                 onSelect: { profile in
+                    guard selectedProfileID == nil else { return }
                     onSelectionStarted()
                     // Activation changes recency immediately; keep the tapped
                     // tile in place through verification and cancellation.
@@ -78,11 +86,7 @@ struct PlozziOSProfileSelectionView: View {
                     selectionAllowsManagement = !appModel.managementRequiresParentalPIN
                     selectedProfileID = profile.id
                     hasPresentedAuthorization = false
-                    // A cancelled Plex attempt can leave a fallback PIN prompt.
-                    // A new selection must recheck gates for its own target.
-                    appModel.cancelProfileLockPrompt()
-                    appModel.cancelParentalSwitch()
-                    appModel.selectProfile(profile.id)
+                    pendingTap = PendingTap(profileID: profile.id, generation: appModel.profiles.selectionGeneration)
                 },
                 manager: pickerManager,
                 onCancel: onCancel,
@@ -94,6 +98,7 @@ struct PlozziOSProfileSelectionView: View {
                 identityNamespace: profileIdentity,
                 selectedProfileID: selectedProfileID,
                 isCovered: presentsAuthorization,
+                centersSelection: selectedProfileID != nil && !presentsAuthorization && !isCheckingOnPicker,
                 showsPINLock: appModel.accountsProviders.profileShowsPINLock,
                 offlineMode: appModel.isOfflineModeAvailable ? Binding(
                     get: { appModel.isOfflineMode },
@@ -118,6 +123,23 @@ struct PlozziOSProfileSelectionView: View {
         }
         .offlineStatusOverlay(appModel: appModel, palette: palette, isEnabled: !presentsAuthorization)
         .background { AppBackground(palette: palette).ignoresSafeArea() }
+        .background {
+            if let tap = pendingTap {
+                // Commit the tile transform before synchronous profile activation
+                // can occupy the main thread. Don't wait for the animation to end.
+                ProfilePickerPresentationObserver(startsDuringPresentation: false) {
+                    guard pendingTap == tap else { return }
+                    pendingTap = nil
+                    guard appModel.profiles.selectionGeneration == tap.generation,
+                          selectedProfile?.id == tap.profileID else { selectedProfileID = nil; return }
+                    appModel.cancelProfileLockPrompt()
+                    appModel.cancelParentalSwitch()
+                    appModel.selectProfile(tap.profileID)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        }
         .animation(reduceMotion ? nil : .smooth(duration: 0.48), value: presentsAuthorization)
         .onChange(of: presentsAuthorization) { _, presented in
             // Once opened, keep the gate through chained PINs and completion
@@ -126,6 +148,9 @@ struct PlozziOSProfileSelectionView: View {
         }
         .onChange(of: selectionCompleted) { _, completed in
             if completed { onComplete() }
+        }
+        .onChange(of: selectedProfile?.id) { _, id in
+            if id == nil { pendingTap = nil; selectedProfileID = nil; hasPresentedAuthorization = false }
         }
     }
 }
@@ -159,6 +184,7 @@ struct PlozziOSProfilePickerView: View {
     var identityNamespace: Namespace.ID?
     var selectedProfileID: String?
     var isCovered = false
+    var centersSelection = false
     var showsPINLock: (Profile) -> Bool = { $0.showsPINLock }
     var offlineMode: Binding<Bool>?
     var isChangingOfflineMode = false
@@ -168,6 +194,7 @@ struct PlozziOSProfilePickerView: View {
     @State private var hasAppeared = false
     @State private var hasRevealedProfiles = false
     @State private var showsVerificationProgress = false
+    @State private var avatarFlight = PlozziOSProfileAvatarFlight()
     @Namespace private var localIdentityNamespace
     @Environment(\.themePalette) private var palette
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -202,7 +229,7 @@ struct PlozziOSProfilePickerView: View {
                                 reduceMotion: reduceMotion
                             ))
                             .animation(reduceMotion ? nil : .easeOut(duration: 0.18)) { content in
-                                content.opacity(isCovered ? 0 : 1)
+                                content.opacity(isCovered || centersSelection ? 0 : 1)
                             }
 
                         PlozziOSProfilePickerGrid(
@@ -214,6 +241,11 @@ struct PlozziOSProfilePickerView: View {
                             identityNamespace: identityNamespace ?? localIdentityNamespace,
                             selectedProfileID: selectedProfileID,
                             isCovered: isCovered,
+                            centersSelection: centersSelection,
+                            flight: identityNamespace == nil ? nil : avatarFlight,
+                            viewportCenter: CGPoint(
+                                x: geometry.frame(in: .global).midX, y: geometry.frame(in: .global).midY
+                            ),
                             onSelect: onSelect,
                             onEdit: { route = .edit(profileID: $0.id) },
                             onAdd: { route = .add(isKids: $0) }
@@ -234,12 +266,31 @@ struct PlozziOSProfilePickerView: View {
                     }
                 }
                 .scrollBounceBehavior(.basedOnSize)
+                .accessibilityHidden(centersSelection)
+                .overlay {
+                    if identityNamespace != nil {
+                        PlozziOSAvatarFlightSurface(flight: avatarFlight, selected: selectedProfileID,
+                            showing: centersSelection, backdrop: UIColor(palette.backgroundBase))
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .overlay {
+                    if centersSelection, let profile = profiles.first(where: { $0.id == selectedProfileID }) {
+                        PlozziOSCenteredProfileCaption(
+                            profile: profile, showsLock: showsPINLock(profile),
+                            identity: PINProfileTransition(
+                                profileID: profile.id, namespace: identityNamespace ?? localIdentityNamespace
+                            )
+                        )
+                    }
+                }
             }
             .background { AppBackground(palette: palette) }
             .toolbar(manager != nil || offlineMode != nil || onCancel != nil ? .visible : .automatic, for: .navigationBar)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
-                if let cancel = onCancelVerification ?? onCancel, !isEditing, !isCovered {
+                if let cancel = onCancelVerification ?? onCancel, !isEditing, !isCovered, !centersSelection {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Cancel", systemImage: "xmark", action: cancel)
                             .labelStyle(.iconOnly)
@@ -252,7 +303,7 @@ struct PlozziOSProfilePickerView: View {
                         ProgressView().accessibilityLabel("Loading")
                             .accessibilityIdentifier("profile-picker-verifying")
                     }
-                } else if (manager != nil || offlineMode != nil), !isCovered {
+                } else if (manager != nil || offlineMode != nil), !isCovered, !centersSelection {
                     ToolbarItem(placement: .topBarTrailing) {
                         if isEditing {
                             Button("Done") {
@@ -294,6 +345,45 @@ struct PlozziOSProfilePickerView: View {
             guard onCancelVerification != nil else { return }
             do { try await Task.sleep(for: .milliseconds(800)) } catch { return }
             showsVerificationProgress = true
+        }
+    }
+
+    /// Reserve the snapshot's destination without loading or drawing a second avatar.
+    private struct PlozziOSCenteredProfileCaption: View {
+        let profile: Profile
+        let showsLock: Bool
+        let identity: PINProfileTransition
+        @Environment(\.themePalette) private var palette
+        @State private var showsProgress = false
+        @AccessibilityFocusState private var focused: Bool
+
+        var body: some View {
+            Color.clear
+                .frame(height: identity.avatarSize)
+                .overlay(alignment: .bottom) {
+                    VStack(spacing: 10) {
+                        ProfileNameLabel(profile: profile, showsLock: showsLock)
+                            .font(identity.nameFont)
+                            .foregroundStyle(palette.primaryText)
+                            .matchedGeometryEffect(id: identity.nameID, in: identity.namespace, properties: .position)
+                            .accessibilityFocused($focused)
+                        if showsProgress {
+                            ProgressView().controlSize(.small).accessibilityLabel("Loading")
+                        }
+                    }
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .alignmentGuide(.bottom) { $0[.top] - 10 }
+                }
+                .allowsHitTesting(false)
+                .task {
+                    focused = true
+                    do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+                    showsProgress = true
+                    if UIAccessibility.isVoiceOverRunning {
+                        UIAccessibility.post(notification: .announcement, argument: String(localized: "Loading"))
+                    }
+                }
         }
     }
 
@@ -364,6 +454,9 @@ private struct PlozziOSProfilePickerGrid: View {
     let identityNamespace: Namespace.ID
     let selectedProfileID: String?
     let isCovered: Bool
+    let centersSelection: Bool
+    let flight: PlozziOSProfileAvatarFlight?
+    let viewportCenter: CGPoint
     let onSelect: (Profile) -> Void
     let onEdit: (Profile) -> Void
     let onAdd: (Bool) -> Void
@@ -378,29 +471,56 @@ private struct PlozziOSProfilePickerGrid: View {
         ) {
             ForEach(Array(profiles.enumerated()), id: \.element.id) { position, profile in
                 let showsLock = showsPINLock(profile)
+                let centered = centersSelection && profile.id == selectedProfileID
+                let staticFallback = centered && flight?.profileID != profile.id
                 let identity = PINProfileTransition(
                     profileID: isCovered ? "retained-\(profile.id)" : profile.id,
                     namespace: identityNamespace
                 )
                 Button {
-                    if isEditing, canManage { onEdit(profile) } else { onSelect(profile) }
+                    if isEditing, canManage {
+                        onEdit(profile)
+                    } else if selectedProfileID == nil {
+                        flight?.start(profileID: profile.id, targetSize: identity.avatarSize, reduceMotion: reduceMotion)
+                        onSelect(profile)
+                    }
                 } label: {
                     PlozziOSProfilePickerTile(title:
                         ProfileNameLabel(profile: profile, showsLock: showsLock)
                             .matchedGeometryEffect(
-                                id: identity.nameID, in: identity.namespace, properties: .position
+                                id: centered ? "retained-\(identity.nameID)" : identity.nameID,
+                                in: identity.namespace, properties: .position
                             )
+                            .opacity(centered ? 0 : 1)
                     ) {
-                        ProfileAvatarView(profile: profile, size: layout.avatarSize)
-                            .matchedGeometryEffect(id: identity.avatarID, in: identity.namespace)
-                            .overlay(alignment: .bottomTrailing) {
-                                if isEditing {
-                                    Image(systemName: "pencil.circle.fill")
-                                        .font(.title3)
-                                        .symbolRenderingMode(.palette)
-                                        .foregroundStyle(.black, .white)
+                        // If the source is clipped/unavailable, place the same
+                        // artwork at the endpoint without another photo load.
+                        GeometryReader { slot in
+                            let frame = staticFallback ? slot.frame(in: .global) : .zero
+                            ProfileAvatarView(profile: profile, size: layout.avatarSize)
+                                .matchedGeometryEffect(id: identity.avatarID, in: identity.namespace)
+                                .animation(nil) { art in
+                                    art.scaleEffect(staticFallback ? identity.avatarSize / layout.avatarSize : 1)
+                                        .offset(x: staticFallback ? viewportCenter.x - frame.midX : 0,
+                                                y: staticFallback ? viewportCenter.y - frame.midY : 0)
                                 }
+                        }
+                        .frame(width: layout.avatarSize, height: layout.avatarSize)
+                        .background {
+                            if let flight {
+                                PlozziOSAvatarCaptureMarker(flight: flight, profileID: profile.id)
+                                    .allowsHitTesting(false)
+                                    .accessibilityHidden(true)
                             }
+                        }
+                        .overlay(alignment: .bottomTrailing) {
+                            if isEditing {
+                                Image(systemName: "pencil.circle.fill")
+                                    .font(.title3)
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(.black, .white)
+                            }
+                        }
                     }
                 }
                 .buttonStyle(.plain)
@@ -421,7 +541,7 @@ private struct PlozziOSProfilePickerGrid: View {
                 .animation(
                     reduceMotion || profile.id == selectedProfileID ? nil : .easeOut(duration: 0.18)
                 ) { content in
-                    content.opacity(isCovered ? 0 : 1)
+                    content.opacity(isCovered || (centersSelection && !staticFallback) ? 0 : 1)
                 }
             }
             if canManage, !isEditing {
@@ -432,7 +552,7 @@ private struct PlozziOSProfilePickerGrid: View {
                     isPresented: hasAppeared, position: profiles.count,
                     profileCount: profiles.count, reduceMotion: reduceMotion
                 ))
-                .opacity(isCovered ? 0 : 1)
+                .opacity(isCovered || centersSelection ? 0 : 1)
                 PlozziOSProfilePickerAddTile(
                     title: KidsProfileCopy.addTile, symbol: "figure.and.child.holdinghands",
                     size: layout.avatarSize
@@ -441,10 +561,11 @@ private struct PlozziOSProfilePickerGrid: View {
                     isPresented: hasAppeared, position: profiles.count + 1,
                     profileCount: profiles.count, reduceMotion: reduceMotion
                 ))
-                .opacity(isCovered ? 0 : 1)
+                .opacity(isCovered || centersSelection ? 0 : 1)
             }
         }
-        .disabled(isCovered)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.36), value: centersSelection)
+        .disabled(isCovered || centersSelection)
         .background {
             ProfilePickerPresentationObserver(
                 startsDuringPresentation: startsDuringPresentation, isReady: isPresented

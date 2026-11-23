@@ -11,6 +11,21 @@ import XCTest
 
 @MainActor
 final class ProfileSwitchAuthorizationTests: XCTestCase {
+    func testPendingHomeEntranceDoesNotMatchAfterSwitchingAwayAndBack() throws {
+        let app = try makeApp()
+        let original = app.profiles.activeProfileID
+        let alternate = app.profiles.add(name: "Other", avatarSymbol: "person.fill", colorIndex: 1)
+        let pending = PlozziOSProfileHomeEntrance(
+            origin: .launch, profileID: original, generation: app.profiles.selectionGeneration
+        )
+        XCTAssertTrue(pending.matches(app))
+        app.profiles.select(alternate.id)
+        app.profiles.select(original)
+        // The old Home report or deadline still has the correct string ID, but
+        // belongs to the previous activation and must not reveal this shell.
+        XCTAssertFalse(pending.matches(app))
+    }
+
     func testCancelledVerificationCannotAuthorizeAReplacementRequest() async throws {
         let app = try makeApp()
         let original = app.profiles.activeProfileID
