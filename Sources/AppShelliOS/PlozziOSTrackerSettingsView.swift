@@ -25,10 +25,10 @@ struct PlozziOSTrackerSettingsView: View {
                 SettingsDescribedControl {
                     Toggle("Sync across servers", isOn: $playback.settings.syncWatchAcrossServers)
                         .accessibilityIdentifier("cross-server-watch-sync")
+                        .settingsSearchAnchor("cross-server-watch-sync")
                 } description: {
                     Text("Keep watched status and playback progress in sync.")
                 }
-                .settingsSearchAnchor("cross-server-watch-sync")
             }
             .settingsSearchGroup(["cross-server-watch-sync"])
 

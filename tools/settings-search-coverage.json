@@ -968,7 +968,7 @@
       "kind": "presentation",
       "reason": "Opens one submitted rating for the selected title.",
       "controls": {
-        "Sources/FeatureSettings/PublicMetaDBContributionView.swift|PublicMetaDBContentRatingsView|body|NavigationLink|SettingsDisclosureLabel { VStack(alignment: .leading) { Text(verbatim: record.value.label) if let contributor = record.contributor { Text(verbatim: contributor).font(SettingsRowMetrics.descriptionFont).settingsRowSecondary() } } } value: { Text(\"\\(record.value.score.formatted()) / 100\") }": 1
+        "Sources/FeatureSettings/PublicMetaDBContributionView.swift|PublicMetaDBContentRatingsView|body|NavigationLink|SettingsDisclosureLabel { VStack(alignment: .leading) { Text(verbatim: record.value.label) if let contributor = record.contributor { Text(verbatim: contributor).font(SettingsRowMetrics.descriptionFont).settingsRowSecondary() } } } value: { Text(verbatim: \"\\(record.value.score.formatted()) / 100\") }": 1
       }
     },
     "PublicMetaDBContentView": {
