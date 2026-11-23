@@ -108,10 +108,11 @@ extension HomeRowArrangementHostedTests {
                 ))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } inspect: { window in
-                let image = try await snapshot(window, name: "Continue Watching - \(name)")
-                let text = try recognizedText(in: image)
-                var headingBox = try XCTUnwrap(text.first { $0.0.contains("Continue Watching") }?.1)
-                let cardBox = try XCTUnwrap(text.first { $0.0.contains("Playable title") }?.1)
+                let image = try await snapshot(window, name: "Continue Watching - \(name)", scale: 2)
+                let text = try recognizedText(in: image, includesInverted: true)
+                let labels = text.map(\.0).joined(separator: " | ")
+                var headingBox = try XCTUnwrap(text.first { $0.0.localizedCaseInsensitiveContains("Continue") }?.1, labels)
+                let cardBox = try XCTUnwrap(text.first { $0.0.localizedCaseInsensitiveContains("Playable") }?.1, labels)
                 // Vision can group the status glyph with the heading; compare title ink only.
                 headingBox.size.width *= 0.4
                 let bitmap = try XCTUnwrap(image.cgImage)

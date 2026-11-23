@@ -55,10 +55,12 @@ final class PlaybackSettingsHostedTests: XCTestCase {
             defaults.removePersistentDomain(forName: suite)
         }
         try await Task.sleep(for: .milliseconds(350))
-        let initial = try visibleText(in: window, attachment: nil)
+        let initial = try visibleText(in: window, attachment: "Default-player-zoom")
         XCTAssertTrue(initial.contains("Default player zoom"), initial)
         XCTAssertEqual(playback.settings.videoZoom.television.mode, .fit)
-        XCTAssertTrue(initial.contains("Normal"), initial)
+        let zoomFrame = try XCTUnwrap(profileFocusFrames(in: window).first)
+        let zoomValue = try visibleText(in: window, attachment: nil, crop: zoomFrame)
+        XCTAssertTrue(zoomValue.localizedCaseInsensitiveContains("Normal"), zoomValue)
         XCTAssertTrue(initial.contains("Auto-hide controls"), initial)
         XCTAssertTrue(initial.contains("Player tabs"), initial)
         XCTAssertFalse(initial.contains("Chapters"), initial)
@@ -173,7 +175,7 @@ final class PlaybackSettingsHostedTests: XCTestCase {
         playback.settings.videoUpscaling = .off
         try await Task.sleep(for: .milliseconds(250))
         let disabled = try visibleText(in: window, attachment: "Video-upscaling-off-TV")
-        XCTAssertTrue(disabled.contains("Off"), disabled)
+        XCTAssertTrue(disabled.localizedCaseInsensitiveContains("Off"), disabled)
         XCTAssertFalse(disabled.contains("Uses Animation"), disabled)
         XCTAssertNotNil(UIFocusSystem.focusSystem(for: window)?.focusedItem)
         XCTAssertEqual(store.load().videoUpscaling, .off)
