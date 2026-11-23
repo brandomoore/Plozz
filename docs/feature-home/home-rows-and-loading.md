@@ -342,6 +342,10 @@ part of the curation task identity so a genuinely empty response still finishes
 curation and removes its placeholder. Existing profile, visibility, and
 resume-snapshot restrictions continue to govern cached heroes.
 
+Mobile Home evaluates its `HOMEFRAME` diagnostic key only when fan-out tracing
+is enabled. Building that key can read and decode the persisted Home snapshot
+on the UI thread; normal scrolling does not need that diagnostic read.
+
 Home shares its measured viewport width with loaded and skeleton rails.
 `PlozziOSHomeRowSlot` reserves each row's footprint using the real card sizing
 primitives, heading, captions, and current layout settings. Loading, populated,

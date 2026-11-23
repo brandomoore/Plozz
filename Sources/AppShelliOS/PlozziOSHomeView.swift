@@ -395,7 +395,7 @@ struct PlozziOSHomeView: View {
         }
         .modifier(
             HomePresentationDiagnostics(
-                frameKey: frameTelemetryKey,
+                frameKey: FanoutDiagnostics.isEnabled ? frameTelemetryKey : nil,
                 cwCount: viewModel.state.value?.continueWatching.count ?? -1,
                 cwPlaceholder: viewModel.loadingRows.contains(.continueWatching),
                 cachedSnapshot: viewModel.isShowingCachedSnapshot
@@ -4359,7 +4359,7 @@ private struct PlozziOSScreenshotPlaybackRegistration: ViewModifier {
 /// `PLZXFAN_STDOUT=1` and prints counts, kinds and hashes only — never titles,
 /// ids or URLs.
 private struct HomePresentationDiagnostics: ViewModifier {
-    let frameKey: String
+    let frameKey: String?
     let cwCount: Int
     let cwPlaceholder: Bool
     let cachedSnapshot: Bool
@@ -4367,7 +4367,7 @@ private struct HomePresentationDiagnostics: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onChange(of: frameKey, initial: true) { _, key in
-                guard FanoutDiagnostics.isEnabled else { return }
+                guard let key, FanoutDiagnostics.isEnabled else { return }
                 let stamp: Int = Int(ProcessInfo.processInfo.systemUptime * 1000)
                 FanoutDiagnostics.emit("HOMEFRAME t=\(stamp) \(key)")
             }
