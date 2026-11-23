@@ -3,6 +3,27 @@ import XCTest
 
 /// Flattening link markup for surfaces where links can't be tapped (tvOS).
 final class MarkdownOverviewTests: XCTestCase {
+    func testDisplaysPlotWithoutReportedSpanishPromotion() {
+        let lead = "¿Buscas películas y series gratis? ¡Busca Vercineo.net en Google!"
+        let plot = "Tras la caída de Troya, Odiseo emprende el viaje de regreso.\n\nEn Ítaca, Penélope espera."
+        let tail = "ver gratis in vercineo.net"
+        for raw in ["\(lead)  \(plot) \(tail)", "\(lead)\n\(plot)", "\(plot)  \(tail)"] {
+            XCTAssertEqual(raw.displaySynopsis, plot)
+        }
+        XCTAssertNil("\(lead) \(tail)".displaySynopsis)
+    }
+
+    func testKeepsSiteMentionsInCuratedPlotsAndCredits() {
+        for text in [
+            "Una reportera investiga Vercineo.net. Fuente: https://vercineo.net",
+            "Quiere saber qué puede ver gratis en Vercineo.net.",
+            "El cartel dice «ver gratis in vercineo.net». Nadie lo cree.",
+            "Una guía para volver a [Ítaca](https://example.org/itaca)."
+        ] {
+            XCTAssertEqual(text.displaySynopsis, text)
+        }
+    }
+
     func testFlattensAniDBRawLinksToTheirLabel() {
         // The form Jellyfin/Plex deliver from AniDB metadata agents: a bare URL
         // followed by the display name in brackets.

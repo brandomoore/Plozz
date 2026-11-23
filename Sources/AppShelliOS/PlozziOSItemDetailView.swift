@@ -4015,7 +4015,7 @@ struct PlozziOSInlineEpisodeEntry: View {
                     title
                         .font(.headline)
                         .lineLimit(1)
-                    if let overview = episode.overview, !overview.isEmpty {
+                    if let overview = episode.overview?.displaySynopsis {
                         Group {
                             if hidesText {
                                 SpoilerSafeOverviewText(

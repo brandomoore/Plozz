@@ -395,8 +395,8 @@ public struct DetailInformationSections: View {
     }
 
     var hasAbout: Bool {
-        guard let overview = nonempty(item.overview) else { return false }
-        return overview != nonempty(overviewAlreadyShown)
+        guard let overview = item.overview?.displaySynopsis else { return false }
+        return overview != overviewAlreadyShown?.displaySynopsis
     }
 
     /// `S1 · E1` for an episode, `nil` for anything else.
@@ -443,7 +443,7 @@ public struct DetailInformationSections: View {
                         .plozzForeground(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if let overview = nonempty(item.overview) {
+                if let overview = item.overview?.displaySynopsis {
                     aboutOverview(overview)
                 }
             }
@@ -522,7 +522,7 @@ public struct DetailInformationSections: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let overview = nonempty(item.overview) {
+            if let overview = item.overview?.displaySynopsis {
                 overviewText(overview)
                     .font(.system(size: 29))
                     .foregroundStyle(palette.primaryText)
@@ -536,7 +536,7 @@ public struct DetailInformationSections: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if let overview = nonempty(item.overview) {
+                    if let overview = item.overview?.displaySynopsis {
                         overviewText(overview)
                             .font(bodyFont)
                             .foregroundStyle(palette.primaryText)

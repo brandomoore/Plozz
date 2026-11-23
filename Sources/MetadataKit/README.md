@@ -96,6 +96,9 @@ load-bearing.
   `OverviewRouter` no longer races library-detail enrichment.
   Its keyless Wikipedia overview fallback now participates in the same
   ordered pipeline for movie/series gaps; Wikipedia artwork remains idle-only.
+  Home and detail hide the reported Spanish streaming-site promotion around
+  a synopsis, including cached descriptions. The library's plot and attribution
+  remain intact; if the ad is the entire description, enrichment can fill the gap.
   Retained detail models update their language in place, discard late old-language
   work and refill gaps from native metadata, not previously enriched text.
   TheTVDB requests its catalog language IDs (including `pt` for Brazilian

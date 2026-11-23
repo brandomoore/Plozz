@@ -130,10 +130,6 @@ public struct EpisodeColumnPresentation: Equatable, Sendable, CustomDebugStringC
     }
 
     static func compactOverview(_ overview: String?) -> String? {
-        overview?.split(whereSeparator: \.isWhitespace).joined(separator: " ").nonEmpty
+        overview?.displaySynopsis?.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
-}
-
-private extension String {
-    var nonEmpty: String? { isEmpty ? nil : self }
 }
