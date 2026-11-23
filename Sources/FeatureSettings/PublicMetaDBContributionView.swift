@@ -134,7 +134,7 @@ struct PublicMetaDBContentRatingsView: View {
                                     }
                                 }
                             } value: {
-                                Text("\(record.value.score.formatted()) / 100")
+                                Text(verbatim: "\(record.value.score.formatted()) / 100")
                             }
                         }
                         .settingsActionRow()
@@ -241,10 +241,10 @@ private struct PublicMetaDBRatingRecordView: View {
     @State private var operation = PublicMetaDBMutationOperation()
 
     var body: some View {
-        GroupedSettingsPage(title: "\(record.value.label)", backIdentifier: "publicmetadb.rating.record.back") {
+        GroupedSettingsPage(verbatim: record.value.label, backIdentifier: "publicmetadb.rating.record.back") {
             PublicMetaDBContentLabel(content: record.value.content)
             SettingsSectionGroup {
-                LabeledContent("Score") { Text("\(record.value.score.formatted()) / 100") }
+                LabeledContent("Score") { Text(verbatim: "\(record.value.score.formatted()) / 100") }
                 if let contributor = record.contributor {
                     LabeledContent("Contributor") { Text(verbatim: contributor) }
                 }

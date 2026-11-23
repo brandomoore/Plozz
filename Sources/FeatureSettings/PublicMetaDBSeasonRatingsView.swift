@@ -216,7 +216,7 @@ private struct PublicMetaDBEpisodeRatingsDeletionView: View {
                                     )) {
                                         VStack(alignment: .leading) {
                                             PublicMetaDBContentLabel(content: record.value.content, allowsFocus: false)
-                                            Text("\(record.value.label): \(record.value.score.formatted()) / 100")
+                                            Text(verbatim: "\(record.value.label): \(record.value.score.formatted()) / 100")
                                             if let contributor = record.contributor {
                                                 Text(verbatim: contributor).font(SettingsRowMetrics.descriptionFont).settingsRowSecondary()
                                             }

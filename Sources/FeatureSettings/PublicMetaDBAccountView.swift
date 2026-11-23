@@ -43,7 +43,7 @@ struct PublicMetaDBContentLabel: View {
                 }
             }
             if let season = content.season, let episode = content.episode {
-                Text("Season \(season), episode \(episode)").foregroundStyle(.secondary)
+                Text("Season \(String(season)), episode \(String(episode))").foregroundStyle(.secondary)
             } else if let season = content.season {
                 Text("Season \(season)").foregroundStyle(.secondary)
             } else {
@@ -138,7 +138,7 @@ struct PublicMetaDBPagedRecords<Item: Decodable & Identifiable & Sendable, Row: 
                 if result.items.isEmpty { Text("No records") }
                 ForEach(result.items) { row($0) }
                 if result.totalPages > 1 {
-                    Text("Page \(result.page) of \(result.totalPages)").foregroundStyle(.secondary)
+                    Text("Page \(result.page, format: .number) of \(result.totalPages, format: .number)").foregroundStyle(.secondary)
                 }
                 if page > 1 { Button("Previous page") { page -= 1 } }
                 if page < result.totalPages { Button("Next page") { page += 1 } }

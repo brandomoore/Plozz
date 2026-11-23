@@ -201,7 +201,7 @@ private struct PublicMetaDBMappingReviewView: View {
             Button("Publish mapping") { operation.perform { try await service.submitManagedMapping(draft) } }
             Button("Cancel", role: .cancel) {}
         } message: { draft in
-            Text("Publish \(draft.mapping.idValue) for TMDB \(draft.mapping.content.tmdbID) on PublicMetaDB. Existing mappings and server metadata are unchanged.")
+            Text("Publish \(draft.mapping.idValue) for TMDB \(String(draft.mapping.content.tmdbID)) on PublicMetaDB. Existing mappings and server metadata are unchanged.")
         }
         .onChange(of: service.connectionID) { _, _ in
             confirming = false

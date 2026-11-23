@@ -50,7 +50,7 @@ public struct LastFmListeningHistoryView: View {
                     ForEach(Array(result.plays.enumerated()), id: \.offset) { _, play in track(play) }
                 }
                 if result.totalPages > 1 {
-                    SettingsSectionGroup("Page \(result.page) of \(result.totalPages)") {
+                    SettingsSectionGroup("Page \(result.page, format: .number) of \(result.totalPages, format: .number)") {
                         if result.page > 1 {
                             Button("Previous page") { page -= 1 }
                                 .settingsActionRow()
@@ -107,7 +107,7 @@ public struct LastFmListeningHistoryView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(verbatim: value.title).font(.headline)
             if let album = value.album, !album.isEmpty {
-                Text("\(value.artist) · \(album)").settingsRowSecondary()
+                Text(verbatim: "\(value.artist) · \(album)").settingsRowSecondary()
             } else {
                 Text(verbatim: value.artist).settingsRowSecondary()
             }

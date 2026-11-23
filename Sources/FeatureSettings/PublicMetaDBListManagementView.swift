@@ -6,7 +6,7 @@ import SwiftUI
 
 // Native dialogs can drop sibling message views; retain all paragraphs in one Text.
 func publicMetaDBConfirmationMessage(_ first: Text, _ remaining: Text?...) -> Text {
-    remaining.compactMap { $0 }.reduce(first) { Text("\($0)\n\n\($1)") }
+    remaining.compactMap { $0 }.reduce(first) { $0 + Text(verbatim: "\n\n") + $1 }
 }
 
 @MainActor
@@ -141,7 +141,7 @@ struct PublicMetaDBOwnedListView: View {
     @State private var operation = PublicMetaDBMutationOperation()
 
     var body: some View {
-        GroupedSettingsPage(title: "\(list.name)", backIdentifier: "publicmetadb.list.back") {
+        GroupedSettingsPage(verbatim: list.name, backIdentifier: "publicmetadb.list.back") {
             SettingsSectionGroup {
                 LabeledContent("Visibility") { Text(list.isPublic ? "Public" : "Private") }
                 if let description = list.description, !description.isEmpty { Text(verbatim: description) }

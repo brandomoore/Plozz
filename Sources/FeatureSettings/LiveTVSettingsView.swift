@@ -229,9 +229,20 @@ private struct LiveTVChannelVisibilitySettings: View {
 }
 
 struct GroupedSettingsPage<Content: View>: View {
-    let title: LocalizedStringResource
-    var backIdentifier = "live-tv-settings-back"
+    let title: Text
+    let backIdentifier: String
     @ViewBuilder let content: () -> Content
+    init(title: LocalizedStringResource, backIdentifier: String = "live-tv-settings-back", @ViewBuilder content: @escaping () -> Content) {
+        self.title = Text(title)
+        self.backIdentifier = backIdentifier
+        self.content = content
+    }
+
+    init(verbatim title: String, backIdentifier: String, @ViewBuilder content: @escaping () -> Content) { // l10n:content — provider or user-supplied title
+        self.title = Text(verbatim: title)
+        self.backIdentifier = backIdentifier
+        self.content = content
+    }
     #if os(tvOS)
     @SettingsPageDismiss private var dismiss
     @Environment(\.settingsInWorkspace) private var inWorkspace
@@ -257,7 +268,7 @@ struct GroupedSettingsPage<Content: View>: View {
         .background { SettingsPageBackground() }
         #else
         SettingsPageScroll(content: content)
-            .navigationTitle(Text(title))
+            .navigationTitle(title)
         #endif
     }
 }

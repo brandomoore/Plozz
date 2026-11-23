@@ -57,13 +57,13 @@ private struct PublicMetaDBAnimeGroupLabel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let name = group.seasonName {
-                Text("Logical season \(group.seasonNumber) · \(name)").font(.headline)
+                Text("Logical season \(String(group.seasonNumber)) · \(name)").font(.headline)
             } else {
-                Text("Logical season \(group.seasonNumber)").font(.headline)
+                Text("Logical season \(String(group.seasonNumber))").font(.headline)
             }
             Text(group.source == "community" ? "Community · \(group.contributor)" : "Member · \(group.contributor)")
                 .settingsRowSecondary()
-            Text(group.recommended ? "Recommended · Vote score: \(group.votes)" : "Vote score: \(group.votes)")
+            Text(group.recommended ? "Recommended · Vote score: \(group.votes, format: .number)" : "Vote score: \(group.votes, format: .number)")
                 .font(SettingsRowMetrics.descriptionFont).settingsRowSecondary()
         }
         .accessibilityElement(children: .combine)
@@ -75,12 +75,12 @@ private struct PublicMetaDBAnimeChunkLabel: View {
     let anchorID: Int
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("TMDB \(String(chunk.chunkTmdbID ?? anchorID)) · Season \(chunk.tmdbSeason)")
+            Text("TMDB \(String(chunk.chunkTmdbID ?? anchorID)) · Season \(String(chunk.tmdbSeason))")
             Group {
                 switch (chunk.tmdbEpisodeStart, chunk.tmdbEpisodeEnd) {
-                case let (start?, end?): Text("Episodes \(start)–\(end)")
-                case let (start?, nil): Text("From episode \(start) · End unspecified")
-                case let (nil, end?): Text("Through episode \(end) · Start unspecified")
+                case let (start?, end?): Text("Episodes \(String(start))–\(String(end))")
+                case let (start?, nil): Text("From episode \(String(start)) · End unspecified")
+                case let (nil, end?): Text("Through episode \(String(end)) · Start unspecified")
                 case (nil, nil): Text("Episode range unspecified")
                 }
             }
@@ -202,7 +202,7 @@ private struct PublicMetaDBAnimeReviewView: View {
 
     var body: some View {
         GroupedSettingsPage(title: "Review anime mapping", backIdentifier: "publicmetadb.anime.review.back") {
-            SettingsSectionGroup("Logical season \(mapping.seasonNumber) · TMDB \(String(mapping.tmdbID))") {
+            SettingsSectionGroup("Logical season \(String(mapping.seasonNumber)) · TMDB \(String(mapping.tmdbID))") {
                 if let name = mapping.seasonName { Text(verbatim: name) }
                 // The immutable reviewed array has no editable per-row state.
                 ForEach(Array(mapping.chunks.enumerated()), id: \.offset) { _, chunk in
@@ -340,7 +340,7 @@ private struct PublicMetaDBAnimeDeleteView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { draft in
-            Text("Deletes all your public chunks for logical season \(draft.season) of TMDB \(String(tmdbID)). Other contributors’ mappings and server episode numbering stay unchanged.")
+            Text("Deletes all your public chunks for logical season \(String(draft.season)) of TMDB \(String(tmdbID)). Other contributors’ mappings and server episode numbering stay unchanged.")
         }
         .onChange(of: service.connectionID) { _, _ in
             confirming = false

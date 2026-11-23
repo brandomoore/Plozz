@@ -107,7 +107,7 @@ private struct PublicMetaDBHistoryExportContent: View {
                     VStack(alignment: .leading, spacing: SettingsFormMetrics.relatedControlSpacing) {
                         Text(verbatim: row.title)
                         if let content = row.content, let season = content.season, let episode = content.episode {
-                            Text("Season \(season), episode \(episode)").foregroundStyle(.secondary)
+                            Text("Season \(String(season)), episode \(String(episode))").foregroundStyle(.secondary)
                         }
                         if mode == .watched {
                             PublicMetaDBWatchDateLabel(date: row.exportedWatchDate)

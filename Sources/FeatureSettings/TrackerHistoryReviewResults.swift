@@ -95,7 +95,8 @@ struct TrackerHistoryReviewResults<Row: Identifiable, Content: View, Action: Vie
                 SettingsMenuRow(title: "Page", value: Text("\(visiblePage + 1) of \(pages)")) {
                     Picker("Page", selection: $page) {
                         ForEach(0..<pages, id: \.self) { index in
-                            Text("\(index * pageSize + 1)–\(min(filtered.count, (index + 1) * pageSize))").tag(index)
+                            (Text(index * pageSize + 1, format: .number) + Text(verbatim: "–")
+                                + Text(min(filtered.count, (index + 1) * pageSize), format: .number)).tag(index)
                         }
                     }
                 }
@@ -121,7 +122,7 @@ struct TrackerHistoryReviewResults<Row: Identifiable, Content: View, Action: Vie
         }
         if pages > 1 {
             SettingsSectionGroup {
-                Text("Page \(visiblePage + 1) of \(pages)")
+                Text("Page \(visiblePage + 1, format: .number) of \(pages, format: .number)")
                 if visiblePage > 0 {
                     Button("Previous page") { page = visiblePage - 1 }
                         .settingsActionRow()
@@ -142,7 +143,7 @@ struct TrackerHistoryReviewResults<Row: Identifiable, Content: View, Action: Vie
         if let n = counts[.conflicts] { parts.append(n == 1 ? Text("1 conflict") : Text("\(n) conflicts")) }
         if let n = counts[.matches] { parts.append(Text("\(n) unchanged")) }
         if let n = counts[.unavailable] { parts.append(Text("\(n) unavailable")) }
-        return parts.dropFirst().reduce(parts.first ?? Text("No results")) { Text("\($0) · \($1)") }
+        return parts.dropFirst().reduce(parts.first ?? Text("No results")) { $0 + Text(verbatim: " · ") + $1 }
     }
 }
 

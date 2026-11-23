@@ -119,7 +119,7 @@ private struct TrackerHistoryComparisonContent: View {
             let changesServer = rows.contains { $0.target?.providerKind != .mediaShare }
             let single = rows.count == 1 ? rows.first : nil
             publicMetaDBConfirmationMessage(
-                single.map { Text("\($0.displayTitle) · \(destinations)") }
+                single.map { Text(verbatim: "\($0.displayTitle) · \(destinations)") }
                     ?? Text("Apply \(rows.count) selected changes to \(destinations)?"),
                 single?.change?.actionLabel,
                 conflicts > 0 ? Text("Conflicting history will be replaced.") : nil,

@@ -47,7 +47,7 @@ struct PublicMetaDBBulkHistoryView: View {
                     }
                 }
                 if result.totalPages > 1 {
-                    SettingsSectionGroup("Page \(result.page) of \(result.totalPages)") {
+                    SettingsSectionGroup("Page \(result.page, format: .number) of \(result.totalPages, format: .number)") {
                         if page > 1 { Button("Previous page") { page -= 1 }.settingsActionRow() }
                         if page < result.totalPages { Button("Next page") { page += 1 }.settingsActionRow() }
                     }

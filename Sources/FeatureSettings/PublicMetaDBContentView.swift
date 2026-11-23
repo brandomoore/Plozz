@@ -39,7 +39,7 @@ private struct PublicMetaDBContentPresentation: ViewModifier {
                 if let identity = PublicMetaDB.Content.matching(item) {
                     PublicMetaDBContentView(service: service, content: identity, title: item.title)
                 } else {
-                    GroupedSettingsPage(title: "\(item.title)", backIdentifier: "publicmetadb.title.back") {
+                    GroupedSettingsPage(verbatim: item.title, backIdentifier: "publicmetadb.title.back") {
                         SettingsSectionGroup {
                             Text("No confirmed TMDB match. Seasons and episodes also need verified numbering.")
                             Button("Close") { service.dismissContent() }.settingsActionRow()
@@ -60,7 +60,7 @@ struct PublicMetaDBContentView: View {
     var title: String? // l10n:content — provider-supplied media title
 
     var body: some View {
-        GroupedSettingsPage(title: "\(title ?? "PublicMetaDB")", backIdentifier: "publicmetadb.title.back") {
+        GroupedSettingsPage(verbatim: title ?? "PublicMetaDB", backIdentifier: "publicmetadb.title.back") {
             SettingsSectionGroup {
                 PublicMetaDBContentLabel(content: content)
                 PublicMetaDBOpenCatalogTitle(service: service, content: content)

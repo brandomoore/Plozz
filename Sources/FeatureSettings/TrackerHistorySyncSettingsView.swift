@@ -212,8 +212,8 @@ private struct TrackerTwoWaySyncRows: View {
                 case .verifying: Text("Verifying \(trackerName) watch history…")
                 case .saving: Text("Saving sync settings…")
                 case .selecting: Text("Updating selected libraries…")
-                case let .comparing(index, total): Text("Checking library \(index) of \(total)…")
-                case let .applying(index, total): Text("Updating library \(index) of \(total)…")
+                case let .comparing(index, total): Text("Checking library \(index, format: .number) of \(total, format: .number)…")
+                case let .applying(index, total): Text("Updating library \(index, format: .number) of \(total, format: .number)…")
                 }
                 if let checked = sync.checkedEntries {
                     Text("\(checked) of \(sync.totalEntries) entries checked")

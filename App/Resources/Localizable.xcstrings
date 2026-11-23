@@ -7459,6 +7459,16 @@
         }
       }
     },
+    "%@ of %@ seconds" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ of %2$@ seconds"
+          }
+        }
+      }
+    },
     "%@ of encoded data is pending upload." : {
       "localizations" : {
         "ar" : {
@@ -7690,6 +7700,19 @@
           }
         }
       }
+    },
+    "%@ paused the history check. Try again after %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ paused the history check. Try again after %2$@."
+          }
+        }
+      }
+    },
+    "%@ paused the history check. Try again later." : {
+
     },
     "%@ rating %@" : {
       "comment" : "Accessibility label for one rating badge in a ratings row. %@ is the rating source name, and the second %@ is the displayed score.",
@@ -16304,6 +16327,70 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "已完成：%1$@/%2$@"
+          }
+        }
+      }
+    },
+    "%@: %@ / 100 (%lld ratings)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@: %2$@ / 100 (%#@arg3@)"
+          },
+          "substitutions" : {
+            "arg3" : {
+              "argNum" : 3,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld rating"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld ratings"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%@: %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@: %#@arg2@"
+          },
+          "substitutions" : {
+            "arg2" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -64485,6 +64572,28 @@
         }
       }
     },
+    "%lld conflicts" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld conflict"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld conflicts"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld cues" : {
       "comment" : "Live status suffix showing how many subtitle lines (cues) were loaded for the selected second subtitle track.",
       "localizations" : {
@@ -97532,6 +97641,58 @@
         }
       }
     },
+    "%lld of %lld entries checked" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%#@arg1@ of %#@arg2@ checked"
+          },
+          "substitutions" : {
+            "arg1" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  }
+                }
+              }
+            },
+            "arg2" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld entry"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld entries"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld of %lld episodes in library" : {
       "localizations" : {
         "ar" : {
@@ -101960,6 +102121,58 @@
         }
       }
     },
+    "%lld of %lld selected" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%#@arg1@ of %#@arg2@ selected"
+          },
+          "substitutions" : {
+            "arg1" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  }
+                }
+              }
+            },
+            "arg2" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld pending uploads · %lld pending deletions" : {
       "localizations" : {
         "ar" : {
@@ -105045,6 +105258,58 @@
         }
       }
     },
+    "%lld ratings were confirmed changed. %lld ratings remain unconfirmed." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%#@arg1@ %#@arg2@"
+          },
+          "substitutions" : {
+            "arg1" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld rating was confirmed changed."
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld ratings were confirmed changed."
+                    }
+                  }
+                }
+              }
+            },
+            "arg2" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld rating remains unconfirmed."
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld ratings remain unconfirmed."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld reachable" : {
       "localizations" : {
         "ar" : {
@@ -105744,6 +106009,28 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "%lld 個可連線"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld ready" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld ready"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld ready"
                 }
               }
             }
@@ -107178,6 +107465,80 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "%lld 秒"
+          }
+        }
+      }
+    },
+    "%lld selected" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld selected"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld selected"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld selected plays were confirmed removed. Processing stopped at the next play; %lld later plays were not attempted." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%#@arg1@ Processing stopped at the next play; %#@arg2@"
+          },
+          "substitutions" : {
+            "arg1" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld selected play was confirmed removed."
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld selected plays were confirmed removed."
+                    }
+                  }
+                }
+              }
+            },
+            "arg2" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld later play was not attempted."
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld later plays were not attempted."
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -110896,6 +111257,28 @@
         }
       }
     },
+    "%lld unchanged" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld unchanged"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%lld unchanged"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld unsupported or duplicate entries skipped" : {
       "localizations" : {
         "ar" : {
@@ -112433,6 +112816,58 @@
                 "stringUnit" : {
                   "state" : "needs_review",
                   "value" : "已略過 %lld 個不支援或重複的項目。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld upvotes, %lld downvotes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%#@arg1@, %#@arg2@"
+          },
+          "substitutions" : {
+            "arg1" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld upvote"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld upvotes"
+                    }
+                  }
+                }
+              }
+            },
+            "arg2" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld downvote"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld downvotes"
+                    }
+                  }
                 }
               }
             }
@@ -118217,6 +118652,9 @@
         }
       }
     },
+    "0 for specials" : {
+
+    },
     "1 channel with current listings" : {
       "localizations" : {
         "ar" : {
@@ -118448,6 +118886,9 @@
           }
         }
       }
+    },
+    "1 conflict" : {
+
     },
     "1 minute" : {
       "localizations" : {
@@ -120072,6 +120513,9 @@
           }
         }
       }
+    },
+    "2-way sync" : {
+
     },
     "20 seconds" : {
       "localizations" : {
@@ -125180,6 +125624,9 @@
         }
       }
     },
+    "A logical season can span TMDB seasons or shows without changing server numbering or playback." : {
+
+    },
     "A media share connects with the credentials you entered (or as a guest). Choose what shows on your Home under Libraries." : {
       "localizations" : {
         "ar" : {
@@ -127736,6 +128183,9 @@
           }
         }
       }
+    },
+    "A tracker record could not be read safely." : {
+
     },
     "A username, password, or token requires a secure (https://) address." : {
       "localizations" : {
@@ -135198,6 +135648,9 @@
         }
       }
     },
+    "Activity" : {
+
+    },
     "Activity recorded during this app session will appear here." : {
       "localizations" : {
         "ar" : {
@@ -140783,6 +141236,9 @@
         }
       }
     },
+    "Add a chunk" : {
+
+    },
     "Add a media server to choose who you watch as." : {
       "localizations" : {
         "ar" : {
@@ -142645,6 +143101,9 @@
         }
       }
     },
+    "Add a watched play" : {
+
+    },
     "Add account" : {
       "localizations" : {
         "ar" : {
@@ -143341,6 +143800,9 @@
         }
       }
     },
+    "Add an episode" : {
+
+    },
     "Add another guide" : {
       "localizations" : {
         "ar" : {
@@ -143573,7 +144035,11 @@
         }
       }
     },
+    "Add another play" : {
+
+    },
     "Add another server to sync watch status across servers." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -147986,6 +148452,15 @@
         }
       }
     },
+    "Add to a list" : {
+
+    },
+    "Add to list" : {
+
+    },
+    "Add to this list?" : {
+
+    },
     "Add your Plex Home profiles?" : {
       "localizations" : {
         "ar" : {
@@ -148682,6 +149157,9 @@
           }
         }
       }
+    },
+    "Added to list" : {
+
     },
     "Adding guide" : {
       "localizations" : {
@@ -149843,6 +150321,9 @@
           }
         }
       }
+    },
+    "Adding watched episodes restores dropped shows." : {
+
     },
     "Additional address" : {
       "localizations" : {
@@ -151236,6 +151717,15 @@
           }
         }
       }
+    },
+    "Adds a separate play on PublicMetaDB without changing server history." : {
+
+    },
+    "Adds one missing play per title. Uses the last played date if there’s no saved position; otherwise the date is unknown." : {
+
+    },
+    "Adds this title to “%@”. PublicMetaDB may undrop shows when added. Changes to a watchlist destination can propagate to other enabled destinations." : {
+
     },
     "Adjust audio earlier or later to match the video." : {
       "localizations" : {
@@ -153560,6 +154050,9 @@
         }
       }
     },
+    "Aggregate episode progress cannot identify individual watched episodes." : {
+
+    },
     "AirPlay" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -154486,6 +154979,28 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "全部"
+          }
+        }
+      }
+    },
+    "All (%lld)" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "All (%lld)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "All (%lld)"
+                }
+              }
+            }
           }
         }
       }
@@ -158904,6 +159419,12 @@
         }
       }
     },
+    "All selected episode ratings were confirmed on PublicMetaDB" : {
+
+    },
+    "All selected ratings were confirmed removed" : {
+
+    },
     "All sources" : {
       "localizations" : {
         "ar" : {
@@ -160995,6 +161516,43 @@
           }
         }
       }
+    },
+    "Already match (%lld)" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Already matches (%lld)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Already match (%lld)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Already matched" : {
+
+    },
+    "Already matches — no change" : {
+
+    },
+    "Already present" : {
+
+    },
+    "Already present — no change" : {
+
+    },
+    "Already present; no additional play needed." : {
+
     },
     "Already requested on %@." : {
       "localizations" : {
@@ -164249,6 +164807,12 @@
         }
       }
     },
+    "Anime mapping confirmed on PublicMetaDB" : {
+
+    },
+    "Anime season mappings" : {
+
+    },
     "Anonymous" : {
       "comment" : "Authentication-method option for FTP or WebDAV share setup that connects without signing in.",
       "localizations" : {
@@ -165179,6 +165743,12 @@
           }
         }
       }
+    },
+    "Another title uses this ID. Publishing won’t resolve the conflict." : {
+
+    },
+    "Anyone can see this list and its items." : {
+
     },
     "App default" : {
       "localizations" : {
@@ -168898,6 +169468,41 @@
           }
         }
       }
+    },
+    "Apply %lld selected changes to %@?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Apply %#@arg1@ to %2$@?"
+          },
+          "substitutions" : {
+            "arg1" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld selected change"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld selected changes"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Apply selected changes" : {
+
     },
     "Applying…" : {
       "localizations" : {
@@ -206578,6 +207183,9 @@
         }
       }
     },
+    "Browse items" : {
+
+    },
     "Browse sources" : {
       "localizations" : {
         "ar" : {
@@ -216425,6 +217033,9 @@
         }
       }
     },
+    "Cancelled" : {
+
+    },
     "Can’t Reach Seerr" : {
       "localizations" : {
         "ar" : {
@@ -222236,6 +222847,9 @@
         }
       }
     },
+    "Change confirmed on PublicMetaDB" : {
+
+    },
     "Change quality" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -222468,6 +223082,18 @@
           }
         }
       }
+    },
+    "Change server history?" : {
+
+    },
+    "Change share and server history?" : {
+
+    },
+    "Change share history in Plozz?" : {
+
+    },
+    "Change this PublicMetaDB record?" : {
+
     },
     "Change this any time in Settings > Live TV > Auto preview." : {
       "localizations" : {
@@ -222933,6 +223559,12 @@
         }
       }
     },
+    "Change watch date" : {
+
+    },
+    "Change your PublicMetaDB vote?" : {
+
+    },
     "Changes apply only to this library's Recommended page, not Home." : {
       "localizations" : {
         "ar" : {
@@ -223165,6 +223797,9 @@
         }
       }
     },
+    "Changes apply to PublicMetaDB, not your media server." : {
+
+    },
     "Changes episode labels in the episode browser and on detail pages." : {
       "localizations" : {
         "ar" : {
@@ -223396,6 +224031,9 @@
           }
         }
       }
+    },
+    "Changes from %@ update matching titles in Plozz, not on Plex, Jellyfin, or Emby." : {
+
     },
     "Changes labels below Browse cards, including titles inside collections and playlists." : {
       "localizations" : {
@@ -225948,6 +226586,9 @@
           }
         }
       }
+    },
+    "Changes only this play’s date on PublicMetaDB." : {
+
     },
     "Channel" : {
       "localizations" : {
@@ -234527,6 +235168,9 @@
         }
       }
     },
+    "Check the entered values." : {
+
+    },
     "Check the link file and that the destination app is available on this device." : {
       "localizations" : {
         "ar" : {
@@ -237314,6 +237958,12 @@
         }
       }
     },
+    "Check watch history in %@. Plozz couldn’t verify an update and won’t repeat it." : {
+
+    },
+    "Check watched status in Plozz. An update couldn’t be verified and won’t be repeated." : {
+
+    },
     "Check whether this season can be requested" : {
       "localizations" : {
         "ar" : {
@@ -237777,6 +238427,9 @@
           }
         }
       }
+    },
+    "Check your PublicMetaDB history. Delivery wasn't confirmed and won't be retried." : {
+
     },
     "Check your connection and iCloud sign-in, or set up manually." : {
       "localizations" : {
@@ -238938,6 +239591,9 @@
           }
         }
       }
+    },
+    "Checking API key…" : {
+
     },
     "Checking Live TV" : {
       "localizations" : {
@@ -240564,6 +241220,58 @@
         }
       }
     },
+    "Checking dates: %lld of %lld pages" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Checking dates: %#@arg1@ of %#@arg2@"
+          },
+          "substitutions" : {
+            "arg1" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  }
+                }
+              }
+            },
+            "arg2" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld page"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld pages"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Checking episode availability…" : {
       "localizations" : {
         "ar" : {
@@ -241256,6 +241964,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "正在檢查媒體庫"
+          }
+        }
+      }
+    },
+    "Checking library %@ of %@…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Checking library %1$@ of %2$@…"
           }
         }
       }
@@ -244747,6 +245465,9 @@
         }
       }
     },
+    "Choose" : {
+
+    },
     "Choose M3U file" : {
       "localizations" : {
         "ar" : {
@@ -246139,6 +246860,9 @@
         }
       }
     },
+    "Choose a library" : {
+
+    },
     "Choose a library to arrange or hide rows on its Recommended page." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -246371,6 +247095,9 @@
           }
         }
       }
+    },
+    "Choose a list" : {
+
     },
     "Choose a name, accessible libraries and valid channel rules." : {
       "localizations" : {
@@ -247999,6 +248726,9 @@
           }
         }
       }
+    },
+    "Choose a server user" : {
+
     },
     "Choose a share" : {
       "localizations" : {
@@ -261715,6 +262445,9 @@
         }
       }
     },
+    "Clear resume point" : {
+
+    },
     "Clear search" : {
       "comment" : "Accessibility label for the button that clears the search field on the iOS search screen.",
       "localizations" : {
@@ -262179,6 +262912,12 @@
           }
         }
       }
+    },
+    "Clear this resume point" : {
+
+    },
+    "Clears this title's saved position on PublicMetaDB. Plozz does not clear the media server's position." : {
+
     },
     "Close" : {
       "localizations" : {
@@ -264038,6 +264777,9 @@
           }
         }
       }
+    },
+    "Code expired or used." : {
+
     },
     "Code expires in" : {
       "extractionState" : "stale",
@@ -269941,6 +270683,18 @@
         }
       }
     },
+    "Community IDs don’t change server IDs or episode numbering." : {
+
+    },
+    "Community and personal ratings" : {
+
+    },
+    "Community contribution" : {
+
+    },
+    "Community · %@" : {
+
+    },
     "Compare Devices" : {
       "localizations" : {
         "ar" : {
@@ -270173,6 +270927,12 @@
         }
       }
     },
+    "Compare again" : {
+
+    },
+    "Compare watch history" : {
+
+    },
     "Comparing notes with your devices…" : {
       "localizations" : {
         "ar" : {
@@ -270404,6 +271164,12 @@
           }
         }
       }
+    },
+    "Comparing or verifying history…" : {
+
+    },
+    "Comparison" : {
+
     },
     "Compatible library videos open in the selected app, including server-converted streams. Unsupported sources and Live TV play in Plozz." : {
       "localizations" : {
@@ -272268,6 +273034,55 @@
         }
       }
     },
+    "Confirm vote" : {
+
+    },
+    "Confirmed in Plozz" : {
+
+    },
+    "Confirmed on %@" : {
+
+    },
+    "Confirmed on PublicMetaDB" : {
+
+    },
+    "Confirmed on server" : {
+
+    },
+    "Conflicting IDs: no automatic match selected" : {
+
+    },
+    "Conflicting history will be replaced." : {
+
+    },
+    "Conflicting tracker state" : {
+
+    },
+    "Conflicts (%lld)" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Conflict (%lld)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Conflicts (%lld)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Conflicts with tracker history. Selecting this replaces the tracker’s state." : {
+
+    },
     "Connect" : {
       "comment" : "Primary button or step title used when connecting to a server, network share, Seerr service, or tracker account.",
       "localizations" : {
@@ -273198,6 +274013,9 @@
           }
         }
       }
+    },
+    "Connect PublicMetaDB" : {
+
     },
     "Connect Seerr" : {
       "comment" : "Title of the panel offering to connect a Seerr (Overseerr/Jellyseerr) request server.",
@@ -276224,6 +277042,9 @@
         }
       }
     },
+    "Connect a tracker to report what you watch in this profile. Syncing history to media shares is optional." : {
+
+    },
     "Connect an IPTV provider or use Live TV from a media server." : {
       "localizations" : {
         "ar" : {
@@ -278545,6 +279366,9 @@
           }
         }
       }
+    },
+    "Connect to send movie and episode playback to PublicMetaDB." : {
+
     },
     "Connect your IPTV provider" : {
       "localizations" : {
@@ -281569,6 +282393,9 @@
         }
       }
     },
+    "Connection change failed. Retry before closing the app." : {
+
+    },
     "Connection type" : {
       "localizations" : {
         "ar" : {
@@ -281802,6 +282629,7 @@
       }
     },
     "Connections are stored separately for each Plozz profile. Playback progress is sent to every connected tracker." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -285983,6 +286811,15 @@
         }
       }
     },
+    "Contribution removed from PublicMetaDB" : {
+
+    },
+    "Contributions" : {
+
+    },
+    "Contributor" : {
+
+    },
     "Converts TrueHD Atmos and DTS:X to Apple spatial audio (lossy)." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -286448,6 +287285,12 @@
           }
         }
       }
+    },
+    "Copies positions from 2% to below 80% of runtime. PublicMetaDB dates them today." : {
+
+    },
+    "Copies watched movies and episodes, without adding repeat plays." : {
+
     },
     "Copy" : {
       "comment" : "Button label in iOS Diagnostics for copying the filtered log text to the clipboard.",
@@ -287143,6 +287986,38 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "複製位址"
+          }
+        }
+      }
+    },
+    "Copy history from %@ to %@? Titles to export: %lld." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copy history from %1$@ to %2$@? %#@arg3@"
+          },
+          "substitutions" : {
+            "arg3" : {
+              "argNum" : 3,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "Title to export: %lld."
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "Titles to export: %lld."
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -288541,6 +289416,9 @@
         }
       }
     },
+    "Could not disconnect. Retry before closing the app." : {
+
+    },
     "Could not finish erasing Plozz sync data. Some data may already be deleted. Check iCloud and try again." : {
       "localizations" : {
         "ar" : {
@@ -289236,6 +290114,9 @@
           }
         }
       }
+    },
+    "Could not verify key." : {
+
     },
     "Couldn't Open Link" : {
       "localizations" : {
@@ -302240,6 +303121,9 @@
         }
       }
     },
+    "Couldn’t change the tracker setting. Try again." : {
+
+    },
     "Couldn’t check this server. Set up manually to try another address." : {
       "localizations" : {
         "ar" : {
@@ -312926,6 +313810,9 @@
         }
       }
     },
+    "Create a list" : {
+
+    },
     "Create channels from your libraries." : {
       "localizations" : {
         "ar" : {
@@ -313389,6 +314276,9 @@
           }
         }
       }
+    },
+    "Create list" : {
+
     },
     "Create row" : {
       "localizations" : {
@@ -313854,6 +314744,12 @@
           }
         }
       }
+    },
+    "Create this PublicMetaDB list?" : {
+
+    },
+    "Creating a list does not turn on watchlist sync." : {
+
     },
     "Creator" : {
       "localizations" : {
@@ -317344,6 +318240,15 @@
         }
       }
     },
+    "Currently playing" : {
+
+    },
+    "Currently playing — not exported" : {
+
+    },
+    "Currently playing — not imported" : {
+
+    },
     "Cursive" : {
       "localizations" : {
         "ar" : {
@@ -318504,6 +319409,9 @@
           }
         }
       }
+    },
+    "Custom list" : {
+
     },
     "Custom metadata" : {
       "localizations" : {
@@ -325489,6 +326397,9 @@
         }
       }
     },
+    "Database" : {
+
+    },
     "Date" : {
       "localizations" : {
         "ar" : {
@@ -325720,6 +326631,9 @@
           }
         }
       }
+    },
+    "Date and time (ISO 8601)" : {
+
     },
     "Declared stream bitrate" : {
       "localizations" : {
@@ -329441,6 +330355,9 @@
         }
       }
     },
+    "Deferred during playback" : {
+
+    },
     "Delete" : {
       "comment" : "Destructive delete action. Used as the accessibility label for the PIN entry keypad's backspace key and as the swipe-to-delete button for removing a saved profile.",
       "localizations" : {
@@ -329670,6 +330587,28 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "刪除"
+          }
+        }
+      }
+    },
+    "Delete %lld plays" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Delete %lld play"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Delete %lld plays"
+                }
+              }
+            }
           }
         }
       }
@@ -330139,6 +331078,9 @@
         }
       }
     },
+    "Delete all your chunks for this logical season?" : {
+
+    },
     "Delete channel" : {
       "localizations" : {
         "ar" : {
@@ -330370,6 +331312,48 @@
           }
         }
       }
+    },
+    "Delete contribution" : {
+
+    },
+    "Delete list" : {
+
+    },
+    "Delete multiple plays" : {
+
+    },
+    "Delete my logical-season mapping" : {
+
+    },
+    "Delete my mapping" : {
+
+    },
+    "Delete my mapping for a logical season" : {
+
+    },
+    "Delete rating" : {
+
+    },
+    "Delete selected episode ratings" : {
+
+    },
+    "Delete selected ratings" : {
+
+    },
+    "Delete the selected PublicMetaDB plays?" : {
+
+    },
+    "Delete these exact ratings?" : {
+
+    },
+    "Delete this PublicMetaDB list?" : {
+
+    },
+    "Delete this contribution?" : {
+
+    },
+    "Delete this play" : {
+
     },
     "Delete this profile?" : {
       "localizations" : {
@@ -330603,6 +331587,9 @@
         }
       }
     },
+    "Delete this rating?" : {
+
+    },
     "Deleted Scene" : {
       "localizations" : {
         "ar" : {
@@ -330834,6 +331821,63 @@
           }
         }
       }
+    },
+    "Deletes all your old chunks for logical season %lld of TMDB %@ and publishes the %lld reviewed chunks. Other contributors’ mappings and your server stay unchanged." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deletes all your old chunks for logical season %1$lld of TMDB %2$@ and publishes the %#@arg3@. Other contributors’ mappings and your server stay unchanged."
+          },
+          "substitutions" : {
+            "arg3" : {
+              "argNum" : 3,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld reviewed chunk"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld reviewed chunks"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Deletes all your public chunks for logical season %@ of TMDB %@. Other contributors’ mappings and server episode numbering stay unchanged." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Deletes all your public chunks for logical season %1$@ of TMDB %2$@. Other contributors’ mappings and server episode numbering stay unchanged."
+          }
+        }
+      }
+    },
+    "Deletes only this chunk of your public mapping, not the whole logical season. Other contributors’ mappings and server episode numbering stay unchanged." : {
+
+    },
+    "Deletes only this external ID contribution if it belongs to you. Other mappings and server IDs stay unchanged." : {
+
+    },
+    "Deletes only this play on PublicMetaDB, not other plays of the title. Plozz does not change media-server history." : {
+
+    },
+    "Deletes the private list “%@” and all its entries on PublicMetaDB." : {
+
+    },
+    "Deletes the public list “%@” and all its entries on PublicMetaDB." : {
+
     },
     "Deletes the shared iCloud copy and re-uploads it from THIS Apple TV. Other devices keep their own logins. Use only if devices won't converge." : {
       "extractionState" : "stale",
@@ -332697,6 +333741,18 @@
           }
         }
       }
+    },
+    "Delivery is unconfirmed. It will not be sent again." : {
+
+    },
+    "Description (optional)" : {
+
+    },
+    "Deselect all" : {
+
+    },
+    "Deselect the other change for this title first." : {
+
     },
     "Destinations" : {
       "extractionState" : "stale",
@@ -339210,6 +340266,9 @@
         }
       }
     },
+    "Different TMDB show ID" : {
+
+    },
     "Different default per type" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -339676,6 +340735,15 @@
           }
         }
       }
+    },
+    "Different from Plozz — selecting replaces this title’s current state" : {
+
+    },
+    "Different from server — selecting replaces its current state" : {
+
+    },
+    "Different or unknown runtime — resume not imported" : {
+
     },
     "Digital" : {
       "localizations" : {
@@ -344097,6 +345165,9 @@
           }
         }
       }
+    },
+    "Disconnect PublicMetaDB?" : {
+
     },
     "Disconnected from Plozz. WeTrakr could not revoke the session; remove Plozz from your connected apps on WeTrakr." : {
       "localizations" : {
@@ -366989,6 +368060,9 @@
         }
       }
     },
+    "Downvote" : {
+
+    },
     "Drag a provider here to turn it off" : {
       "localizations" : {
         "ar" : {
@@ -367684,6 +368758,12 @@
           }
         }
       }
+    },
+    "Drop show" : {
+
+    },
+    "Drop show on PublicMetaDB" : {
+
     },
     "Dropped" : {
       "comment" : "Playback diagnostics label for dropped video frames.",
@@ -382800,6 +383880,9 @@
         }
       }
     },
+    "Enter API key manually" : {
+
+    },
     "Enter Code" : {
       "comment" : "Navigation title of the iOS iCloud Sync pairing screen where the user types the code shown on another device.",
       "localizations" : {
@@ -383728,6 +384811,9 @@
           }
         }
       }
+    },
+    "Enter a date with a time zone, such as 2026-01-15T20:30:00Z." : {
+
     },
     "Enter a name and value for each custom header, or remove the empty row." : {
       "localizations" : {
@@ -391858,6 +392944,9 @@
         }
       }
     },
+    "Episode range unspecified" : {
+
+    },
     "Episode thumbnails and movie artwork." : {
       "localizations" : {
         "ar" : {
@@ -393017,6 +394106,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "集數"
+          }
+        }
+      }
+    },
+    "Episodes %@–%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Episodes %1$@–%2$@"
           }
         }
       }
@@ -399615,6 +400714,9 @@
         }
       }
     },
+    "Existing mappings" : {
+
+    },
     "Exit Full Screen" : {
       "localizations" : {
         "ar" : {
@@ -400546,6 +401648,24 @@
         }
       }
     },
+    "Export selected titles" : {
+
+    },
+    "Export server history" : {
+
+    },
+    "Export this title" : {
+
+    },
+    "Export to %@" : {
+
+    },
+    "Export to %@?" : {
+
+    },
+    "Export to PublicMetaDB" : {
+
+    },
     "Exports" : {
       "comment" : "Title of the discovered-location list in the iOS Add NFS Share screen after the app queries the server's advertised NFS exports.",
       "extractionState" : "stale",
@@ -400779,6 +401899,12 @@
           }
         }
       }
+    },
+    "External ID" : {
+
+    },
+    "External IDs" : {
+
     },
     "External playback" : {
       "localizations" : {
@@ -413207,6 +414333,9 @@
         }
       }
     },
+    "Find a title" : {
+
+    },
     "Find channel" : {
       "localizations" : {
         "ar" : {
@@ -419270,6 +420399,9 @@
           }
         }
       }
+    },
+    "First episode" : {
+
     },
     "Flair" : {
       "comment" : "Category header in the profile editor's emoji avatar picker for decorative or style-themed emoji choices.",
@@ -427729,6 +428861,9 @@
           }
         }
       }
+    },
+    "From episode %@ · End unspecified" : {
+
     },
     "From iCloud" : {
       "localizations" : {
@@ -454758,6 +455893,9 @@
         }
       }
     },
+    "Hides this show from PublicMetaDB's Up Next, Progress, and Calendar without deleting watch history. Recording another episode or adding the show to a list can automatically undrop it. Plozz does not change media-server state." : {
+
+    },
     "History" : {
       "localizations" : {
         "ar" : {
@@ -454989,6 +456127,15 @@
           }
         }
       }
+    },
+    "History is present on PublicMetaDB; no additional play is needed" : {
+
+    },
+    "History is too large for ongoing sync." : {
+
+    },
+    "History to export" : {
+
     },
     "Home" : {
       "comment" : "Title of the main Home tab and navigation screens on tvOS and iOS.",
@@ -461506,6 +462653,12 @@
         }
       }
     },
+    "ID" : {
+
+    },
+    "IDs for this title" : {
+
+    },
     "IPTV" : {
       "localizations" : {
         "ar" : {
@@ -465002,6 +466155,9 @@
           }
         }
       }
+    },
+    "If this list syncs with your watchlist, the removal can reach other synced lists. Watched history and server files are kept." : {
+
     },
     "If this share needs a different account, enter a username and password and try again." : {
       "localizations" : {
@@ -475920,6 +477076,9 @@
         }
       }
     },
+    "Include the time zone, for example 2026-01-15T20:30:00Z." : {
+
+    },
     "Include unrated titles" : {
       "localizations" : {
         "ar" : {
@@ -480101,6 +481260,9 @@
           }
         }
       }
+    },
+    "Item removed from this list" : {
+
     },
     "Items in rotation" : {
       "extractionState" : "stale",
@@ -488345,6 +489507,9 @@
         }
       }
     },
+    "Keep watched status and playback progress in sync." : {
+
+    },
     "Keep watching" : {
       "localizations" : {
         "ar" : {
@@ -489505,6 +490670,9 @@
         }
       }
     },
+    "Keeps the items in both lists." : {
+
+    },
     "Keeps the listings provided within this range. A guide may supply fewer days." : {
       "localizations" : {
         "ar" : {
@@ -490202,6 +491370,12 @@
           }
         }
       }
+    },
+    "Kept existing watch history" : {
+
+    },
+    "Kept existing watched status or progress" : {
+
     },
     "Key verified — TMDB authenticated successfully." : {
       "localizations" : {
@@ -496246,6 +497420,9 @@
         }
       }
     },
+    "Last episode" : {
+
+    },
     "Last refreshed: %@" : {
       "localizations" : {
         "ar" : {
@@ -497175,6 +498352,43 @@
           }
         }
       }
+    },
+    "Last sync didn’t finish. Use Sync now to check again." : {
+
+    },
+    "Last sync failed. Use Sync now to try again." : {
+
+    },
+    "Last sync: %lld updates applied" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Last sync: %lld update applied"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Last sync: %lld updates applied"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Last sync: 1 update applied" : {
+
+    },
+    "Last sync: no updates applied" : {
+
+    },
+    "Last.fm scrobbles" : {
+
     },
     "Later" : {
       "localizations" : {
@@ -500432,6 +501646,9 @@
           }
         }
       }
+    },
+    "Libraries to sync" : {
+
     },
     "Libraries, collections, and playlists." : {
       "extractionState" : "stale",
@@ -507870,6 +509087,21 @@
         }
       }
     },
+    "List created on PublicMetaDB" : {
+
+    },
+    "List deleted from PublicMetaDB" : {
+
+    },
+    "List item" : {
+
+    },
+    "List items" : {
+
+    },
+    "List name" : {
+
+    },
     "List preferred guides first. Relative addresses require the provider's HTTP or HTTPS base URL." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -508103,6 +509335,9 @@
         }
       }
     },
+    "List type" : {
+
+    },
     "Listen" : {
       "localizations" : {
         "ar" : {
@@ -508334,6 +509569,12 @@
           }
         }
       }
+    },
+    "Listening history" : {
+
+    },
+    "Listening history changed. Refresh before continuing." : {
+
     },
     "Live" : {
       "localizations" : {
@@ -516463,6 +517704,31 @@
         }
       }
     },
+    "Load season" : {
+
+    },
+    "Loaded %lld library items" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Loaded %lld library item"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Loaded %lld library items"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Loading" : {
       "comment" : "Used for poster-card placeholders while a library grid page is still loading, and as the playback-diagnostics status while the current player item is still loading.",
       "localizations" : {
@@ -518090,6 +519356,9 @@
           }
         }
       }
+    },
+    "Loading QR code…" : {
+
     },
     "Loading Seasons…" : {
       "comment" : "Inactive title for the season-request hero control on a series detail screen while season request availability is still being resolved.",
@@ -524903,6 +526172,9 @@
         }
       }
     },
+    "Loading listening history…" : {
+
+    },
     "Loading playlist" : {
       "localizations" : {
         "ar" : {
@@ -529087,6 +530359,32 @@
         }
       }
     },
+    "Logical anime season (1 or greater)" : {
+
+    },
+    "Logical season %@" : {
+
+    },
+    "Logical season %@ · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Logical season %1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "Logical season %@ · TMDB %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Logical season %1$@ · TMDB %2$@"
+          }
+        }
+      }
+    },
     "Logo" : {
       "localizations" : {
         "ar" : {
@@ -530014,6 +531312,12 @@
           }
         }
       }
+    },
+    "Look up ID" : {
+
+    },
+    "Look up an external ID" : {
+
     },
     "Looking for Seerr…" : {
       "localizations" : {
@@ -539312,6 +540616,9 @@
         }
       }
     },
+    "Mapping confirmed on PublicMetaDB" : {
+
+    },
     "Mark Season Unwatched" : {
       "localizations" : {
         "ar" : {
@@ -539775,6 +541082,12 @@
           }
         }
       }
+    },
+    "Mark unwatched" : {
+
+    },
+    "Mark watched" : {
+
     },
     "Mark watched after you view %@ of a program. No resume progress. Original files only." : {
       "comment" : "The placeholder is a localized percentage such as 90%. Do not add a percent sign.",
@@ -547305,6 +548618,9 @@
           }
         }
       }
+    },
+    "Member · %@" : {
+
     },
     "Memory" : {
       "comment" : "Playback diagnostics label for app memory usage.",
@@ -559163,6 +560479,9 @@
         }
       }
     },
+    "Movie" : {
+
+    },
     "Movie & show details" : {
       "localizations" : {
         "ar" : {
@@ -561487,6 +562806,12 @@
         }
       }
     },
+    "Movies only. Copies completion status, not dates or play counts." : {
+
+    },
+    "Movies only. Copies watched status and dates, without repeat plays." : {
+
+    },
     "Movies read" : {
       "localizations" : {
         "ar" : {
@@ -562182,6 +563507,18 @@
           }
         }
       }
+    },
+    "Multiple library matches — not imported" : {
+
+    },
+    "Multiple matches" : {
+
+    },
+    "Multiple matches. Choose a title to inspect." : {
+
+    },
+    "Multiple server items match this tracker title — not exported" : {
+
     },
     "Multiview" : {
       "localizations" : {
@@ -570093,6 +571430,9 @@
         }
       }
     },
+    "Neutral" : {
+
+    },
     "Neutral background" : {
       "comment" : "Accessibility label for the neutral or no-color profile background swatch in the iOS/iPadOS profile editor.",
       "localizations" : {
@@ -575444,6 +576784,9 @@
           }
         }
       }
+    },
+    "Next page" : {
+
     },
     "Next week" : {
       "localizations" : {
@@ -582650,6 +583993,9 @@
         }
       }
     },
+    "No anime season mappings" : {
+
+    },
     "No announced releases" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -585670,6 +587016,12 @@
         }
       }
     },
+    "No confirmed TMDB match. Seasons and episodes also need verified numbering." : {
+
+    },
+    "No confirmed library match" : {
+
+    },
     "No connected Live TV servers" : {
       "localizations" : {
         "ar" : {
@@ -587527,6 +588879,9 @@
         }
       }
     },
+    "No episode ratings" : {
+
+    },
     "No episodes" : {
       "comment" : "Empty-state title for the inline episode rail on iOS/iPadOS when a show or season has no episodes to display.",
       "localizations" : {
@@ -588223,6 +589578,9 @@
           }
         }
       }
+    },
+    "No external IDs" : {
+
     },
     "No favorite Multiviews" : {
       "localizations" : {
@@ -593333,6 +594691,9 @@
         }
       }
     },
+    "No matches" : {
+
+    },
     "No matching channels" : {
       "localizations" : {
         "ar" : {
@@ -594494,6 +595855,9 @@
         }
       }
     },
+    "No matching server history to export." : {
+
+    },
     "No matching subtitles were found." : {
       "localizations" : {
         "ar" : {
@@ -595654,6 +597018,9 @@
           }
         }
       }
+    },
+    "No new activity to check." : {
+
     },
     "No one in this household is signed in to this server yet." : {
       "localizations" : {
@@ -598907,6 +600274,9 @@
         }
       }
     },
+    "No ratings" : {
+
+    },
     "No re-encoding" : {
       "localizations" : {
         "ar" : {
@@ -599603,6 +600973,18 @@
         }
       }
     },
+    "No records" : {
+
+    },
+    "No request was sent to PublicMetaDB." : {
+
+    },
+    "No results" : {
+
+    },
+    "No results for this filter." : {
+
+    },
     "No results. Try a different search." : {
       "localizations" : {
         "ar" : {
@@ -599834,6 +601216,9 @@
           }
         }
       }
+    },
+    "No scrobbles in this history." : {
+
     },
     "No sections are available to add." : {
       "extractionState" : "stale",
@@ -600299,6 +601684,9 @@
           }
         }
       }
+    },
+    "No server users available." : {
+
     },
     "No servers are available on this %@." : {
       "comment" : "Empty-state text on the iOS Settings > Servers page when this device has no signed-in servers. %@ is the current device name.",
@@ -604016,6 +605404,18 @@
         }
       }
     },
+    "No supported exact identity, date, runtime, or resume position — not exported" : {
+
+    },
+    "No supported exact match" : {
+
+    },
+    "No supported exact match." : {
+
+    },
+    "No supported libraries for this server user." : {
+
+    },
     "No titles in this collection." : {
       "localizations" : {
         "ar" : {
@@ -605407,6 +606807,9 @@
           }
         }
       }
+    },
+    "No tracker records to compare." : {
+
     },
     "No tuner is currently available on this server." : {
       "localizations" : {
@@ -606800,6 +608203,9 @@
           }
         }
       }
+    },
+    "No vote" : {
+
     },
     "No, they're different" : {
       "localizations" : {
@@ -610057,6 +611463,15 @@
         }
       }
     },
+    "Not checked in that sync" : {
+
+    },
+    "Not confirmed. Compare again before retrying." : {
+
+    },
+    "Not confirmed. Preview again before taking further action." : {
+
+    },
     "Not connected" : {
       "comment" : "Status value for the Seerr row in Settings when no Seerr server is connected.",
       "localizations" : {
@@ -612382,6 +613797,9 @@
         }
       }
     },
+    "Not sent: PublicMetaDB has newer progress or a possible matching play." : {
+
+    },
     "Not watched" : {
       "comment" : "Accessibility value for the watched or unwatched hero toggle on tvOS when the selected item is currently unplayed.",
       "localizations" : {
@@ -612614,6 +614032,9 @@
           }
         }
       }
+    },
+    "Nothing changes until you confirm." : {
+
     },
     "Nothing detected yet." : {
       "localizations" : {
@@ -615867,6 +617288,9 @@
           }
         }
       }
+    },
+    "Now playing" : {
+
     },
     "OK" : {
       "comment" : "Default dismiss button on many alerts and dialogs across the app.",
@@ -622399,6 +623823,9 @@
         }
       }
     },
+    "Ongoing sync is unavailable." : {
+
+    },
     "Online" : {
       "comment" : "Reachability status label for a media server that is reachable over the network.",
       "localizations" : {
@@ -625889,6 +627316,9 @@
         }
       }
     },
+    "Only chunks owned by your API key are removed." : {
+
+    },
     "Only confirm when this is the same station and regional feed. Saved favorites, hidden state and guide corrections will use this entry." : {
       "localizations" : {
         "ar" : {
@@ -626584,6 +628014,9 @@
           }
         }
       }
+    },
+    "Only movies and episodes with watch dates. No repeat plays." : {
+
     },
     "Only show descriptions on focus" : {
       "localizations" : {
@@ -627516,6 +628949,28 @@
         }
       }
     },
+    "Only these %lld selected records will be removed. Plozz cannot undo this. Newer plays and media-server history are unchanged." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Only %lld selected record will be removed. Plozz cannot undo this. Newer plays and media-server history are unchanged."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Only these %lld selected records will be removed. Plozz cannot undo this. Newer plays and media-server history are unchanged."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Only this profile is affected. Who you watch as sets whose watchlist it uses." : {
       "comment" : "Explains that the library and identity choices on this screen apply to the current profile alone.",
       "extractionState" : "stale",
@@ -627749,6 +629204,9 @@
           }
         }
       }
+    },
+    "Only you can see this list." : {
+
     },
     "Opacity" : {
       "comment" : "Label for subtitle appearance controls that adjust text or background opacity.",
@@ -631238,6 +632696,9 @@
         }
       }
     },
+    "Open a public list" : {
+
+    },
     "Open an episode to change its selected versions." : {
       "localizations" : {
         "ar" : {
@@ -633096,6 +634557,12 @@
         }
       }
     },
+    "Open list" : {
+
+    },
+    "Open show in Plozz" : {
+
+    },
     "Open song" : {
       "localizations" : {
         "ar" : {
@@ -633559,6 +635026,9 @@
           }
         }
       }
+    },
+    "Open title in Plozz" : {
+
     },
     "Opening %@" : {
       "extractionState" : "stale",
@@ -635418,6 +636888,9 @@
           }
         }
       }
+    },
+    "Optional" : {
+
     },
     "Optional XMLTV or .xml.gz. List preferred guides first." : {
       "localizations" : {
@@ -640537,6 +642010,15 @@
         }
       }
     },
+    "Other apps and profiles using these server users see the changes. Server plugins may forward them to trackers." : {
+
+    },
+    "Other apps connected to PublicMetaDB may also react to this change." : {
+
+    },
+    "Other apps using this tracker account see the changes. Recent tracker edits may conflict. Servers and sync settings stay unchanged." : {
+
+    },
     "Other options" : {
       "comment" : "Section header in the iOS add-server flow above alternate sign-in methods such as username/password or Quick Connect.",
       "extractionState" : "stale",
@@ -642168,6 +643650,9 @@
           }
         }
       }
+    },
+    "Overall" : {
+
     },
     "Overall Opacity" : {
       "localizations" : {
@@ -646831,6 +648316,16 @@
         }
       }
     },
+    "Page %@ of %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Page %1$@ of %2$@"
+          }
+        }
+      }
+    },
     "Page appearance" : {
       "localizations" : {
         "ar" : {
@@ -647062,6 +648557,9 @@
           }
         }
       }
+    },
+    "Pairing code" : {
+
     },
     "Parent Folder" : {
       "comment" : "Button in the iOS FTP and SFTP folder browser that moves up to the parent directory.",
@@ -657757,6 +659255,9 @@
         }
       }
     },
+    "Picks" : {
+
+    },
     "Picture" : {
       "comment" : "Section header in the iOS Circadian settings above picture adjustments like warmth and dimness.",
       "localizations" : {
@@ -660548,6 +662049,9 @@
           }
         }
       }
+    },
+    "Play counts and dates aren’t copied. Ongoing sync stays unchanged." : {
+
     },
     "Play icon, progress, and playback information." : {
       "localizations" : {
@@ -665434,6 +666938,9 @@
         }
       }
     },
+    "Playback couldn't be sent. Plozz will try again." : {
+
+    },
     "Playback couldn't catch up to the channel. Retry or choose another channel." : {
       "localizations" : {
         "ar" : {
@@ -667759,6 +669266,9 @@
         }
       }
     },
+    "Playback progress" : {
+
+    },
     "Playback settings" : {
       "localizations" : {
         "ar" : {
@@ -668920,6 +670430,9 @@
           }
         }
       }
+    },
+    "Playback wasn't sent because the account changed." : {
+
     },
     "Player" : {
       "localizations" : {
@@ -674727,6 +676240,9 @@
           }
         }
       }
+    },
+    "Plays" : {
+
     },
     "Please try playing this video again." : {
       "localizations" : {
@@ -682625,6 +684141,9 @@
         }
       }
     },
+    "Plozz couldn't match the title or episode." : {
+
+    },
     "Plozz couldn't prepare this video for the selected app. You can try playing it in Plozz instead." : {
       "localizations" : {
         "ar" : {
@@ -685875,6 +687394,9 @@
         }
       }
     },
+    "Plozz resume: %@ seconds" : {
+
+    },
     "Plozz scans the selected export for movies and TV episodes. NFS uses your server’s existing network permissions." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -686108,6 +687630,9 @@
         }
       }
     },
+    "Plozz skips titles during playback. To update their history, sync after playback ends." : {
+
+    },
     "Plozz will play as this person here, show their watchlist, and save to it." : {
       "comment" : "Explains that picking a server user makes Plozz act as them: their watchlist is displayed, and watchlist changes are written to it.",
       "localizations" : {
@@ -686340,6 +687865,15 @@
           }
         }
       }
+    },
+    "Plozz: not watched" : {
+
+    },
+    "Plozz: previously watched" : {
+
+    },
+    "Plozz: watched" : {
+
     },
     "Point your camera at the code on your other device — pinch to zoom" : {
       "localizations" : {
@@ -687735,6 +689269,9 @@
           }
         }
       }
+    },
+    "Positions replace conflicting progress and can restore progress on completed titles." : {
+
     },
     "Poster" : {
       "localizations" : {
@@ -699828,6 +701365,9 @@
         }
       }
     },
+    "Preview export" : {
+
+    },
     "Preview file formatting" : {
       "localizations" : {
         "ar" : {
@@ -702390,6 +703930,9 @@
         }
       }
     },
+    "Previous page" : {
+
+    },
     "Previous week" : {
       "localizations" : {
         "ar" : {
@@ -702621,6 +704164,15 @@
           }
         }
       }
+    },
+    "Previously attempted. It will not be sent again." : {
+
+    },
+    "Previously attempted; not sent again" : {
+
+    },
+    "Previously exported or awaiting verification — not replayed" : {
+
     },
     "Primary" : {
       "comment" : "Badge label on a server's account row indicating it is the primary (default) account for that server.",
@@ -704018,6 +705570,9 @@
           }
         }
       }
+    },
+    "Private" : {
+
     },
     "Processing" : {
       "comment" : "Playback diagnostics label for the engine's actual audio conversion or stream-copy pipeline.",
@@ -715174,6 +716729,86 @@
         }
       }
     },
+    "Public" : {
+
+    },
+    "Public list" : {
+
+    },
+    "PublicMetaDB" : {
+
+    },
+    "PublicMetaDB denied access. This playback report won't be retried." : {
+
+    },
+    "PublicMetaDB list" : {
+
+    },
+    "PublicMetaDB list URL" : {
+
+    },
+    "PublicMetaDB may have saved the change, but its reply could not be confirmed. Check the record before trying again." : {
+
+    },
+    "PublicMetaDB record" : {
+
+    },
+    "PublicMetaDB rejected this key. Check or replace it in Settings." : {
+
+    },
+    "PublicMetaDB returned an incomplete result. The requested operation cannot be confirmed from this response." : {
+
+    },
+    "Publish %@ for TMDB %@ on PublicMetaDB. Existing mappings and server metadata are unchanged." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Publish %1$@ for TMDB %2$@ on PublicMetaDB. Existing mappings and server metadata are unchanged."
+          }
+        }
+      }
+    },
+    "Publish mapping" : {
+
+    },
+    "Publish or replace my mapping" : {
+
+    },
+    "Publish rating" : {
+
+    },
+    "Publish ratings" : {
+
+    },
+    "Publish replacement" : {
+
+    },
+    "Publish these episode ratings?" : {
+
+    },
+    "Publish this external ID?" : {
+
+    },
+    "Publish this rating?" : {
+
+    },
+    "Publish up to 50 episode ratings under your contributor name." : {
+
+    },
+    "Publish “%@”: %@ / 100 on PublicMetaDB." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Publish “%1$@”: %2$@ / 100 on PublicMetaDB."
+          }
+        }
+      }
+    },
+    "Publishing replaces all your chunks for this logical season." : {
+
+    },
     "Purple" : {
       "comment" : "Selectable color name in the profile avatar tile-color picker.",
       "localizations" : {
@@ -715639,6 +717274,12 @@
           }
         }
       }
+    },
+    "QR code" : {
+
+    },
+    "QR code unavailable." : {
+
     },
     "Quality" : {
       "comment" : "Fact label in item details for the selected version's playback quality information.",
@@ -717034,6 +718675,9 @@
         }
       }
     },
+    "Queued for verification" : {
+
+    },
     "Quick Connect code %@" : {
       "comment" : "Accessibility label for the large Quick Connect code on the iOS Add Server sign-in screen. %@ is the short approval code.",
       "extractionState" : "stale",
@@ -718199,6 +719843,12 @@
         }
       }
     },
+    "Rate multiple episodes" : {
+
+    },
+    "Rated episodes" : {
+
+    },
     "Rating" : {
       "localizations" : {
         "ar" : {
@@ -718430,6 +720080,15 @@
           }
         }
       }
+    },
+    "Rating confirmed on PublicMetaDB" : {
+
+    },
+    "Rating label" : {
+
+    },
+    "Rating removed from PublicMetaDB" : {
+
     },
     "Rating sources" : {
       "localizations" : {
@@ -720059,6 +721718,58 @@
         }
       }
     },
+    "Read %lld of %lld history pages" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Read %#@arg1@ of %#@arg2@"
+          },
+          "substitutions" : {
+            "arg1" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  }
+                }
+              }
+            },
+            "arg2" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld history page"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld history pages"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Read / muxed" : {
       "comment" : "Playback diagnostics: source bytes read, followed by bytes emitted by the local muxer. Values appear in that order.",
       "localizations" : {
@@ -720758,6 +722469,9 @@
         }
       }
     },
+    "Reading %@ watch history…" : {
+
+    },
     "Reading TV shows" : {
       "localizations" : {
         "ar" : {
@@ -720989,6 +722703,9 @@
           }
         }
       }
+    },
+    "Reading and verifying history…" : {
+
     },
     "Reading disc" : {
       "localizations" : {
@@ -723544,6 +725261,28 @@
         }
       }
     },
+    "Ready (%lld)" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Ready (%lld)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Ready (%lld)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Ready to load" : {
       "localizations" : {
         "ar" : {
@@ -725869,6 +727608,9 @@
         }
       }
     },
+    "Recent tracker edits may conflict." : {
+
+    },
     "Recently Added" : {
       "localizations" : {
         "ar" : {
@@ -727262,6 +729004,9 @@
           }
         }
       }
+    },
+    "Recommendations" : {
+
     },
     "Recommendations from external catalogs. Titles may not be in your libraries." : {
       "comment" : "Explanation of the Discovery source in Home settings.",
@@ -729585,6 +731330,9 @@
           }
         }
       }
+    },
+    "Recommended · Vote score: %@" : {
+
     },
     "Reconnect Trakt" : {
       "localizations" : {
@@ -736792,6 +738540,9 @@
         }
       }
     },
+    "Refresh history" : {
+
+    },
     "Refresh sources" : {
       "localizations" : {
         "ar" : {
@@ -737023,6 +738774,12 @@
           }
         }
       }
+    },
+    "Refresh the history and review a new selection before continuing." : {
+
+    },
+    "Refresh the season and review the remaining entries before making another attempt." : {
+
     },
     "Refresh this source before scanning." : {
       "localizations" : {
@@ -751410,6 +753167,9 @@
         }
       }
     },
+    "Remove from list" : {
+
+    },
     "Remove guide" : {
       "localizations" : {
         "ar" : {
@@ -752339,6 +754099,15 @@
         }
       }
     },
+    "Remove my vote" : {
+
+    },
+    "Remove previous permission" : {
+
+    },
+    "Remove row" : {
+
+    },
     "Remove section" : {
       "localizations" : {
         "ar" : {
@@ -753035,6 +754804,9 @@
         }
       }
     },
+    "Remove this chunk" : {
+
+    },
     "Remove this download from this device?" : {
       "localizations" : {
         "ar" : {
@@ -753266,6 +755038,9 @@
           }
         }
       }
+    },
+    "Remove this item?" : {
+
     },
     "Remove this source?" : {
       "localizations" : {
@@ -753731,6 +755506,18 @@
           }
         }
       }
+    },
+    "Removes the key from this profile’s synced devices. Your history stays intact. To revoke the key, use PublicMetaDB." : {
+
+    },
+    "Removes this entry from the private list “%@”." : {
+
+    },
+    "Removes this entry from the public list “%@”." : {
+
+    },
+    "Removes this title from PublicMetaDB's dropped titles. Watched history and media-server state are unchanged." : {
+
     },
     "Removing a sign-in affects every profile on this %@." : {
       "comment" : "Footer in the iOS server detail view warning that removing one server sign-in affects all local profiles on this device. %@ is the current device name.",
@@ -758148,6 +759935,9 @@
         }
       }
     },
+    "Replace API key" : {
+
+    },
     "Replace Key" : {
       "comment" : "Button in the TMDb API key settings on tvOS and iOS that saves a new key over an already configured key.",
       "localizations" : {
@@ -759076,6 +760866,15 @@
           }
         }
       }
+    },
+    "Replace my mapping" : {
+
+    },
+    "Replace this profile's PublicMetaDB API key?" : {
+
+    },
+    "Replace your entire logical-season mapping?" : {
+
     },
     "Replace your row arrangement?" : {
       "localizations" : {
@@ -760006,6 +761805,9 @@
         }
       }
     },
+    "Replaces the key on this profile’s synced devices. The old key stays valid on PublicMetaDB." : {
+
+    },
     "Report a Problem" : {
       "localizations" : {
         "ar" : {
@@ -760237,6 +762039,18 @@
           }
         }
       }
+    },
+    "Report movie and episode playback to Simkl." : {
+
+    },
+    "Report movie and episode playback to Trakt." : {
+
+    },
+    "Report movie and episode playback to WeTrakr." : {
+
+    },
+    "Report the music you play to Last.fm." : {
+
     },
     "Reports include technical error details, app and device information, and diagnostics such as timing and memory use. They are sent to the developer through Sentry only when reporting is enabled." : {
       "extractionState" : "stale",
@@ -770790,6 +772604,9 @@
         }
       }
     },
+    "Requests deletion of this exact contribution. PublicMetaDB rejects the request if it is not yours. Server ratings and watched history are unchanged." : {
+
+    },
     "Requests from %@ will use this Seerr user’s quota, approvals, and default quality profile." : {
       "comment" : "Footer in that Seerr user picker explaining the mapping. %@ is the household profile name.",
       "extractionState" : "stale",
@@ -771020,6 +772837,28 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "來自 %@ 的請求將沿用此 Seerr 使用者的配額、審核權限與預設畫質設定檔。"
+          }
+        }
+      }
+    },
+    "Requests removal of %lld exact contributions, not all ratings for the season. PublicMetaDB verifies ownership. Server ratings and history are unchanged." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Requests removal of %lld exact contribution, not all ratings for the season. PublicMetaDB verifies ownership. Server ratings and history are unchanged."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Requests removal of %lld exact contributions, not all ratings for the season. PublicMetaDB verifies ownership. Server ratings and history are unchanged."
+                }
+              }
+            }
           }
         }
       }
@@ -787062,6 +788901,9 @@
         }
       }
     },
+    "Retry saved connection" : {
+
+    },
     "Retry saving" : {
       "localizations" : {
         "ar" : {
@@ -788922,6 +790764,28 @@
         }
       }
     },
+    "Review %lld selected" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Review %lld selected"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Review %lld selected"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Review account" : {
       "localizations" : {
         "ar" : {
@@ -789154,6 +791018,12 @@
         }
       }
     },
+    "Review anime mapping" : {
+
+    },
+    "Review change" : {
+
+    },
     "Review channel identities" : {
       "localizations" : {
         "ar" : {
@@ -789385,6 +791255,18 @@
           }
         }
       }
+    },
+    "Review deletion" : {
+
+    },
+    "Review mapping" : {
+
+    },
+    "Review ratings" : {
+
+    },
+    "Review replacement" : {
+
     },
     "Review scores" : {
       "localizations" : {
@@ -789851,6 +791733,9 @@
         }
       }
     },
+    "Review season" : {
+
+    },
     "Review sources" : {
       "localizations" : {
         "ar" : {
@@ -790311,6 +792196,28 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "撤銷來源核准"
+          }
+        }
+      }
+    },
+    "Rewatches: %lld" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Rewatch: %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Rewatches: %lld"
+                }
+              }
+            }
           }
         }
       }
@@ -805938,6 +807845,9 @@
         }
       }
     },
+    "Save play" : {
+
+    },
     "Save source" : {
       "localizations" : {
         "ar" : {
@@ -806402,6 +808312,9 @@
           }
         }
       }
+    },
+    "Save this PublicMetaDB play?" : {
+
     },
     "Save this row?" : {
       "localizations" : {
@@ -809892,6 +811805,9 @@
           }
         }
       }
+    },
+    "Saving sync settings…" : {
+
     },
     "Saving your library" : {
       "localizations" : {
@@ -816083,6 +817999,7 @@
       }
     },
     "Scan the code with your phone and approve access on Last.fm. There's no code to type — this screen updates automatically once you approve." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -816547,6 +818464,7 @@
       }
     },
     "Scan to connect Last.fm" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -816777,6 +818695,9 @@
           }
         }
       }
+    },
+    "Scan to enter your API key, or visit:" : {
+
     },
     "Scan to join the Plozz Discord community" : {
       "localizations" : {
@@ -819098,6 +821019,9 @@
           }
         }
       }
+    },
+    "Scan with your phone and approve access." : {
+
     },
     "Scan with your phone or tablet" : {
       "localizations" : {
@@ -821889,6 +823813,12 @@
         }
       }
     },
+    "Score" : {
+
+    },
+    "Score out of 100" : {
+
+    },
     "Screens & Navigation" : {
       "localizations" : {
         "ar" : {
@@ -822355,6 +824285,7 @@
       }
     },
     "Scrobble and sync your anime progress and watchlist with AniList." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -822587,6 +824518,7 @@
       }
     },
     "Scrobble and sync your anime progress and watchlist with MyAnimeList." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -822819,6 +824751,7 @@
       }
     },
     "Scrobble and sync your watch history and watchlist with Simkl." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -823051,6 +824984,7 @@
       }
     },
     "Scrobble and sync your watch history and watchlist with Trakt." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -823283,6 +825217,7 @@
       }
     },
     "Scrobble movies and episodes and sync your watchlist with WeTrakr." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -823515,6 +825450,7 @@
       }
     },
     "Scrobble the music you play in Plozz to your Last.fm profile." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -830251,6 +832187,16 @@
         }
       }
     },
+    "Season %@, episode %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Season %1$@, episode %2$@"
+          }
+        }
+      }
+    },
     "Season %lld" : {
       "localizations" : {
         "ar" : {
@@ -833867,6 +835813,9 @@
         }
       }
     },
+    "Season name (optional)" : {
+
+    },
     "Season or Show Complete" : {
       "localizations" : {
         "ar" : {
@@ -834330,6 +836279,9 @@
           }
         }
       }
+    },
+    "Season ratings" : {
+
     },
     "Seasons" : {
       "localizations" : {
@@ -842115,6 +844067,9 @@
         }
       }
     },
+    "Select all" : {
+
+    },
     "Select for full-screen preview. Move down for preview options." : {
       "localizations" : {
         "ar" : {
@@ -842811,6 +844766,18 @@
         }
       }
     },
+    "Select up to 50 of your own ratings. PublicMetaDB checks ownership." : {
+
+    },
+    "Select up to 50 plays on this page." : {
+
+    },
+    "Select up to 50 supported titles, then confirm." : {
+
+    },
+    "Select up to 50 titles. Nothing is exported until you confirm." : {
+
+    },
     "Selected" : {
       "comment" : "Accessibility value announced for the currently selected option in custom segmented or chip pickers.",
       "localizations" : {
@@ -843040,6 +845007,28 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "已選取"
+          }
+        }
+      }
+    },
+    "Selected (%lld)" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Selected (%lld)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Selected (%lld)"
+                }
+              }
+            }
           }
         }
       }
@@ -843276,6 +845265,9 @@
         }
       }
     },
+    "Selected conflicts will be overwritten." : {
+
+    },
     "Selected playlists" : {
       "localizations" : {
         "ar" : {
@@ -843507,6 +845499,9 @@
           }
         }
       }
+    },
+    "Selected plays confirmed removed on PublicMetaDB" : {
+
     },
     "Selected server" : {
       "localizations" : {
@@ -849556,6 +851551,9 @@
         }
       }
     },
+    "Server resume: %@ seconds" : {
+
+    },
     "Server unavailable" : {
       "comment" : "Error or empty-state title shown when a title, library, or playback target's server is no longer connected in iOS.",
       "localizations" : {
@@ -849788,6 +851786,18 @@
           }
         }
       }
+    },
+    "Server user" : {
+
+    },
+    "Server: not watched" : {
+
+    },
+    "Server: previously watched" : {
+
+    },
+    "Server: watched" : {
+
     },
     "Servers" : {
       "comment" : "Plural label for server lists, sections, tabs, and sync summaries throughout the app.",
@@ -853283,6 +855293,9 @@
           }
         }
       }
+    },
+    "Set resume to %@ seconds" : {
+
     },
     "Set separately for movies, TV shows & anime" : {
       "localizations" : {
@@ -877242,6 +879255,58 @@
         }
       }
     },
+    "Showing %lld of %lld ratings. Changes require a complete result." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Showing %#@arg1@ of %#@arg2@. Changes require a complete result."
+          },
+          "substitutions" : {
+            "arg1" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld"
+                    }
+                  }
+                }
+              }
+            },
+            "arg2" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld rating"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld ratings"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Showing a category or individual channel overrides regional filtering. Hiding a category still hides its channels unless you show a channel individually." : {
       "localizations" : {
         "ar" : {
@@ -879329,6 +881394,9 @@
           }
         }
       }
+    },
+    "Shows the results for each library." : {
+
     },
     "Shows the song playing in a movie or show in the player’s Info, using Shazam. Needs an internet connection." : {
       "localizations" : {
@@ -906180,6 +908248,24 @@
         }
       }
     },
+    "Skipped resume — different or unknown duration" : {
+
+    },
+    "Skipped — multiple library matches" : {
+
+    },
+    "Skipped — no exact library match" : {
+
+    },
+    "Skipped — previous update not verified" : {
+
+    },
+    "Skipped — tracker records disagree" : {
+
+    },
+    "Skipped — unsupported history" : {
+
+    },
     "Skipping" : {
       "comment" : "Section header in iOS Playback settings above intro-skipping and skip-interval controls.",
       "extractionState" : "stale",
@@ -923840,6 +925926,9 @@
         }
       }
     },
+    "Start sync" : {
+
+    },
     "Start watching" : {
       "comment" : "Play an unstarted first episode. The season and episode numbers follow this label.",
       "localizations" : {
@@ -928245,6 +930334,9 @@
         }
       }
     },
+    "Stop syncing" : {
+
+    },
     "Stop the other video before starting an HDR preview." : {
       "localizations" : {
         "ar" : {
@@ -932428,6 +934520,15 @@
           }
         }
       }
+    },
+    "Submit a rating" : {
+
+    },
+    "Submit an external ID" : {
+
+    },
+    "Submit rating" : {
+
     },
     "Submitted" : {
       "localizations" : {
@@ -943353,6 +945454,7 @@
       }
     },
     "Sync across all my servers" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -943583,6 +945685,9 @@
           }
         }
       }
+    },
+    "Sync across servers" : {
+
     },
     "Sync bookkeeping" : {
       "localizations" : {
@@ -943816,6 +945921,19 @@
         }
       }
     },
+    "Sync existing and new watch history from %@ to %@ in Plozz." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Sync existing and new watch history from %1$@ to %2$@ in Plozz."
+          }
+        }
+      }
+    },
+    "Sync existing and new watch history from %@ to the libraries you choose in Plozz." : {
+
+    },
     "Sync is automatic. You should not normally need either option. If changes are missing, try Reload first. Use Reset only if Reload does not help." : {
       "localizations" : {
         "ar" : {
@@ -944047,6 +946165,30 @@
           }
         }
       }
+    },
+    "Sync is off. Plozz couldn’t verify your full %@ history. Try again later." : {
+
+    },
+    "Sync is paused. Retry before closing the app." : {
+
+    },
+    "Sync is paused. Turn it off again before closing the app." : {
+
+    },
+    "Sync now" : {
+
+    },
+    "Sync permission changed. Review it again." : {
+
+    },
+    "Sync records could not be saved or read. Review sync before retrying." : {
+
+    },
+    "Sync this profile’s watchlist with one PublicMetaDB list on this device." : {
+
+    },
+    "Sync timed out. Unconfirmed changes need review." : {
+
     },
     "Sync watch state across servers" : {
       "localizations" : {
@@ -946142,6 +948284,22 @@
         }
       }
     },
+    "TMDB %@ · Season %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "TMDB %1$@ · Season %2$@"
+          }
+        }
+      }
+    },
+    "TMDB chunk" : {
+
+    },
+    "TMDB episode number" : {
+
+    },
     "TMDB rejected this key. Check the token and try again." : {
       "localizations" : {
         "ar" : {
@@ -946373,6 +948531,12 @@
           }
         }
       }
+    },
+    "TMDB season" : {
+
+    },
+    "TMDB season number" : {
+
     },
     "TMDB v4 API Read Access Token" : {
       "localizations" : {
@@ -947765,6 +949929,9 @@
           }
         }
       }
+    },
+    "TV show" : {
+
     },
     "TV shows" : {
       "localizations" : {
@@ -958922,6 +961089,9 @@
         }
       }
     },
+    "The ID and your contributor name will be public." : {
+
+    },
     "The IPTV catalogue could not be saved. Check the available device storage." : {
       "localizations" : {
         "ar" : {
@@ -968681,6 +970851,9 @@
           }
         }
       }
+    },
+    "The connected profile changed. Reopen listening history." : {
+
     },
     "The connection to the playback stream was lost or couldn’t be established." : {
       "localizations" : {
@@ -986339,6 +988512,12 @@
         }
       }
     },
+    "The profile or connection changed. Open this page again for the current profile." : {
+
+    },
+    "The profile, account, or tracker connection changed. Reopen this page to continue." : {
+
+    },
     "The provider could not find the requested playlist or stream (HTTP 404)." : {
       "localizations" : {
         "ar" : {
@@ -990985,6 +993164,9 @@
           }
         }
       }
+    },
+    "The request could not be completed." : {
+
     },
     "The request failed." : {
       "localizations" : {
@@ -1006314,6 +1008496,9 @@
         }
       }
     },
+    "The tracker provides a percentage, not a verified file runtime. Progress will not change." : {
+
+    },
     "The username or password is incorrect." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1017938,6 +1020123,9 @@
         }
       }
     },
+    "This affects only your vote on this community contribution." : {
+
+    },
     "This app couldn’t open the link. Scan with your phone." : {
       "localizations" : {
         "ar" : {
@@ -1022813,6 +1025001,9 @@
           }
         }
       }
+    },
+    "This creates another play; it does not replace earlier plays." : {
+
     },
     "This custom quality couldn’t be applied. Check the values and try again." : {
       "localizations" : {
@@ -1030761,6 +1032952,9 @@
         }
       }
     },
+    "This kind of record cannot be imported" : {
+
+    },
     "This library is empty" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1032154,6 +1034348,15 @@
           }
         }
       }
+    },
+    "This list is private." : {
+
+    },
+    "This list is public. Other people can see its contents." : {
+
+    },
+    "This list is public. Others can see its contents." : {
+
     },
     "This listing is no longer available in the guide." : {
       "localizations" : {
@@ -1040313,6 +1042516,9 @@
         }
       }
     },
+    "This selection is no longer available." : {
+
+    },
     "This server account doesn't have permission to use Live TV." : {
       "localizations" : {
         "ar" : {
@@ -1046346,6 +1048552,9 @@
           }
         }
       }
+    },
+    "This setup syncs watched titles only. Turn 2-way sync off and on to include resume positions." : {
+
     },
     "This share isn’t connected yet." : {
       "localizations" : {
@@ -1052704,6 +1054913,9 @@
         }
       }
     },
+    "Through episode %@ · Start unspecified" : {
+
+    },
     "Thumbnail treatment" : {
       "comment" : "Picker label in iOS Spoilers settings for how unwatched episode thumbnails are hidden or altered.",
       "localizations" : {
@@ -1053402,6 +1055614,12 @@
         }
       }
     },
+    "Title" : {
+
+    },
+    "Title controls" : {
+
+    },
     "Title detail pages" : {
       "localizations" : {
         "ar" : {
@@ -1053634,6 +1055852,9 @@
         }
       }
     },
+    "Title lookup unavailable" : {
+
+    },
     "Titles" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1053863,6 +1056084,31 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "影視作品"
+          }
+        }
+      }
+    },
+    "Titles linked to this ID" : {
+
+    },
+    "Titles to export: %lld. Other apps using this tracker account see the changes. Servers and sync settings stay unchanged." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Title to export: %lld. Other apps using this tracker account see the changes. Servers and sync settings stay unchanged."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Titles to export: %lld. Other apps using this tracker account see the changes. Servers and sync settings stay unchanged."
+                }
+              }
+            }
           }
         }
       }
@@ -1058979,6 +1061225,21 @@
         }
       }
     },
+    "Track the anime you watch on AniList." : {
+
+    },
+    "Track the anime you watch on MyAnimeList." : {
+
+    },
+    "Tracker history or the library index is incomplete. Wait for loading to finish, then try again." : {
+
+    },
+    "Tracker records disagree — select only one change for this title" : {
+
+    },
+    "Tracker resume: %@" : {
+
+    },
     "Tracker sign-ins" : {
       "localizations" : {
         "ar" : {
@@ -1059210,6 +1061471,27 @@
           }
         }
       }
+    },
+    "Tracker status: completed" : {
+
+    },
+    "Tracker status: dropped" : {
+
+    },
+    "Tracker status: paused" : {
+
+    },
+    "Tracker status: planning" : {
+
+    },
+    "Tracker status: rewatching" : {
+
+    },
+    "Tracker status: unavailable" : {
+
+    },
+    "Tracker status: watching" : {
+
     },
     "Trackers" : {
       "comment" : "Settings row, page title, and section header for external tracking integrations such as Trakt, Simkl, AniList, MyAnimeList, and Last.fm.",
@@ -1070367,6 +1072649,9 @@
         }
       }
     },
+    "Turn off to pause tracking without disconnecting." : {
+
+    },
     "Turn on Share Crash Reports below to enable this. Your recent activity is then sent anonymously — no logins, tokens, servers, or titles." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1077808,6 +1080093,28 @@
         }
       }
     },
+    "Unavailable (%lld)" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Unavailable (%lld)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Unavailable (%lld)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Unavailable Offline" : {
       "localizations" : {
         "ar" : {
@@ -1079898,6 +1082205,9 @@
         }
       }
     },
+    "Unconfirmed episodes: %@" : {
+
+    },
     "Undo hide" : {
       "localizations" : {
         "ar" : {
@@ -1080129,6 +1082439,9 @@
           }
         }
       }
+    },
+    "Undrop title" : {
+
     },
     "Unfavorite" : {
       "localizations" : {
@@ -1087912,6 +1090225,9 @@
         }
       }
     },
+    "Update not verified" : {
+
+    },
     "Update watch history" : {
       "localizations" : {
         "ar" : {
@@ -1088376,6 +1090692,12 @@
           }
         }
       }
+    },
+    "Updates applied" : {
+
+    },
+    "Updates can take five minutes to appear. Check again before republishing." : {
+
     },
     "Updates saved channel lists and guides while Plozz is open. When off, they still update when you use Live TV." : {
       "localizations" : {
@@ -1089858,6 +1092180,16 @@
         }
       }
     },
+    "Updating library %@ of %@…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Updating library %1$@ of %2$@…"
+          }
+        }
+      }
+    },
     "Updating releases" : {
       "localizations" : {
         "ar" : {
@@ -1090089,6 +1092421,9 @@
           }
         }
       }
+    },
+    "Updating selected libraries…" : {
+
     },
     "Updating…" : {
       "comment" : "Status shown in the Home scan and update pill when more than one media share is updating at the same time. Indicates background library refresh is in progress.",
@@ -1090789,6 +1093124,12 @@
         }
       }
     },
+    "Upvote" : {
+
+    },
+    "Use %@" : {
+
+    },
     "Use API key" : {
       "localizations" : {
         "ar" : {
@@ -1091020,6 +1093361,9 @@
           }
         }
       }
+    },
+    "Use AniList" : {
+
     },
     "Use Bold and Italic" : {
       "localizations" : {
@@ -1091949,6 +1094293,12 @@
         }
       }
     },
+    "Use Last.fm" : {
+
+    },
+    "Use MyAnimeList" : {
+
+    },
     "Use Original" : {
       "localizations" : {
         "ar" : {
@@ -1092648,6 +1094998,9 @@
         }
       }
     },
+    "Use PublicMetaDB" : {
+
+    },
     "Use Quick Connect" : {
       "localizations" : {
         "ar" : {
@@ -1093112,6 +1095465,12 @@
           }
         }
       }
+    },
+    "Use Simkl" : {
+
+    },
+    "Use Sync now to check for later changes." : {
+
     },
     "Use System Caption Style" : {
       "extractionState" : "stale",
@@ -1094278,6 +1096637,9 @@
         }
       }
     },
+    "Use TMDB numbering; season 0 is for specials." : {
+
+    },
     "Use This Export" : {
       "localizations" : {
         "ar" : {
@@ -1094973,6 +1097335,12 @@
           }
         }
       }
+    },
+    "Use Trakt" : {
+
+    },
+    "Use WeTrakr" : {
+
     },
     "Use a hostname, IP address, or full URL." : {
       "localizations" : {
@@ -1095670,6 +1098038,9 @@
           }
         }
       }
+    },
+    "Use a rating label without spaces." : {
+
     },
     "Use a separate style for Live TV" : {
       "localizations" : {
@@ -1102410,6 +1104781,9 @@
         }
       }
     },
+    "Use the database ID, not a title or URL." : {
+
+    },
     "Use the full player controls to customize subtitles, with a live preview." : {
       "localizations" : {
         "ar" : {
@@ -1103339,6 +1105713,9 @@
         }
       }
     },
+    "Use this list" : {
+
+    },
     "Use this source" : {
       "localizations" : {
         "ar" : {
@@ -1103570,6 +1105947,9 @@
           }
         }
       }
+    },
+    "Use this watchlist destination?" : {
+
     },
     "Use your own playlist without signing in to a media server." : {
       "extractionState" : "stale",
@@ -1110550,6 +1112930,9 @@
         }
       }
     },
+    "Verifying %@ watch history…" : {
+
+    },
     "Verifying address…" : {
       "localizations" : {
         "ar" : {
@@ -1117298,6 +1119681,12 @@
         }
       }
     },
+    "Vote on this contribution" : {
+
+    },
+    "Vote score: %@" : {
+
+    },
     "Wait for the channels to load before saving this Multiview." : {
       "localizations" : {
         "ar" : {
@@ -1117990,6 +1120379,16 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "請等候上一個頻道關閉。"
+          }
+        }
+      }
+    },
+    "Waiting for %@ until %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Waiting for %1$@ until %2$@"
           }
         }
       }
@@ -1123831,6 +1126230,12 @@
         }
       }
     },
+    "Watch date" : {
+
+    },
+    "Watch date unknown" : {
+
+    },
     "Watch history" : {
       "localizations" : {
         "ar" : {
@@ -1124062,6 +1126467,9 @@
           }
         }
       }
+    },
+    "Watch history changed. Try again with the latest history." : {
+
     },
     "Watch indicator" : {
       "comment" : "Picker label in iOS Settings > Appearance > Library cards. Chooses whether media cards mark watched items or unwatched items.",
@@ -1126157,6 +1128565,31 @@
         }
       }
     },
+    "Watched episodes: %lld" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Watched episode: %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Watched episodes: %lld"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Watched titles" : {
+
+    },
     "Watching" : {
       "localizations" : {
         "ar" : {
@@ -1127319,6 +1129752,9 @@
         }
       }
     },
+    "Watchlist destination" : {
+
+    },
     "Watchlist page" : {
       "localizations" : {
         "ar" : {
@@ -1127783,6 +1130219,9 @@
           }
         }
       }
+    },
+    "Watchlist sync stops if it uses this list. Watched history and server files are kept." : {
+
     },
     "We couldn't complete Silo approval. Try again to get a new code." : {
       "localizations" : {
@@ -1142204,6 +1144643,9 @@
         }
       }
     },
+    "Write selected history to PublicMetaDB?" : {
+
+    },
     "Writer" : {
       "localizations" : {
         "ar" : {
@@ -1146157,6 +1148599,12 @@
         }
       }
     },
+    "You can delete only your own contributions." : {
+
+    },
+    "You can delete only your own ratings." : {
+
+    },
     "You can enable Profiles later in Settings." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1148712,6 +1151160,9 @@
           }
         }
       }
+    },
+    "Your API key identifies the mapping to replace, not the contributor name." : {
+
     },
     "Your Favorites, recently watched channels, and hidden channels could not be loaded. Retry before making changes. Your saved preferences have not been replaced." : {
       "localizations" : {
@@ -1156613,6 +1159064,9 @@
         }
       }
     },
+    "Your logical-season mapping was confirmed removed from PublicMetaDB" : {
+
+    },
     "Your media servers and their files." : {
       "localizations" : {
         "ar" : {
@@ -1156841,6 +1159295,38 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "你的媒體伺服器及其中的檔案。"
+          }
+        }
+      }
+    },
+    "Your name and %lld “%@” ratings for TMDB season %lld will be public. Unconfirmed ratings won’t be retried automatically." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Your name and %#@arg1@ labeled “%2$@” for TMDB season %3$lld will be public. Unconfirmed ratings won’t be retried automatically."
+          },
+          "substitutions" : {
+            "arg1" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld rating"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "needs_review",
+                      "value" : "%lld ratings"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1157541,6 +1160027,9 @@
           }
         }
       }
+    },
+    "Your previous sync permission no longer applies." : {
+
     },
     "Your profile or server access changed. Choose the channel again." : {
       "localizations" : {
@@ -1159166,6 +1161655,9 @@
           }
         }
       }
+    },
+    "Your score and contributor name will be public. Your server rating stays the same." : {
+
     },
     "Your selected library images. Metadata providers fill in missing artwork." : {
       "extractionState" : "stale",
@@ -1161023,6 +1163515,15 @@
           }
         }
       }
+    },
+    "Your tracker rating: %@ out of 10" : {
+
+    },
+    "Your vote" : {
+
+    },
+    "Your vote was confirmed on PublicMetaDB" : {
+
     },
     "You’ll choose an account when requesting." : {
       "localizations" : {
@@ -1174687,6 +1177188,9 @@
         }
       }
     },
+    "connect tracker account API key" : {
+
+    },
     "contentCategory.separateSetting.other" : {
       "comment" : "Settings row for content that isn't a movie, TV show or anime, shown when subtitles or audio are set separately for each.",
       "extractionState" : "extracted_with_value",
@@ -1181951,6 +1184455,18 @@
           }
         }
       }
+    },
+    "enable tracker report anime progress" : {
+
+    },
+    "enable tracker report playback scrobble movies episodes" : {
+
+    },
+    "enable tracker report playback scrobble movies episodes on this device" : {
+
+    },
+    "enable tracker scrobble music listening history" : {
+
     },
     "episodeCountStyle.attached" : {
       "comment" : "Episode-count badge style: the numbered badge touches the top trailing corner of the poster.",
@@ -1245478,6 +1247994,7 @@
     },
     "plozz.app/myanimelist" : {
       "comment" : "Short URL shown on the MyAnimeList connection screen in Settings > Integrations on tvOS, beside the QR code and code entry field. The user opens this address on another device to authorize MyAnimeList.",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -1304722,6 +1307239,9 @@
         }
       }
     },
+    "“%@” and your Plozz watchlist will share additions and removals, including existing items. Changes can reach other synced lists. Adding a show may clear its dropped status." : {
+
+    },
     "“%@” is set up on another device. Sign in to watch it here — your login stays private to each device. You can also find it later under Settings ▸ iCloud Sync." : {
       "comment" : "Alert message on tvOS when a server synced from another device is available to add locally. %@ is the server name.",
       "localizations" : {
@@ -1305187,6 +1307707,12 @@
           }
         }
       }
+    },
+    "“%@” will be private on PublicMetaDB." : {
+
+    },
+    "“%@” will be public. Other people can see the list and items you add." : {
+
     },
     "− shows subtitles earlier\n+ shows them later" : {
       "localizations" : {
