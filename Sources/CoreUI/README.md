@@ -89,6 +89,8 @@ cache that every feature module reuses on tvOS and iOS/iPadOS — guarded behind
 Mobile Settings roots and detail pages share `MobileSettingsMetrics`: 16-point
 page/row insets, 28-point section gaps, 52-point minimum rows and 26-point
 continuous group corners. Rows grow with their content and Dynamic Type.
+Each updating library in the Settings scan card gets the normal row padding above
+its name and below its counts; the bar keeps the group's full content width.
 [Settings copy and placement](../../docs/swiftui-guidelines.md#settings-copy-and-placement)
 explains when a row needs a helper instead of a group footer.
 `SettingsDescribedControl` keeps a control and its helper in one row, so the

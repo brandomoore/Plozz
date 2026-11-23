@@ -14,6 +14,29 @@ import XCTest
 final class LibraryPresentationTests: XCTestCase {
     private var capturedImage: CGImage?
 
+    func testSettingsScanCardGivesEachLibraryVerticalRowInsets() throws {
+        let first = ShareScanState(name: "Movies", isScanning: true, directoriesScanned: 185, directoriesPending: 400)
+        let second = ShareScanState(name: "Series", isScanning: true, itemsFound: 2, directoriesScanned: 87)
+        for size in [DynamicTypeSize.large, .accessibility3] {
+            func renderer<V: View>(_ view: V, width: CGFloat) -> ImageRenderer<some View> {
+                ImageRenderer(content: view.frame(width: width)
+                    .environment(\.dynamicTypeSize, size).environment(\.locale, Locale(identifier: "en_US"))
+                    .environment(\.themePalette, .dark).environment(\.colorScheme, .dark))
+            }
+            let width: CGFloat = 358
+            let single = try XCTUnwrap(renderer(ShareScanStatusCard(states: [first]), width: width).uiImage)
+            let pair = try XCTUnwrap(renderer(ShareScanStatusCard(states: [first, second]), width: width).uiImage)
+            let row = try XCTUnwrap(renderer(ShareScanStatusRow(state: second),
+                                            width: width - 2 * MobileSettingsMetrics.rowInset).uiImage)
+            XCTAssertEqual(pair.size.height - single.size.height, row.size.height + 2 * MobileSettingsMetrics.rowVerticalInset,
+                           accuracy: 1, "A second library needs space above its name and below its counts.")
+            let attachment = XCTAttachment(image: pair)
+            attachment.name = "Library scan progress \(size)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
     func testWatchlistPageUpdatesWhenEitherNameEditorSaves() async throws {
         let suite = "WatchlistPageName.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
