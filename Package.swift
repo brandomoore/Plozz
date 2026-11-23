@@ -353,9 +353,13 @@ let package = Package(
         // MARK: Shared UI (design system + reusable tvOS components)
         .target(
             name: "CoreUI",
-            dependencies: ["CoreModels", "MetadataKit"],
+            dependencies: [
+                "CoreModels", "MetadataKit",
+                .target(name: "NavigationUpdateLink", condition: .when(platforms: [.iOS]))
+            ],
             resources: [.process("Resources")]
         ),
+        .target(name: "NavigationUpdateLink"),
 
         // MARK: Scalable external metadata/artwork (content-type-routed providers)
         //

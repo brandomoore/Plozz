@@ -1023,7 +1023,13 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   retaining the original actions, menus and navigation gestures. Shared tab
   shells and dialog presenters install it; toolbar updates are observed through
   a passive UIKit update link without requesting continuous frames or replacing
-  navigation delegates. Back uses a temporary native back item; restoration also
+  navigation delegates. The link is resolved at runtime: some Macs running the
+  iPad app do not export it. On those hosts the bridge still applies updates on
+  layout and SwiftUI changes. To verify the Mac launch regression, inspect the
+  **device** binary with `xcrun dyld_info -imports /path/to/Plozz.app/Plozz`:
+  it must not require `_OBJC_CLASS_$_UIUpdateLink`. A passing iPhone navigation
+  test alone cannot detect that launch failure.
+  Back uses a temporary native back item; restoration also
   refreshes UIKit's cached Back rendering, with pixel coverage for the live
   On/Off transition in both themes. Multi-item
   UIKit groups are temporarily separated because UIKit otherwise ignores their

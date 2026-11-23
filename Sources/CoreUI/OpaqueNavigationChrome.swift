@@ -1,4 +1,5 @@
 #if os(iOS)
+import NavigationUpdateLink
 import SwiftUI
 import UIKit
 
@@ -147,7 +148,7 @@ private struct OpaqueNavigationBridge: UIViewControllerRepresentable {
         private var backItems: [ObjectIdentifier: BackSnapshot] = [:]
         private var items: [ObjectIdentifier: ItemSnapshot] = [:]
         private var groups: [GroupSnapshot] = []
-        private var updateLink: UIUpdateLink?
+        private var cancelNavigationUpdates: (() -> Void)?
         private var applying = false
 
         init(_ navigation: UINavigationController) {
@@ -173,14 +174,10 @@ private struct OpaqueNavigationBridge: UIViewControllerRepresentable {
                     outline.stroke()
                 }.resizableImage(withCapInsets: UIEdgeInsets(top: 22, left: 22, bottom: 21, right: 22))
             }
-            if updateLink == nil {
-                let link = UIUpdateLink(view: navigation.navigationBar) { [weak self] _, _ in
+            if cancelNavigationUpdates == nil {
+                cancelNavigationUpdates = PlozzObserveNavigationUpdates(navigation.navigationBar) { [weak self] in
                     self?.update(self?.navigation?.topViewController)
                 }
-                // Observe existing UI updates, never request a rendering loop.
-                link.requiresContinuousUpdates = false
-                link.isEnabled = true
-                updateLink = link
             }
             update(navigation.topViewController)
         }
@@ -237,8 +234,8 @@ private struct OpaqueNavigationBridge: UIViewControllerRepresentable {
         }
 
         func restore() {
-            updateLink?.isEnabled = false
-            updateLink = nil
+            cancelNavigationUpdates?()
+            cancelNavigationUpdates = nil
             for snapshot in items.values { snapshot.restore() }
             for snapshot in groups { snapshot.restore() }
             for snapshot in backItems.values { snapshot.restore() }
