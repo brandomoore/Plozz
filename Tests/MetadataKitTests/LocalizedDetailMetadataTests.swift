@@ -283,19 +283,6 @@ final class LocalizedDetailMetadataTests: XCTestCase {
         XCTAssertEqual(filled.sourceAccountID, item.sourceAccountID)
     }
 
-    func testOnlyAnAdWithoutAPlotMakesTheLibrarySynopsisMissing() {
-        let ad = "ver gratis in vercineo.net"
-        var item = MediaItem(id: "m", title: "La Odisea", kind: .movie, overview: ad)
-        let fallback = MetadataEnrichment(overview: .init(value: "Otra sinopsis.", source: .tmdb))
-        XCTAssertTrue(DetailMetadataResolver.missingFields(in: item).contains(.overview))
-        XCTAssertEqual(DetailMetadataResolver.applying(fallback, to: item).overview, "Otra sinopsis.")
-
-        item.overview = "Odiseo regresa. \(ad)"
-        let retained = DetailMetadataResolver.applying(fallback, to: item)
-        XCTAssertEqual(retained, item)
-        XCTAssertEqual(retained.overview?.displaySynopsis, "Odiseo regresa.")
-    }
-
     func testExternalDetailMissingTextUsesRequestedLanguage() async {
         let provider = FakeEnrichmentProvider(
             id: .tmdb, capabilities: [.canonicalText],

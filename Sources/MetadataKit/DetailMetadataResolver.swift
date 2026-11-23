@@ -76,7 +76,7 @@ public actor DetailMetadataResolver {
         default: return []
         }
         var missing = Set<MetadataField>()
-        if item.overview?.displaySynopsis == nil {
+        if item.overview?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
             missing.insert(.overview)
         }
         if item.cast.isEmpty { missing.insert(.cast) }
@@ -130,7 +130,7 @@ public actor DetailMetadataResolver {
             copy.metadataProvenance.set(tagline, for: .taglines)
         }
         if missing.contains(.overview), let overview = enrichment.overview,
-           overview.value.displaySynopsis != nil {
+           !overview.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             copy.overview = overview.value
             copy.metadataProvenance.set(overview, for: .overview)
         }

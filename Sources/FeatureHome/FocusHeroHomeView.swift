@@ -1473,7 +1473,7 @@ private struct FocusHeroBackdropLayer: View {
         if let subject = model.subject {
             HomeHeroBackdrop(
                 references: references(for: subject),
-                asyncFallbackURL: subject.item.flatMap(HomeHeroArtwork.backdropFallback(for:)),
+                asyncFallbackURL: subject.item.flatMap { HomeHeroArtwork.backdropFallback(for: $0, language: artworkPolicy.artworkLanguage) },
                 slideID: subject.id,
                 forward: model.movingForward,
                 width: width,

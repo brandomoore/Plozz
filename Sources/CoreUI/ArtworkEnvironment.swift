@@ -9,6 +9,7 @@ public struct ArtworkPresentationPolicy: Equatable, Sendable {
     public let providers: MetadataProviderSettings
     public let placement: ArtworkPlacement?
     public let logoLanguage: String
+    public var artworkLanguage: String { logoLanguage }
 
     public init(
         area: ArtworkArea = .browse,

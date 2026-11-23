@@ -75,10 +75,10 @@ public struct HeroPresentation: Sendable, Equatable {
             : metadataComponents.joined(separator: "  ·  ")
         if surface == .home, item.kind == .episode {
             let synopsis = item.seriesSynopsis.flatMap { $0.matches(item) ? $0 : nil }
-            overview = synopsis?.overview?.displaySynopsis
+            overview = Self.nonempty(synopsis?.overview)
             tagline = Self.nonempty(synopsis?.tagline)
         } else {
-            overview = item.overview?.displaySynopsis
+            overview = Self.nonempty(item.overview)
             tagline = item.tagline
         }
         certification = Self.nonempty(item.officialRating)

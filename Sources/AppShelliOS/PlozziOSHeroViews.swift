@@ -25,11 +25,12 @@ enum PlozziOSHeroArtworkFallback {
         for item: MediaItem,
         style: HeroArtworkStyle,
         surfaceRole: HeroTrailerSurfaceRole,
+        language: String = Locale.current.identifier,
         router: ArtworkRouter = .shared
     ) async -> URL? {
         await MediaArtworkSource.heroFallback(
             for: item, placement: surfaceRole == .home ? .homeHero : .detailBackdrop,
-            prefersPortrait: style == .compactPortrait, router: router
+            prefersPortrait: style == .compactPortrait, language: language, router: router
         )?()
     }
 
@@ -73,7 +74,7 @@ struct PlozziOSDetailArtworkRevisit: Equatable {
                 references: presentation.artworkReferences(settings: policy.settings, in: .details),
                 policy: policy.forPlacement(presentation.artworkPlacement), prefersLandscape: style == .landscape,
                 maxAspectRatio: 3, asyncFallbackURL: {
-                    await PlozziOSHeroArtworkFallback.resolve(for: item, style: style, surfaceRole: .detail)
+                    await PlozziOSHeroArtworkFallback.resolve(for: item, style: style, surfaceRole: .detail, language: language)
                 }
             )
             await HeroLogoPreloader.prepare(
@@ -702,6 +703,7 @@ struct PlozziOSSeriesLoadingHero: View {
 }
 
 struct PlozziOSHeroStage<Foreground: View>: View {
+    @Environment(\.locale) private var locale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.plozziOSHeroContainerHeight) private var containerHeight
     @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
@@ -777,9 +779,9 @@ struct PlozziOSHeroStage<Foreground: View>: View {
         let pullOffset = max(pullDistance - (pullScale - 1) * height / 2, 0)
             + (pullDistance > 0 ? 2 : 0)
         let artworkItem = item
-        let onlineArtworkFallback: @Sendable () async -> URL? = { [style, surfaceRole] in
+        let onlineArtworkFallback: @Sendable () async -> URL? = { [style, surfaceRole, language = locale.identifier] in
             await PlozziOSHeroArtworkFallback.resolve(
-                for: artworkItem, style: style, surfaceRole: surfaceRole
+                for: artworkItem, style: style, surfaceRole: surfaceRole, language: language
             )
         }
         let background = Group {
@@ -1723,9 +1725,9 @@ struct PlozziOSHomeWipeBackdrop: View {
             surface: .home
         )
         let artworkItem = item
-        let onlineArtworkFallback: @Sendable () async -> URL? = { [style] in
+        let onlineArtworkFallback: @Sendable () async -> URL? = { [style, language = artworkPolicy.artworkLanguage] in
             await PlozziOSHeroArtworkFallback.resolve(
-                for: artworkItem, style: style, surfaceRole: .home
+                for: artworkItem, style: style, surfaceRole: .home, language: language
             )
         }
         PlozziOSReflectedHeroStage(height: height, ignoresGlobalCover: style == .compactPortrait) { usableWidth in
@@ -1781,6 +1783,7 @@ struct PlozziOSHomeWipeBackdrop: View {
 }
 
 struct PlozziOSHomeStaticBackdrop: View {
+    @Environment(\.locale) private var locale
     @Environment(HeroTrailerController.self) private var trailerController
     @State private var artworkAppearanceID = UUID().uuidString
 
@@ -1812,9 +1815,9 @@ struct PlozziOSHomeStaticBackdrop: View {
             surface: .home
         )
         let artworkItem = item
-        let onlineArtworkFallback: @Sendable () async -> URL? = { [style] in
+        let onlineArtworkFallback: @Sendable () async -> URL? = { [style, language = locale.identifier] in
             await PlozziOSHeroArtworkFallback.resolve(
-                for: artworkItem, style: style, surfaceRole: .home
+                for: artworkItem, style: style, surfaceRole: .home, language: language
             )
         }
         PlozziOSReflectedHeroStage(

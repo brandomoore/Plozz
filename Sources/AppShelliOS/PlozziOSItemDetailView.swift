@@ -3410,6 +3410,7 @@ private struct PlozziOSEpisodeDownloadRow: View {
 
 struct PlozziOSDownloadThumbnail: View {
     @Environment(PlozziOSAppModel.self) private var appModel
+    @Environment(\.locale) private var locale
 
     enum Style {
         case season
@@ -3428,8 +3429,8 @@ struct PlozziOSDownloadThumbnail: View {
                 FallbackAsyncImage(
                     references: item.artworkReferences(for: .poster),
                     variant: .posterCard,
-                    asyncFallbackURL: {
-                        await ArtworkRouter.shared.artworkURL(.poster, for: item)
+                    asyncFallbackURL: { [language = locale.identifier] in
+                        await ArtworkRouter.shared.artworkURL(.poster, for: item, language: language)
                     },
                     pinIdentity: item.stablePresentationID
                 ) {
@@ -4015,7 +4016,7 @@ struct PlozziOSInlineEpisodeEntry: View {
                     title
                         .font(.headline)
                         .lineLimit(1)
-                    if let overview = episode.overview?.displaySynopsis {
+                    if let overview = episode.overview, !overview.isEmpty {
                         Group {
                             if hidesText {
                                 SpoilerSafeOverviewText(

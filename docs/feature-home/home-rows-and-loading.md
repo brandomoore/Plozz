@@ -874,6 +874,9 @@ pruned with membership, and are discarded when the profile, active accounts,
 credentials, or Plex Home identity changes. They are not persisted or synced as
 ownership evidence; discovery items and synced identity hints remain unowned
 until a local provider verifies a copy.
+When a provider verifies an owned copy and returns its title, Watchlist shows
+that library title alongside its artwork. A source handle alone never renames
+a Discover item, and an already loaded library item keeps its own title.
 
 Watchlist publication uses the canonical alias resolver, including exact
 account/item identities and alias redirects, to match current library candidates.

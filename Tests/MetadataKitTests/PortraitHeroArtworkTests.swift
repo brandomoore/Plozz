@@ -60,6 +60,7 @@ final class PortraitHeroArtworkTests: XCTestCase {
         }
         let provider = provider(fixture)
         let query = MetadataQuery(MediaItem(id: "movie", title: "Movie", kind: .movie, providerIDs: ["Tmdb": "42"]))
+            .forArtworkLanguage("en")
         let portrait = await provider.portraitHeroURL(for: query)
         var requests = await fixture.recorded()
         XCTAssertEqual(requests.count, 1)
@@ -73,6 +74,23 @@ final class PortraitHeroArtworkTests: XCTestCase {
         XCTAssertEqual(requests.count, 3)
         XCTAssertEqual(poster?.absoluteString, "https://image.tmdb.org/t/p/w500/titled.jpg")
         XCTAssertEqual(Set(requests.compactMap { $0.url?.path }), ["/3/movie/42/images"])
+    }
+
+    func testRegularPostersPreferRequestedLanguageBeforeVotes() async {
+        let fixture = TMDbTVDBDiscoveryFixture { _, _ in
+            .init(json: """
+                {"posters":[{"file_path":"/english.jpg","iso_639_1":"en","vote_average":10},
+                            {"file_path":"/clean.jpg","iso_639_1":null},
+                            {"file_path":"/spanish.jpg","iso_639_1":"es","vote_average":3},
+                            {"file_path":"/german.jpg","iso_639_1":"de","vote_average":4}]}
+                """)
+        }
+        let subject = MetadataQuery(MediaItem(id: "show", title: "Show", kind: .series, providerIDs: ["Tmdb": "42"]))
+        let provider = provider(fixture)
+        for (locale, expected) in [("es-ES", "spanish.jpg"), ("de-AT", "german.jpg"), ("ja-JP", "clean.jpg")] {
+            let poster = await provider.artworkURL(.poster, for: subject.forArtworkLanguage(locale))
+            XCTAssertEqual(poster?.lastPathComponent, expected)
+        }
     }
 
     func testPortraitFallbackTiersDoNotAddRequests() async {

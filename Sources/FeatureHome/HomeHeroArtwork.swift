@@ -43,7 +43,7 @@ enum HomeHeroArtwork {
         return (local + remote).filter { seen.insert($0).inserted }
     }
 
-    static func backdropFallback(for item: MediaItem) -> (@Sendable () async -> URL?)? {
+    static func backdropFallback(for item: MediaItem, language: String) -> (@Sendable () async -> URL?)? {
         switch item.kind {
         case .folder, .collection, .unknown: return nil
         default: break
@@ -53,7 +53,7 @@ enum HomeHeroArtwork {
         return {
             await ArtworkRouter.shared.heroArtworkURL(
                 for: item,
-                placement: .homeHero
+                placement: .homeHero, language: language
             )
         }
     }
@@ -73,7 +73,7 @@ enum HomeHeroArtwork {
         item: MediaItem, logoItem: MediaItem, references: [ArtworkReference],
         policy: ArtworkPresentationPolicy
     ) async {
-        let backdropLookup = backdropFallback(for: item)
+        let backdropLookup = backdropFallback(for: item, language: policy.artworkLanguage)
         let logoLookup = logoFallback(for: logoItem)
         let fallback = logoLookup.map { lookup in
             HeroLogoFallback(for: logoItem, localizedResolve: { language in

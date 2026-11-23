@@ -32,11 +32,8 @@ public struct TVDBArtworkProvider: ArtworkProvider {
                 title: query.title, year: query.year, isMovie: !query.isTV, tvdbID: tvdbID
             )
         case .poster:
-            // TheTVDB has posters for both movies and TV — critically it's the only
-            // bundled source of **movie** posters (the keyless chain has none), so a
-            // share movie card is no longer blank. The search result's primary image
-            // is the canonical portrait poster.
-            return await client.resolve(title: query.title, year: query.year, isMovie: !query.isTV)?.posterURL
+            return await client.posterURL(title: query.title, year: query.year, isMovie: !query.isTV,
+                                          tvdbID: tvdbID, language: query.artworkLanguage)
         case .logo, .thumbnail:
             return nil
         }

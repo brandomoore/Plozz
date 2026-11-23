@@ -6,24 +6,6 @@ import Foundation
 /// pointer, links aren't tappable) flattens to plain label text; iOS/iPadOS can
 /// render tappable links from the parsed attributed form.
 public extension String {
-    /// Omits a known streaming-site advertisement at the edges of a synopsis,
-    /// not URLs, source credits, or quoted dialogue inside the plot.
-    var displaySynopsis: String? {
-        var text = trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.range(of: "vercineo.net", options: .caseInsensitive) != nil {
-            let options: String.CompareOptions = [.regularExpression, .caseInsensitive]
-            if let prefix = text.range(
-                of: #"\A¿Buscas\s+películas\s+y\s+series\s+gratis\?\s*¡Busca\s+vercineo\.net\s+en\s+Google!\s*"#,
-                options: options
-            ) { text.removeSubrange(prefix) }
-            if let suffix = text.range(
-                of: #"(?:\A|(?<=[.!?…])\s+|\n\s*)ver\s+gratis\s+(?:in|en)\s+vercineo\.net[.!]?\z"#,
-                options: options
-            ) { text.removeSubrange(suffix) }
-        }
-        return text.isEmpty ? nil : text
-    }
-
     /// Inline-parsed markdown (links + emphasis), whitespace/newlines preserved.
     /// `nil` when parsing fails so callers can fall back to the raw string.
     var overviewMarkdown: AttributedString? {

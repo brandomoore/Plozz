@@ -102,10 +102,10 @@ public struct ContinueWatchingArtworkSource: Sendable {
         } else if item.kind == .episode {
             let placements: [ArtworkPlacement] = style == .poster
                 ? [.seriesPoster] : [.detailBackdrop, .seriesPoster]
-            lookup = { await router.artworkURL(for: item, placements: placements) }
+            lookup = { await router.artworkURL(for: item, placements: placements, language: policy.artworkLanguage) }
         } else {
             lookup = cardPolicy.artworkFallback(
-                for: item, style: style, router: router, prefersLandscapeKeyArt: false
+                for: item, style: style, router: router, policy: policy, prefersLandscapeKeyArt: false
             )
         }
         guard let lookup else { return nil }

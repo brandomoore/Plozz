@@ -108,6 +108,7 @@ final class WatchlistUnionTests: XCTestCase {
                 union: union, aliasSnapshot: aliases, currentItemsByAliasID: [:]
             ).first?.item)
             XCTAssertEqual(item.releaseDate, owned ? ownedDate : aliasDate)
+            XCTAssertEqual(item.title, owned ? "Owned" : "Movie")
             XCTAssertEqual(item.watchlistAliasID, record.id)
         }
     }
@@ -789,7 +790,7 @@ final class WatchlistPresentationRetargetTests: XCTestCase {
                     aliasID: aliasID,
                     kind: .series,
                     presentation: MediaAliasPresentation(
-                        title: "Your Honor",
+                        title: "Blood Sacrifice",
                         year: 2020,
                         artworkURL: "https://discover.example/your-honor.jpg"
                     ),
@@ -801,7 +802,7 @@ final class WatchlistPresentationRetargetTests: XCTestCase {
                         providerKind: .plex
                     ),
                     ownedPresentation: MediaAliasPresentation(
-                        title: "Your Honor",
+                        title: "Blutopfer",
                         year: 2020,
                         artworkURL: "https://library.example/your-honor.jpg"
                     )
@@ -817,7 +818,7 @@ final class WatchlistPresentationRetargetTests: XCTestCase {
 
         let discovery = MediaItem(
             id: "discover-series",
-            title: "Your Honor",
+            title: "Blood Sacrifice",
             kind: .series,
             posterURL: URL(
                 string: "https://discover.example/your-honor.jpg"
@@ -834,6 +835,9 @@ final class WatchlistPresentationRetargetTests: XCTestCase {
         )
 
         let item = try XCTUnwrap(resolved.first?.item)
+        XCTAssertEqual(item.title, "Blutopfer")
+        XCTAssertEqual(item.metadataProvenance[.title]?.source, .server)
+        XCTAssertEqual(item.watchlistAliasID, aliasID)
         XCTAssertEqual(
             item.id,
             "library-rating-key",
@@ -1063,6 +1067,12 @@ final class WatchlistPresentationRetargetTests: XCTestCase {
         let poster = try XCTUnwrap(item.posterURL)
 
         XCTAssertNil(item.artworkSourceAccountID(for: poster))
+        let discovery = MediaItem(id: "discover", title: "Live title", kind: .movie,
+                                  locallyValidatedPlayableSource: false)
+        let live = WatchlistPresentationResolver.resolve(
+            union: union, aliasSnapshot: .empty, currentItemsByAliasID: [aliasID: discovery]
+        )
+        XCTAssertEqual(live.first?.item.title, "Live title")
     }
 
     func testNativeStoreRewritesNestedPlexCredentialOnLoad() throws {

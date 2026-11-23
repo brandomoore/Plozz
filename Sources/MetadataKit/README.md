@@ -87,6 +87,10 @@ load-bearing.
   still comes from the requested-language endpoint.
   Provider-result keys and detail snapshots separate language variants. Query
   copies retain language when promoting series IDs or threading matched IDs.
+  Online poster selection uses the profile language for tagged TMDb and TheTVDB
+  artwork, with separate cache entries per language. If no matching poster exists,
+  neutral or provider fallback art remains available. This does not change library
+  artwork preference, provider order, or textless hero selection.
   Providers without requested-language text support cannot fill descriptions,
   genres, titles or taglines for non-English requests; their artwork and other
   capabilities remain available. Once all applicable translated sources have been
@@ -96,9 +100,6 @@ load-bearing.
   `OverviewRouter` no longer races library-detail enrichment.
   Its keyless Wikipedia overview fallback now participates in the same
   ordered pipeline for movie/series gaps; Wikipedia artwork remains idle-only.
-  Home and detail hide the reported Spanish streaming-site promotion around
-  a synopsis, including cached descriptions. The library's plot and attribution
-  remain intact; if the ad is the entire description, enrichment can fill the gap.
   Retained detail models update their language in place, discard late old-language
   work and refill gaps from native metadata, not previously enriched text.
   TheTVDB requests its catalog language IDs (including `pt` for Brazilian

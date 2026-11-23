@@ -112,10 +112,10 @@ public struct FeaturedCardArtwork<Video: View>: View {
             variant: .posterCard,
             previewVariant: .posterPreview,
             artworkPolicy: artworkPolicy.forPlacement(.homeHero),
-            asyncFallbackURL: { [item, spoilerSettings] in
+            asyncFallbackURL: { [item, spoilerSettings, language = artworkPolicy.artworkLanguage] in
                 guard !spoilerSettings.shouldHideThumbnail(for: item) else { return nil }
                 return await ArtworkSession.resolveArtwork(background: false) {
-                    await ArtworkRouter.shared.portraitHeroArtworkURL(for: item)
+                    await ArtworkRouter.shared.portraitHeroArtworkURL(for: item, language: language)
                 }
             },
             onResolveReference: { resolvedArtwork = $0 },

@@ -10,15 +10,15 @@ public struct MediaArtworkSource: Sendable {
 
     public static func heroFallback(
         for item: MediaItem, placement: ArtworkPlacement, prefersPortrait: Bool = false,
-        router: ArtworkRouter = .shared
+        language: String = Locale.current.identifier, router: ArtworkRouter = .shared
     ) -> (@Sendable () async -> URL?)? {
         guard ![.folder, .collection, .unknown].contains(item.kind) else { return nil }
         return {
             if item.supportsExternalArtworkLookup {
                 let online = if prefersPortrait {
-                    await router.portraitHeroArtworkURL(for: item, placement: placement)
+                    await router.portraitHeroArtworkURL(for: item, placement: placement, language: language)
                 } else {
-                    await router.heroArtworkURL(for: item, placement: placement)
+                    await router.heroArtworkURL(for: item, placement: placement, language: language)
                 }
                 if let online { return online }
             }
@@ -47,7 +47,7 @@ public struct MediaArtworkSource: Sendable {
         fallbackURL = {
             await ArtworkSession.artworkResolveLimiter.run {
                 guard !Task.isCancelled else { return nil }
-                return await router.artworkURL(for: item, placements: placements)
+                return await router.artworkURL(for: item, placements: placements, language: policy.artworkLanguage)
             }
         }
     }

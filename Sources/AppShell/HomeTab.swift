@@ -337,7 +337,8 @@ struct HomeTab: View {
                     let policy = ArtworkPresentationPolicy(
                         area: .topShelf,
                         settings: ArtworkSettingsStore(namespace: libraryPreferencesNamespace).load(),
-                        providers: MetadataProviderSettingsStore().load()
+                        providers: MetadataProviderSettingsStore().load(),
+                        logoLanguage: locale.identifier
                     )
                     await TopShelfPublisher.publish(
                         continueWatching: continueWatching,

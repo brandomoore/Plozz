@@ -10,6 +10,29 @@ import XCTest
 /// fetches every backdrop a title has in one response, ranks textless ones first,
 /// and all but the best were discarded a layer above.
 final class ArtworkCandidateTests: XCTestCase {
+    func testPosterPlacementDoesNotReuseOtherLanguagesOrLegacyEnglishAnswer() async {
+        let settings = CatalogArtworkSettings(.init(orderMode: .custom, enabledOrder: ["tmdb"]))
+        let cache = MetadataDiskCache(directory: nil)
+        let router = ArtworkRouter(config: .init(tmdb: .disabled), cache: cache,
+                                   enrichmentBaseline: .init(order: [.tmdb], priority: .init(rules: [])),
+                                   settingsStore: settings)
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie, providerIDs: ["Tmdb": "42"])
+        let query = MetadataQuery(item)
+        let legacyKey = "\(query.cacheKey(for: .poster))|provider:tmdb"
+        await cache.store(url("old-english"), for: legacyKey)
+        let uncached = await router.artworkURL(for: item, placements: [.poster], language: "es")
+        XCTAssertNil(uncached)
+        for language in ["de", "es"] {
+            await cache.store(url(language), for: ArtworkRouter.providerCacheKey(
+                query: query.forArtworkLanguage(language), kind: .poster, source: .tmdb
+            ))
+        }
+        for (locale, expected) in [("es-ES", "es"), ("de-AT", "de"), ("es-MX", "es")] {
+            let poster = await router.artworkURL(for: item, placements: [.poster], language: locale)
+            XCTAssertEqual(poster, url(expected))
+        }
+    }
+
     func testLogoLookupDoesNotReuseLegacyUnrestrictedLanguageSelection() async {
         let settings = CatalogArtworkSettings(.init(orderMode: .custom, enabledOrder: ["tmdb"]))
         let cache = MetadataDiskCache(directory: nil)

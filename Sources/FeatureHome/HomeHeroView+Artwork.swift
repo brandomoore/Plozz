@@ -238,7 +238,7 @@ extension HomeHeroView {
     // MARK: - External-art fallbacks (mirror DetailHeroView)
 
     func backdropFallback(for item: MediaItem) -> (@Sendable () async -> URL?)? {
-        HomeHeroArtwork.backdropFallback(for: item)
+        HomeHeroArtwork.backdropFallback(for: item, language: artworkPolicy.artworkLanguage)
     }
 
     func logoFallback(for item: MediaItem) -> HeroLogoFallback? {
@@ -265,7 +265,7 @@ struct HomeCarouselArtworkSource: Sendable {
         if let resolveOnline {
             asyncFallbackURL = { await resolveOnline(item) }
         } else {
-            asyncFallbackURL = HomeHeroArtwork.backdropFallback(for: item)
+            asyncFallbackURL = HomeHeroArtwork.backdropFallback(for: item, language: policy.artworkLanguage)
         }
     }
 

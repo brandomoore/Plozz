@@ -32,7 +32,7 @@ public struct EpisodeArtworkSource: Sendable {
         let placements: [ArtworkPlacement] = hidesStill
             ? [.detailBackdrop, .seriesPoster] : [.episodeThumbnail, .detailBackdrop, .seriesPoster]
         fallbackURL = {
-            await router.artworkURL(for: item, placements: placements)
+            await router.artworkURL(for: item, placements: placements, language: policy.artworkLanguage)
                 ?? item.libraryArtworkURL(item.fallbackArtworkURL)
         }
         #if canImport(UIKit)

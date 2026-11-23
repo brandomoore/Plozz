@@ -336,20 +336,21 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         // with no id at all.
         if let id = await resolveID(for: query) {
             if let poster = await images(forID: id, isTV: query.isTV)?.posters,
-               let path = Self.bestImagePath(poster, preferNeutral: false) {
+               let path = Self.rankedImagePaths(poster, preferNeutral: false, limit: 1,
+                                                preferredLanguage: query.artworkLanguage).first {
                 return path
             }
-            if let detail = await details(forID: id, isTV: query.isTV)?.poster_path {
+            if let detail = await details(forID: id, isTV: query.isTV, language: query.artworkLanguage)?.poster_path {
                 return detail
             }
         }
-        return await search(query)?.poster_path
+        return await search(query, language: query.artworkLanguage)?.poster_path
     }
 
     /// The primary record for a title, used for the poster TMDb itself considers
     /// canonical when the images endpoint has nothing usable.
-    private func details(forID id: String, isTV: Bool) async -> SearchResult? {
-        guard let url = url("/3/\(isTV ? "tv" : "movie")/\(id)") else { return nil }
+    private func details(forID id: String, isTV: Bool, language: String) async -> SearchResult? {
+        guard let url = url("/3/\(isTV ? "tv" : "movie")/\(id)", language: language) else { return nil }
         return await MetadataHTTP.get(SearchResult.self, url: url, headers: authHeaders)
     }
 
@@ -659,14 +660,14 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         return normalized.isEmpty ? nil : normalized
     }
 
-    private func search(_ query: MetadataQuery, forceTV: Bool = false) async -> SearchResult? {
+    private func search(_ query: MetadataQuery, forceTV: Bool = false, language: String? = nil) async -> SearchResult? {
         let isTV = forceTV || query.isTV
         guard let escaped = metadataEscaped(query.title) else { return nil }
         var path = "/3/search/\(isTV ? "tv" : "movie")?query=\(escaped)&include_adult=false"
         if let year = query.year {
             path += "&\(isTV ? "first_air_date_year" : "year")=\(year)"
         }
-        guard let url = url(path) else { return nil }
+        guard let url = url(path, language: language) else { return nil }
         let results = await MetadataHTTP.get(
             SearchResponse.self, url: url, headers: authHeaders
         )?.results ?? []
@@ -824,18 +825,20 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         rankedImagePaths(images, preferNeutral: preferNeutral, limit: 1).first
     }
 
-    /// The usable image paths ranked best-first (neutral/`en` language preferred,
+    /// The usable image paths ranked best-first (neutral/preferred language first,
     /// then by vote average), capped at `limit`. Shared by ``bestImagePath`` and the
     /// backdrop candidate-set path so both use identical selection logic.
-    static func rankedImagePaths(_ images: [Image]?, preferNeutral: Bool, limit: Int) -> [String] {
+    static func rankedImagePaths(_ images: [Image]?, preferNeutral: Bool, limit: Int,
+                                 preferredLanguage: String = "en") -> [String] {
         guard let images, limit > 0 else { return [] }
         let usable = images.filter { ($0.file_path?.isEmpty == false) }
         guard !usable.isEmpty else { return [] }
         func rank(_ image: Image) -> Int {
             switch image.iso_639_1 {
             case nil, "": return preferNeutral ? 0 : 1
-            case "en": return preferNeutral ? 1 : 0
-            default: return 2
+            case preferredLanguage: return preferNeutral ? 1 : 0
+            case "en": return 2
+            default: return 3
             }
         }
         return usable.sorted {
