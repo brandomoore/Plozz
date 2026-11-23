@@ -68,7 +68,7 @@ private struct TrackerTwoWaySyncLabel: View {
             : AnyLayout(HStackLayout(spacing: 8))
         layout {
             Text("2-way sync")
-            Text("Beta")
+            Text("Experimental")
                 .font(.caption.weight(.medium))
                 .settingsRowSecondary()
                 .padding(.horizontal, 10)

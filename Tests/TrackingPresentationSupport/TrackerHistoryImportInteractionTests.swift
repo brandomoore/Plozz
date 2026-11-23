@@ -161,7 +161,7 @@ final class TrackerHistoryImportInteractionTests: XCTestCase {
         activate(app.buttons["fixture.history.open"])
         let master = element("tracker-history.sync-enabled")
         XCTAssertTrue(master.waitForExistence(timeout: 5))
-        XCTAssertTrue(master.label.contains("2-way sync") && master.label.contains("Beta"), master.label)
+        XCTAssertTrue(master.label.contains("2-way sync") && master.label.contains("Experimental"), master.label)
         activate(master)
         confirmAllLibraries()
         let message = app.staticTexts["Sync is off. Plozz couldn’t verify your full Trakt history. Try again later."]

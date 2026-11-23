@@ -411,8 +411,8 @@ extension AtlasUI {
         openConnectedAccount()
         defer { app.terminate() }
         let activation = el("publicmetadb.enabled"), sync = el("tracker-history.sync-enabled")
-        XCTAssertTrue(sync.label.contains("2-way sync") && sync.label.contains("Beta"), sync.label)
-        XCTAssertFalse(activation.label.contains("Beta"))
+        XCTAssertTrue(sync.label.contains("2-way sync") && sync.label.contains("Experimental"), sync.label)
+        XCTAssertFalse(activation.label.contains("Experimental"))
         XCTAssertLessThan(activation.frame.midY, sync.frame.midY, "The tracker switch comes first.")
         XCTAssertLessThan(sync.frame.midY, el("publicmetadb.status").frame.midY, "Account management follows watch history.")
         XCTAssertEqual(activation.value as? String, "1", "Connecting enables basic tracking.")
@@ -719,7 +719,7 @@ extension AtlasUI {
         if supportsSync && !serversOnly {
             XCTAssertTrue(sync.waitForExistence(timeout: 5))
             shot("tracker-\(id)")
-            XCTAssertTrue(sync.label.contains("2-way sync") && sync.label.contains("Beta"), sync.label)
+            XCTAssertTrue(sync.label.contains("2-way sync") && sync.label.contains("Experimental"), sync.label)
         } else {
             XCTAssertFalse(sync.exists)
             shot("tracker-\(id)" + (serversOnly ? "-servers-only" : ""))
