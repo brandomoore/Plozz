@@ -1272,14 +1272,16 @@ struct CacheFixture {
     let directory: URL
     let secure = IndexedCacheSecureStore()
     let cache: LiveTVIndexedCache
+    let lifecycle: ApplicationStorageLifecycle
 
-    init() throws {
+    init(lifecycle: ApplicationStorageLifecycle = .shared) throws {
+        self.lifecycle = lifecycle
         let root = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         directory = root.appendingPathComponent("LiveTVIndexedCacheTests-" + UUID().uuidString, isDirectory: true)
         cache = LiveTVIndexedCache(
             url: directory.appendingPathComponent("catalog.sqlite"), namespace: "profile-a",
             authorizationScope: "iptv-catalog-v1", secureStore: secure,
-            importedFilesURL: directory.appendingPathComponent("imported", isDirectory: true)
+            importedFilesURL: directory.appendingPathComponent("imported", isDirectory: true), storageLifecycle: lifecycle
         )
     }
 
@@ -1287,7 +1289,7 @@ struct CacheFixture {
         LiveTVIndexedCache(
             url: directory.appendingPathComponent("catalog.sqlite"), namespace: "profile-a",
             authorizationScope: authorization, secureStore: secure,
-            importedFilesURL: directory.appendingPathComponent("imported", isDirectory: true)
+            importedFilesURL: directory.appendingPathComponent("imported", isDirectory: true), storageLifecycle: lifecycle
         )
     }
 

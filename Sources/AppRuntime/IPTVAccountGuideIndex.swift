@@ -33,16 +33,34 @@ struct IPTVAccountGuideIndex: IPTVGuideIndexLoading {
         )
     }
 
+    #if DEBUG
+    init(index: LiveTVGuideIndex, settings: LiveTVViewSettingsStore) {
+        self.index = index
+        self.settings = settings
+    }
+    #endif
+
     func programmes(
         url: URL, channels: [IPTVProvider.IPTVGuideChannel], from: Date, to: Date,
         trustsGuideIDs: Bool,
         catalog: @escaping @Sendable () async throws -> [IPTVProvider.IPTVGuideChannel],
         download: @escaping @Sendable (XMLTVGuideCacheMetadata?) async throws -> XMLTVGuideResponse
     ) async throws -> [ServerLiveTVProgramme] {
-        let allChannels = try await catalog()
+        let lineup = try await catalog()
+        return try await programmes(url: url, channels: channels, from: from, to: to, trustsGuideIDs: trustsGuideIDs,
+                                    catalogRevision: nil, pinnedCatalog: { lineup }, download: download)
+    }
+
+    func programmes(
+        url: URL, channels: [IPTVProvider.IPTVGuideChannel], from: Date, to: Date,
+        trustsGuideIDs: Bool, catalogRevision: String?,
+        pinnedCatalog: @escaping @Sendable () throws -> [IPTVProvider.IPTVGuideChannel],
+        download: @escaping @Sendable (XMLTVGuideCacheMetadata?) async throws -> XMLTVGuideResponse
+    ) async throws -> [ServerLiveTVProgramme] {
         let programs = try await index.programs(
-            from: url, catalog: allChannels.map(Self.channel), channels: channels.map(Self.channel),
-            range: DateInterval(start: from, end: to), trustsGuideIDs: trustsGuideIDs, revalidate: download
+            from: url, channels: channels.map(Self.channel), range: DateInterval(start: from, end: to),
+            trustsGuideIDs: trustsGuideIDs, catalogRevision: catalogRevision,
+            pinnedCatalog: { try Self.catalogChannels(pinnedCatalog()) }, revalidate: download
         )
         return programs.map(Self.programme)
     }
@@ -55,7 +73,19 @@ struct IPTVAccountGuideIndex: IPTVGuideIndexLoading {
         try await index.cachedPrograms(
             from: url, channels: channels.map(Self.channel), range: DateInterval(start: from, end: to),
             trustsGuideIDs: trustsGuideIDs, catalogRevision: catalogRevision,
-            catalog: { try await catalog().map(Self.channel) }
+            catalog: { try await Self.catalogChannels(catalog()) }
+        )?.map(Self.programme)
+    }
+
+    func cachedProgrammes(
+        url: URL, channels: [IPTVProvider.IPTVGuideChannel], from: Date, to: Date,
+        trustsGuideIDs: Bool, catalogRevision: String?,
+        pinnedCatalog: @escaping @Sendable () throws -> [IPTVProvider.IPTVGuideChannel]
+    ) async throws -> [ServerLiveTVProgramme]? {
+        try await index.cachedPrograms(
+            from: url, channels: channels.map(Self.channel), range: DateInterval(start: from, end: to),
+            trustsGuideIDs: trustsGuideIDs, catalogRevision: catalogRevision,
+            pinnedCatalog: { try Self.catalogChannels(pinnedCatalog()) }
         )?.map(Self.programme)
     }
 
@@ -64,7 +94,7 @@ struct IPTVAccountGuideIndex: IPTVGuideIndexLoading {
         download: @escaping @Sendable (XMLTVGuideCacheMetadata?) async throws -> XMLTVGuideResponse
     ) async throws -> Date? {
         try await index.updateSaved(
-            from: url, catalog: { try await catalog().map(Self.channel) }, revalidate: download
+            from: url, catalog: { try await Self.catalogChannels(catalog()) }, revalidate: download
         )
     }
 
@@ -78,6 +108,16 @@ struct IPTVAccountGuideIndex: IPTVGuideIndexLoading {
 
     func invalidate() async { await index.invalidate() }
     func cancel() async { await index.cancel() }
+
+    private static func catalogChannels(_ lineup: [IPTVProvider.IPTVGuideChannel]) throws -> [LiveTVPrototypeChannel] {
+        #if DEBUG
+        IPTVLineupProbe.record?(.adapterMaps)
+        #endif
+        return try lineup.map { channel in
+            try Task.checkCancellation()
+            return Self.channel(channel)
+        }
+    }
 
     private static func channel(_ channel: IPTVProvider.IPTVGuideChannel) -> LiveTVPrototypeChannel {
         LiveTVPrototypeChannel(
