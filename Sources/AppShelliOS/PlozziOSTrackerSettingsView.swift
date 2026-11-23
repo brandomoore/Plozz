@@ -22,16 +22,12 @@ struct PlozziOSTrackerSettingsView: View {
         @Bindable var playback = appModel.settings.playback
         List {
             SettingsSectionGroup {
-                Toggle(isOn: $playback.settings.syncWatchAcrossServers) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Sync across servers")
-                        Text("Keep watched status and playback progress in sync.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                SettingsDescribedControl {
+                    Toggle("Sync across servers", isOn: $playback.settings.syncWatchAcrossServers)
+                        .accessibilityIdentifier("cross-server-watch-sync")
+                } description: {
+                    Text("Keep watched status and playback progress in sync.")
                 }
-                .accessibilityIdentifier("cross-server-watch-sync")
                 .settingsSearchAnchor("cross-server-watch-sync")
             }
             .settingsSearchGroup(["cross-server-watch-sync"])

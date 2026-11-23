@@ -634,6 +634,12 @@ final class SettingsInteractionTests: XCTestCase {
             XCTAssertTrue(target.wait(for: \.isHittable, toEqual: true, timeout: 5))
             XCTAssertGreaterThanOrEqual(target.frame.minY, page.frame.maxY)
             XCTAssertLessThanOrEqual(target.frame.maxY, app.frame.maxY)
+            if id == "cross-server-watch-sync" {
+                let description = app.staticTexts["Keep watched status and playback progress in sync."]
+                XCTAssertTrue(description.exists)
+                XCTAssertGreaterThanOrEqual(description.frame.minY, target.frame.maxY)
+                capture("cross-server-watch-sync")
+            }
             app.terminate()
         }
     }
