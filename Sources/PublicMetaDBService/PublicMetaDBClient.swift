@@ -74,6 +74,27 @@ public struct PublicMetaDBClient: Sendable {
         _ type: Value.Type, method: HTTPMethod, path: String,
         query: [URLQueryItem], body: Data?
     ) async throws -> Value {
+        let (data, response) = try await authorizedResponse(method: method, path: path, query: query, body: body)
+        do {
+            return try Self.decoder().decode(Value.self, from: data)
+        } catch {
+            PlozzLog.networking.error("PublicMetaDB invalid response status=\(response.statusCode) bytes=\(data.count)")
+            if method != .get { throw PublicMetaDB.Failure.uncertainWrite }
+            throw AppError.decoding
+        }
+    }
+
+    func historyPageResponse(path: String, page: Int, perPage: Int, ifNoneMatch: String?) async throws -> (Data, HTTPURLResponse) {
+        try await authorizedResponse(
+            method: .get, path: path,
+            query: [.init(name: "page", value: String(page)), .init(name: "perPage", value: String(perPage))],
+            ifNoneMatch: ifNoneMatch
+        )
+    }
+
+    private func authorizedResponse(
+        method: HTTPMethod, path: String, query: [URLQueryItem], body: Data? = nil, ifNoneMatch: String? = nil
+    ) async throws -> (Data, HTTPURLResponse) {
         try await gate.run(scope: scope, batch: path.hasSuffix("/batch")) {
             try Task.checkCancellation()
             try await WatchMutationDeliveryAuthorization.check()
@@ -85,6 +106,7 @@ public struct PublicMetaDBClient: Sendable {
                 body: body, redirectPolicy: .sameOrigin
             )
             if body != nil { endpoint.headers["Content-Type"] = "application/json" }
+            if let ifNoneMatch { endpoint.headers["If-None-Match"] = ifNoneMatch }
             endpoint.reportsUndeliveredRequests = method != .get
             endpoint.maximumResponseBytes = 8 * 1_024 * 1_024
             endpoint.redactsURLForLogging = true
@@ -107,6 +129,9 @@ public struct PublicMetaDBClient: Sendable {
                 if method != .get { throw PublicMetaDB.Failure.uncertainWrite }
                 throw error
             }
+            if response.statusCode == 304, method == .get, ifNoneMatch != nil, data.isEmpty {
+                return (data, response)
+            }
             if !(200...299).contains(response.statusCode) {
                 PlozzLog.networking.error("PublicMetaDB request rejected method=\(method.rawValue) status=\(response.statusCode)")
             }
@@ -126,13 +151,7 @@ public struct PublicMetaDBClient: Sendable {
             guard data.count <= 8 * 1_024 * 1_024 else {
                 throw method == .get ? PublicMetaDB.Failure.responseTooLarge : .uncertainWrite
             }
-            do {
-                return try Self.decoder().decode(Value.self, from: data)
-            } catch {
-                PlozzLog.networking.error("PublicMetaDB invalid response status=\(response.statusCode) bytes=\(data.count)")
-                if method != .get { throw PublicMetaDB.Failure.uncertainWrite }
-                throw AppError.decoding
-            }
+            return (data, response)
         }
     }
 

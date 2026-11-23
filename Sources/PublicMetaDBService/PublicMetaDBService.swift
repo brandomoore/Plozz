@@ -50,6 +50,7 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
     public private(set) var phase: Phase = .disconnected
     public private(set) var connectionID: UUID?
     private(set) var trackingClient: PublicMetaDBClient?
+    @ObservationIgnored private(set) var historyPages: PublicMetaDBHistoryPages?
     /// The account tools can browse and mutate arbitrary records. A tracking
     /// connection must not hand their client to a presenter or restore their grants.
     public var client: PublicMetaDBClient? { accountToolsEnabled ? trackingClient : nil }
@@ -226,10 +227,12 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
     }
 
     public func disconnect() throws {
+        let pages = historyPages ?? credentials.load(namespace: namespace).map { self.pages(for: $0.connectionID) }
         invalidate()
         do {
             try onHistorySyncDisconnect?()
             try credentials.clear(namespace: namespace)
+            if let pages { Task { await pages.discard() } }
             watchlistStore.clear()
             playbackStore.clear()
             hasSavedKey = false
@@ -249,6 +252,7 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
         epoch.invalidate()
         epoch = PublicMetaDBConnectionEpoch()
         trackingClient = nil
+        historyPages = nil
         connectionID = nil
         watchlistRequestID = UUID()
         watchlistDestination.disable()
@@ -453,6 +457,10 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
         return trackingClient
     }
 
+    private func pages(for id: UUID) -> PublicMetaDBHistoryPages {
+        .init(connection: id, namespace: namespace, root: http == nil ? PublicMetaDBHistoryPages.appRoot : nil)
+    }
+
     private func verify(_ saved: PublicMetaDBCredentials, saving: Bool) async {
         let captured = epoch
         phase = .connecting
@@ -464,7 +472,12 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
             if saving {
                 do {
                     try onHistorySyncDisconnect?()
+                    let previous = credentials.load(namespace: namespace)
                     try credentials.save(saved, namespace: namespace)
+                    if let previous, previous.connectionID != saved.connectionID {
+                        let retired = pages(for: previous.connectionID)
+                        Task { await retired.discard() }
+                    }
                 } catch {
                     invalidate()
                     phase = .credentialChangeFailed
@@ -490,6 +503,7 @@ public final class PublicMetaDBService: TrackerHistorySyncReading {
                 try configurePlayback(saved, consent: consent)
             }
             connectionID = saved.connectionID
+            historyPages = pages(for: saved.connectionID)
             trackingClient = candidate
             phase = .connected
             onConnectionChanged?()

@@ -124,7 +124,7 @@ public enum PublicMetaDB {
 
         private enum CodingKeys: String, CodingKey { case id, contributor, created, updated }
 
-        private init(id: String, value: Value, contributor: String?, created: String?, updated: String?) {
+        init(id: String, value: Value, contributor: String?, created: String?, updated: String?) {
             self.id = id
             self.value = value
             self.contributor = contributor

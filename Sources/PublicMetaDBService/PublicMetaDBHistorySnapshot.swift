@@ -17,10 +17,10 @@ public extension PublicMetaDBService {
     }
 
     func historySnapshot() async throws -> TrackerHistorySnapshot {
-        guard let connectionID else { throw PublicMetaDB.Failure.disconnected }
+        guard let connectionID, let historyPages else { throw PublicMetaDB.Failure.disconnected }
         let client = try confirmedTrackingClient(connectionID)
-        let watches = try await client.completeHistory()
-        let resumes = try await client.completeResumePoints()
+        let watches = try await historyPages.watches.read(client: client)
+        let resumes = try await historyPages.resumes.read(client: client)
         try Task.checkCancellation()
         guard self.connectionID == connectionID else { throw PublicMetaDB.Failure.connectionChanged }
         var episodeIdentities: [PublicMetaDB.Content: [MediaIdentity]] = [:]

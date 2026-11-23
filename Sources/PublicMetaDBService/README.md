@@ -25,6 +25,26 @@ External-app pause → Plozz Continue Watching on launch still needs independent
 verification on dedicated Trakt, Simkl, and WeTrakr accounts; PublicMetaDB
 evidence is not a substitute for those runs.
 
+**PublicMetaDB repeat reads.** History sync revalidates each watched and resume
+page against its own ETag. A `304` reuses only that page; a `200` replaces it.
+Without a usable tag or cached page, the reader downloads the page normally.
+The cache is disposable and scoped to the profile and tracker connection.
+There is no verified account-wide revision: a multi-page history still needs
+one request per page, and the reader checks completeness before returning it.
+A missing remote record does not authorize clearing a library's watch state.
+
+On the dedicated live account, a probe linked to the candidate tvOS simulator
+app's reader started a new process for each check. The initial 40 watches
+and 5 resumes took 2 requests and 9,061 response-body bytes. Reopening took
+2 requests and **0 body bytes**. An independent client added a *Sintel* pause
+at 310.271 seconds: only the resume page transferred (1,370 bytes), and the
+reader returned that exact position. The next reopen transferred no bodies.
+After exact-record cleanup, only the resume page transferred (1,153 bytes);
+independent reads confirmed the target was absent and unrelated records were
+unchanged. No playback or share writes occurred. This verifies the live reader,
+not automatic app launch or delivery to two shares on this candidate. Later-page
+replacements and damaged or wrong-scope cache entries were tested with fixtures.
+
 The branch is not merge-ready. Integration `8ae592a88caa` includes `main`
 through `cd5468e5dd37`. The iPhone simulator app built and installed from
 that integration. The focus-test host retained both tracker fixtures and

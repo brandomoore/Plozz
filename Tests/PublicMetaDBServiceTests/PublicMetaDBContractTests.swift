@@ -14,6 +14,84 @@ private func client(_ http: RecordingHTTPClient) throws -> PublicMetaDBClient {
 }
 
 final class PublicMetaDBContractTests: XCTestCase {
+    private func watchPage(_ id: String, page: Int, total: Int) -> String {
+        let row = watch.replacingOccurrences(of: "play1", with: id)
+        return #"{"items":[\#(row)],"total":\#(total),"page":\#(page),"perPage":1,"totalPages":\#(total)}"#
+    }
+
+    func testHistoryReopenRevalidatesLaterPagesEvenIfFirstIsUnchanged() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let connection = UUID()
+        func reader() -> PublicMetaDBHistoryPages {
+            .init(connection: connection, namespace: "profile", root: root)
+        }
+        let http = RecordingHTTPClient(), tagA = #""a""#, tagB = #"W/"b""#, tagC = #""c""#
+        http.stub(pathSuffix: "/watched", json: watchPage("first", page: 1, total: 2), headers: ["ETag": tagA])
+        http.stub(pathSuffix: "/watched", json: watchPage("old", page: 2, total: 2), headers: ["ETag": tagB])
+        http.stub(pathSuffix: "/watched", json: "", status: 304)
+        http.stub(pathSuffix: "/watched", json: watchPage("replacement", page: 2, total: 2), headers: ["ETag": tagC])
+        http.stub(pathSuffix: "/watched", json: "", status: 304)
+        let api = try client(http)
+        let baseline = try await reader().watches.read(client: api)
+        let changed = try await reader().watches.read(client: api)
+        let unchanged = try await reader().watches.read(client: api)
+        XCTAssertEqual(baseline.map(\.id), ["first", "old"])
+        XCTAssertEqual(changed.map(\.id), ["first", "replacement"])
+        XCTAssertEqual(unchanged.map(\.id), changed.map(\.id))
+        XCTAssertEqual(http.sent.map { $0.headers["If-None-Match"] }, [nil, nil, tagA, tagB, tagA, tagC])
+        XCTAssertEqual(http.sent.map { $0.queryItems.first?.value }, ["1", "2", "1", "2", "1", "2"])
+    }
+
+    func testFailedAndShrinkingHistoriesNeverReturnAStaleCompleteResult() async throws {
+        let pages = PublicMetaDBHistoryPages(connection: UUID(), namespace: nil, root: nil)
+        let http = RecordingHTTPClient(), api = try client(http)
+        let tag = #""t""#
+        http.stub(pathSuffix: "/watched", json: watchPage("first", page: 1, total: 1), headers: ["ETag": tag])
+        http.stub(pathSuffix: "/watched", json: watchPage("first", page: 1, total: 2), headers: ["ETag": #""grown""#])
+        http.stub(pathSuffix: "/watched", json: "", status: 503)
+        http.stub(pathSuffix: "/watched", json: "", status: 304)
+        http.stub(pathSuffix: "/watched", json: watchPage("second", page: 2, total: 2), headers: ["ETag": tag])
+        http.stub(pathSuffix: "/watched", json: emptyPage)
+        http.stub(pathSuffix: "/watched", json: "", status: 304)
+        _ = try await pages.watches.read(client: api)
+        do { _ = try await pages.watches.read(client: api); XCTFail("Missing second page was accepted") }
+        catch { XCTAssertEqual(error as? PublicMetaDB.Failure, .rejected) }
+        let recovered = try await pages.watches.read(client: api)
+        XCTAssertEqual(recovered.map(\.id), ["first", "second"])
+        let shrunk = try await pages.watches.read(client: api)
+        XCTAssertTrue(shrunk.isEmpty)
+        do { _ = try await pages.watches.read(client: api); XCTFail("Unsolicited 304 was accepted") }
+        catch { XCTAssertEqual(error as? PublicMetaDB.Failure, .rejected) }
+        XCTAssertNil(http.sent.last?.headers["If-None-Match"])
+    }
+
+    func testResumeReopenRetainsPositionButCannotUseAnotherScopeOrDamagedBaseline() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let connection = UUID()
+        func reader(_ id: UUID, _ namespace: String) -> PublicMetaDBHistoryPages {
+            .init(connection: id, namespace: namespace, root: root)
+        }
+        let http = RecordingHTTPClient(), api = try client(http)
+        let tag = #""resume""#, updated = "2026-11-22 10:30:00.125Z"
+        let row = #"{"id":"pause","tmdb_id":550,"media_type":"movie","position_ms":12345,"runtime_ms":66000,"updated":"\#(updated)"}"#
+        http.stub(pathSuffix: "/resume", json: #"{"items":[\#(row)],"total":1,"page":1,"perPage":500,"totalPages":1}"#, headers: ["ETag": tag])
+        http.stub(pathSuffix: "/resume", json: "", status: 304)
+        let original = reader(connection, "one")
+        _ = try await original.resumes.read(client: api)
+        let reopened = try await reader(connection, "one").resumes.read(client: api)
+        XCTAssertEqual(reopened.first?.value.positionMilliseconds, 12345)
+        XCTAssertEqual(reopened.first?.updated, updated)
+        let file = try XCTUnwrap(original.folder).appendingPathComponent("resume-1")
+        try Data("damaged".utf8).write(to: file)
+        for scoped in [reader(connection, "two"), reader(UUID(), "one"), reader(connection, "one")] {
+            do { _ = try await scoped.resumes.read(client: api); XCTFail("Unusable baseline accepted") }
+            catch { XCTAssertEqual(error as? PublicMetaDB.Failure, .rejected) }
+        }
+        XCTAssertEqual(http.sent.map { $0.headers["If-None-Match"] }, [nil, tag, nil, nil, nil])
+    }
+
     func testRejectsInvalidKeysBeforeNetwork() {
         for key in ["", "pm-short", "pm-" + String(repeating: "-", count: 60), "pm-" + String(repeating: "é", count: 60)] {
             XCTAssertThrowsError(try PublicMetaDBClient(key: key))
