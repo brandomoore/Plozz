@@ -357,6 +357,8 @@ only actionable headings are buttons, with the native 44-point touch target.
 Library, featured, Continue Watching, and Live TV rows use their own geometry.
 
 Ordinary Home cards open detail and do not observe the page's Play handler.
+The detail page computes its own unscaled layout metrics when opened; browsing
+the rail does not calculate a detail layout for every card.
 Direct-play cards still open detail if no handler is installed. Download badges
 read the active profile's selected-version download index; mounting a card does
 not start a registry task or scan unrelated downloads for a source ID. Detail-art prewarming validates the current viewer

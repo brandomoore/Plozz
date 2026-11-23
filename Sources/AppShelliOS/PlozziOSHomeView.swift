@@ -3864,8 +3864,6 @@ struct PlozziOSHomeMediaCard: View {
     static var routingResolutionCount = 0
     #endif
     @Environment(PlozziOSAppModel.self) private var appModel
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     let item: MediaItem
     let isLandscape: Bool
     var interaction: PlozziOSRailInteraction = .openDetail
@@ -3891,11 +3889,7 @@ struct PlozziOSHomeMediaCard: View {
     @ViewBuilder private var detailLink: some View {
         if provider != nil || !appModel.accountsProviders.resolvedActiveAccounts.isEmpty {
             MediaArtworkZoomLink(id: item.stablePresentationID) {
-                PlozziOSHomeCardDetail(item: item, fallbackProvider: provider)
-                    .environment(\.plozzMetrics, PlozziOSMediaLayout.metrics(
-                        density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize,
-                        isRunningOnMac: isRunningOnMac))
-                    .environment(\.plozzCardCaptionView, .related)
+                HomeRailDetailDestination(item: item, provider: provider)
             } label: {
                 card
             }
@@ -3952,6 +3946,22 @@ struct PlozziOSHomeMediaCard: View {
             showsActionsMenu: false,
             isPendingRemoval: isPendingRemoval
         )
+    }
+}
+
+private struct HomeRailDetailDestination: View {
+    @Environment(PlozziOSAppModel.self) private var appModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
+    let item: MediaItem
+    let provider: (any MediaProvider)?
+
+    var body: some View {
+        PlozziOSHomeCardDetail(item: item, fallbackProvider: provider)
+            .environment(\.plozzMetrics, PlozziOSMediaLayout.metrics(
+                density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize,
+                isRunningOnMac: isRunningOnMac))
+            .environment(\.plozzCardCaptionView, .related)
     }
 }
 
