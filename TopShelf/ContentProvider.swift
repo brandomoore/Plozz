@@ -3,12 +3,9 @@ import TVServices
 /// Supplies content for the tvOS Top Shelf — the banner shown above the app
 /// grid when Plozz is in the top row of the Home screen.
 ///
-/// This runs in a separate, short-lived, memory-constrained process. Rather
-/// than re-implement the Jellyfin client (and its Keychain auth) here, it
-/// renders the snapshot the main app last published into the shared App Group
-/// container. Jellyfin image URLs are token-free and absolute, so the shelf
-/// cards load their artwork directly. Each card deep-links back into the app to
-/// start playback (`plozz://item/{id}`).
+/// Runs as the current Apple TV user and reads the snapshot Plozz Home last
+/// published for that user. The extension doesn't select a profile or sign in
+/// to a media provider.
 final class ContentProvider: TVTopShelfContentProvider {
     override func loadTopShelfContent(
         completionHandler: @escaping (TVTopShelfContent?) -> Void

@@ -19,6 +19,16 @@ container, where the Top Shelf extension reads it.
   pruning. Always writes (even empty) so a freshly-signed-out state clears
   the shelf.
 
+On the canonical tvOS build, the app and extension both run as the current
+Apple TV user. Each person opens Plozz under their Apple TV user, selects a
+Plozz profile, and lets Home load. When tvOS next requests the shelf for that
+user, the extension reads their last published Home rows; it returns no
+personalized content if there is no snapshot. This applies to every provider
+that contributes to Home. Two profiles using the same server login can still
+have the same Continue Watching history. The extension needs the User Management
+capability on its own App ID and provisioning profile, but does not need the
+app's user-independent Keychain privilege.
+
 Top Shelf preferences are device-local and shared by Plozz profiles. Settings →
 Everyone → Top Shelf explains the Apple TV Home Screen placement, offers a
 default-on **Show Top Shelf** switch with its explanation beneath the label, and
