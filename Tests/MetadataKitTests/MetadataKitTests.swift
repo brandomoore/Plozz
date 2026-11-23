@@ -339,9 +339,10 @@ final class MetadataKitTests: XCTestCase {
         let french = query.forArtworkLanguage("fr-CA")
         let english = query.forArtworkLanguage("en-US")
         XCTAssertNotEqual(french, english)
-        XCTAssertEqual(french, query.forArtworkLanguage("fr-FR"))
+        XCTAssertEqual(french.cacheKey(for: .logo), query.forArtworkLanguage("fr-FR").cacheKey(for: .logo))
         XCTAssertEqual(french.seriesScoped.artworkLanguage, "fr")
-        XCTAssertEqual(french.offering(episodeHints: [], titleAlternates: []).artworkLanguage, "fr")
+        XCTAssertEqual(french.seriesScoped.artworkLocale, "fr-CA")
+        XCTAssertEqual(french.offering(episodeHints: [], titleAlternates: []).artworkLocale, "fr-CA")
         XCTAssertNotEqual(french.cacheKey(for: .logo), english.cacheKey(for: .logo))
         XCTAssertNotEqual(
             ArtworkRouter.providerCacheKey(query: french, kind: .logo, source: .tmdb),

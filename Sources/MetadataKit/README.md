@@ -88,7 +88,9 @@ load-bearing.
   Provider-result keys and detail snapshots separate language variants. Query
   copies retain language when promoting series IDs or threading matched IDs.
   Online poster selection uses the profile language for tagged TMDb and TheTVDB
-  artwork, with separate cache entries per language. If no matching poster exists,
+  artwork, including posters newly pinned for iOS downloads. TMDb uses base
+  language tags; TheTVDB keeps its regional and script variants separate in
+  both selection and cache. If no matching poster exists,
   neutral or provider fallback art remains available. This does not change library
   artwork preference, provider order, or textless hero selection.
   Providers without requested-language text support cannot fill descriptions,

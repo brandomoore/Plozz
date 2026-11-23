@@ -65,7 +65,7 @@ public extension MetadataQuery {
             providerIDs: merged,
             episodeHints: episodeHints,
             titleAlternates: titleAlternates,
-            artworkLanguage: artworkLanguage,
+            artworkLanguage: artworkLocale,
             metadataLanguage: metadataLanguage,
             scheduleStartDate: scheduleStartDate
         )

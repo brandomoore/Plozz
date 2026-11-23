@@ -914,6 +914,39 @@ final class WatchlistPresentationRetargetTests: XCTestCase {
         XCTAssertEqual(item.artworkSourceAccountID, "plex-account")
     }
 
+    func testCachedPlaybackMatchUpgradesTitleButCurrentLibraryCopyWins() throws {
+        let alias = MediaAliasID()
+        let plex = try XCTUnwrap(WatchlistDestinationID(rawValue: "plex"))
+        let source = MediaSourceRef(accountID: "library", itemID: "42", kind: .series, providerKind: .plex)
+        func resolve(_ item: MediaItem, ownedTitle: String?) throws -> MediaItem {
+            var native = NativeWatchlistView()
+            native.applySuccess(destinationID: plex, entries: [try XCTUnwrap(NativeWatchlistEntry(
+                aliasID: alias, kind: .series, presentation: .init(title: "Discover title"), index: 0,
+                ownedSource: source, ownedPresentation: ownedTitle.map { .init(title: $0) }
+            ))])
+            let union = WatchlistUnion(snapshot: .empty, nativeView: native, aliasSnapshot: .empty,
+                                       enabledDestinationIDs: [plex])
+            return try XCTUnwrap(WatchlistPresentationResolver.resolve(
+                union: union, aliasSnapshot: .empty, currentItemsByAliasID: [alias: item]
+            ).first?.item)
+        }
+        let discover = MediaItem(id: "discover", title: "Discover title", kind: .series,
+                                 locallyValidatedPlayableSource: false)
+        let first = try resolve(discover, ownedTitle: nil)
+        let cached = try JSONDecoder().decode(MediaItem.self, from: JSONEncoder().encode(first))
+        XCTAssertTrue(cached.locallyValidatedPlayableSource)
+        XCTAssertEqual(cached.title, discover.title)
+        let updated = try resolve(cached, ownedTitle: "Library title")
+        XCTAssertEqual(updated.title, "Library title")
+        XCTAssertEqual(updated.id, source.itemID)
+        XCTAssertEqual(updated.metadataProvenance[.title]?.source, .server)
+
+        let native = MediaItem(id: source.itemID, title: "Curated title", kind: .series, sourceAccountID: source.accountID)
+        let current = try resolve(native, ownedTitle: "Older match")
+        XCTAssertEqual(current.title, native.title)
+        XCTAssertEqual(try resolve(current, ownedTitle: "Older match").title, native.title)
+    }
+
     /// The upgrade must never invent a match. Retargeting on title+year alone
     /// wouldn't just mislabel a card, it would route playback to another work.
     func testCandidateWithoutAStrongIDIsLeftAlone() throws {

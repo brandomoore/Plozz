@@ -8,6 +8,14 @@ import MetadataKit
 import UIKit
 
 enum PlozziOSDownloadArtwork {
+    @MainActor
+    static func policy(settings: ArtworkSettings, appLanguage: AppLanguageSettingsModel) -> ArtworkPresentationPolicy {
+        ArtworkPresentationPolicy(
+            area: .downloads, settings: settings, providers: MetadataProviderSettingsStore().load(),
+            logoLanguage: (appLanguage.locale ?? .current).identifier
+        )
+    }
+
     enum Failure: Error {
         case unavailable
         case invalidImage

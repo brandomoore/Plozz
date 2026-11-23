@@ -57,6 +57,23 @@ final class ArtworkCandidateTests: XCTestCase {
         XCTAssertEqual(poster, url("poster"), "Unrelated artwork caches remain reusable.")
     }
 
+    func testTVDBPosterCacheSeparatesRegionalAndScriptVariants() async {
+        let cache = MetadataDiskCache(directory: nil)
+        let settings = CatalogArtworkSettings(.init(orderMode: .custom, enabledOrder: ["tvdb"]))
+        let router = catalogRouter(settings: settings, cache: cache)
+        let item = MediaItem(id: "movie", title: "Movie", kind: .movie, providerIDs: ["Tvdb": "42"])
+        let variants = ["pt-BR", "pt-PT", "zh-Hant", "zh-Hans"]
+        for locale in variants {
+            await cache.store(url(locale), for: ArtworkRouter.providerCacheKey(
+                query: MetadataQuery(item).forArtworkLanguage(locale), kind: .poster, source: .tvdb
+            ))
+        }
+        for locale in variants {
+            let poster = await router.artworkURL(for: item, placements: [.poster], language: locale)
+            XCTAssertEqual(poster, url(locale))
+        }
+    }
+
     func testLandscapeCardCacheSeparatesHeroAndLanguageAndHonorsProviderDisablement() async {
         let settings = CatalogArtworkSettings(.init(orderMode: .custom, enabledOrder: ["tmdb"]))
         let cache = MetadataDiskCache(directory: nil)

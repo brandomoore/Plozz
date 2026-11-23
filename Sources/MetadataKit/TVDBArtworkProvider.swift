@@ -33,7 +33,7 @@ public struct TVDBArtworkProvider: ArtworkProvider {
             )
         case .poster:
             return await client.posterURL(title: query.title, year: query.year, isMovie: !query.isTV,
-                                          tvdbID: tvdbID, language: query.artworkLanguage)
+                                          tvdbID: tvdbID, language: query.artworkLocale)
         case .logo, .thumbnail:
             return nil
         }

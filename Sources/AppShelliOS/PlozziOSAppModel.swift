@@ -879,6 +879,7 @@ final class PlozziOSAppModel {
             mediaShareRuntime: mediaShareRuntime,
             accountsProviders: accountsProviders,
             settingsNamespace: profiles.activeNamespace,
+            appLanguage: self.appLanguage,
             authenticatedHTTPResolver: authenticatedHTTPResolver,
             statusPresenter: transientStatusPresenter
         )
@@ -2091,6 +2092,7 @@ final class PlozziOSAppModel {
                 mediaShareRuntime: self.mediaShareRuntime,
                 accountsProviders: self.accountsProviders,
                 settingsNamespace: self.profiles.activeNamespace,
+                appLanguage: self.appLanguage,
                 startsActive: self.applicationIsActive,
                 authenticatedHTTPResolver: self.authenticatedHTTPResolver,
                 statusPresenter: self.transientStatusPresenter
@@ -2673,6 +2675,7 @@ final class PlozziOSAppModel {
         mediaShareRuntime: DefaultMediaShareRuntime,
         accountsProviders: AccountsProvidersModel,
         settingsNamespace: String?,
+        appLanguage: AppLanguageSettingsModel,
         startsActive: Bool = true,
         authenticatedHTTPResolver: ManagedAuthenticatedHTTPResolver,
         statusPresenter: TransientStatusPresenter
@@ -2719,7 +2722,9 @@ final class PlozziOSAppModel {
                         deviceLanguage: LanguageMatch.deviceLanguageCode
                     )
                 },
-                artworkSettings: { artworkStore.load() },
+                artworkPolicy: {
+                    PlozziOSDownloadArtwork.policy(settings: artworkStore.load(), appLanguage: appLanguage)
+                },
                 startsActive: startsActive,
                 resolveArtworkItem: { record in
                     guard let accountID = record.snapshot.sourceAccountID

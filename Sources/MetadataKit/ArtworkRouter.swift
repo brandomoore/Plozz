@@ -498,9 +498,14 @@ public actor ArtworkRouter {
         prefersPortraitHero: Bool = false,
         prefersLandscapeCard: Bool = false
     ) -> String {
-        let variant = prefersLandscapeCard ? "|landscape-card-v1:\(query.artworkLanguage)"
-            : prefersPortraitHero ? "|portrait-hero-v1"
-            : kind == .poster && (source == .tmdb || source == .tvdb) ? "|poster-language:\(query.artworkLanguage)" : ""
+        let variant: String
+        if prefersLandscapeCard { variant = "|landscape-card-v1:\(query.artworkLanguage)" }
+        else if prefersPortraitHero { variant = "|portrait-hero-v1" }
+        else if kind == .poster && source == .tvdb {
+            variant = "|poster-tvdb-language:\(TVDBLocale.languageIdentifier(query.artworkLocale))"
+        } else if kind == .poster && source == .tmdb {
+            variant = "|poster-language:\(query.artworkLanguage)"
+        } else { variant = "" }
         return "\(query.cacheKey(for: kind))\(variant)|provider:\(source.rawValue)"
     }
 
