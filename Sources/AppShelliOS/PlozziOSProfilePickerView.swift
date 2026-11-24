@@ -194,7 +194,9 @@ struct PlozziOSProfilePickerView: View {
     @State private var hasAppeared = false
     @State private var hasRevealedProfiles = false
     @State private var showsVerificationProgress = false
-    @State private var avatarFlight = PlozziOSProfileAvatarFlight()
+    @Environment(\.plozziOSPickerFlight) private var hostedFlight
+    @State private var localFlight = PlozziOSProfileAvatarFlight()
+    private var avatarFlight: PlozziOSProfileAvatarFlight { hostedFlight ?? localFlight }
     @Namespace private var localIdentityNamespace
     @Environment(\.themePalette) private var palette
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize

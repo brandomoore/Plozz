@@ -1130,6 +1130,7 @@ final class PlozziOSProfileHomeEntrance {
     let profileID: String
     let generation: Int
     fileprivate weak var pickerView: UIView?
+    fileprivate weak var flight: PlozziOSProfileAvatarFlight?
     fileprivate private(set) var isRevealing = false
 
     init(origin: Origin, profileID: String, generation: Int) {
@@ -1159,6 +1160,12 @@ final class PlozziOSProfileHomeEntrance {
         fade.fromValue = 1
         fade.toValue = 0
         fade.duration = 0.34
+        // Keep both endpoints in one compositor transaction, even if Home
+        // becomes ready before the identity has finished traveling.
+        let readyAt = CACurrentMediaTime()
+        let landedAt = flight?.profileID == profileID ? flight?.landsAt : nil
+        fade.beginTime = pickerView.layer.convertTime(max(readyAt, landedAt ?? readyAt) + 0.25, from: nil)
+        fade.fillMode = .backwards
         fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         pickerView.layer.opacity = 0
         pickerView.layer.add(fade, forKey: "picker-reveal")
@@ -1171,16 +1178,24 @@ private struct PlozziOSPickerHost: UIViewControllerRepresentable {
     let entrance: PlozziOSProfileHomeEntrance?
     @ViewBuilder let selection: () -> PlozziOSProfileSelectionView
 
+    func makeCoordinator() -> PlozziOSProfileAvatarFlight { PlozziOSProfileAvatarFlight() }
+
+    private func hostedSelection(_ context: Context) -> AnyView {
+        AnyView(selection().environment(\.plozziOSPickerFlight, context.coordinator)
+            .environment(\.self, context.environment))
+    }
+
     func makeUIViewController(context: Context) -> UIHostingController<AnyView> {
-        let host = UIHostingController(rootView: AnyView(selection().environment(\.self, context.environment)))
+        let host = UIHostingController(rootView: hostedSelection(context))
         host.view.backgroundColor = .clear
         host.view.layer.allowsGroupOpacity = true
         return host
     }
 
     func updateUIViewController(_ host: UIHostingController<AnyView>, context: Context) {
-        host.rootView = AnyView(selection().environment(\.self, context.environment))
+        host.rootView = hostedSelection(context)
         entrance?.pickerView = host.view
+        entrance?.flight = context.coordinator
         if entrance?.isRevealing != true, host.view.layer.opacity == 0 {
             host.view.layer.removeAnimation(forKey: "picker-reveal")
             host.view.layer.opacity = 1

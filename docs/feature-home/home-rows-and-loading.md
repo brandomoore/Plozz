@@ -344,9 +344,10 @@ resume-snapshot restrictions continue to govern cached heroes.
 
 On mobile, when the profile picker hands off to Home, the authorized viewer's
 ordinary Home loads behind the picker. The selected avatar and the name below
-it move to the center together as the other profiles fade away. As soon as Home
-is ready, the picker fades out. With Reduce Motion, the pair appears at the
-center without travel and the picker dismisses without a fade. Loading never
+it move to the center together as the other profiles fade away. Once the pair
+has landed and Home is ready (or its wait has timed out), the picker holds for
+another 250 ms before fading. With Reduce Motion, the pair appears at the
+center without travel and the picker dismisses without the hold or fade. Loading never
 waits for an animation. Home reports readiness from the same presentation it
 draws: a configured hero with a usable item, media in the
 first ordered shelf, or the final empty/error screen. A lower shelf arriving

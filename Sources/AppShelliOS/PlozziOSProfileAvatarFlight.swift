@@ -2,6 +2,10 @@
 import SwiftUI
 import UIKit
 
+extension EnvironmentValues {
+    @Entry var plozziOSPickerFlight: PlozziOSProfileAvatarFlight?
+}
+
 /// The name and artwork share one presentation layer throughout the flight.
 @MainActor
 final class PlozziOSProfileAvatarFlight {
@@ -10,6 +14,7 @@ final class PlozziOSProfileAvatarFlight {
     private var placeCapturedIdentity: (() -> Void)?
     private(set) var profileID: String?
     private(set) var captionSpace: CGFloat = 0
+    var landsAt: CFTimeInterval? { viewport?.landsAt }
 
     fileprivate func register(_ marker: UIView, for id: String) {
         tiles.setObject(marker, forKey: id as NSString)
@@ -60,6 +65,7 @@ final class PlozziOSProfileAvatarFlight {
     }
 
     final class Viewport: UIView {
+        fileprivate private(set) var landsAt: CFTimeInterval?
         fileprivate var backdrop = UIColor.clear
         private var avatar: UIView?
         private var destination: CGPoint { CGPoint(x: bounds.midX, y: bounds.midY) }
@@ -90,6 +96,9 @@ final class PlozziOSProfileAvatarFlight {
                 size.duration = flight.duration
                 flight.animations = [position, size]
                 flight.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                let start = CACurrentMediaTime()
+                flight.beginTime = snapshot.layer.convertTime(start, from: nil)
+                landsAt = start + flight.duration
                 snapshot.layer.add(flight, forKey: "profile-to-center")
                 // Only the background color fades in. The moving identity stays
                 // opaque while the rest of the still-mounted picker dissolves.
@@ -109,6 +118,7 @@ final class PlozziOSProfileAvatarFlight {
             // Rotation / window resize during a hold. Don't restart the flight
             // for ordinary layout passes caused by Home appearing behind us.
             if let avatar, avatar.center != destination {
+                landsAt = nil
                 avatar.layer.removeAnimation(forKey: "profile-to-center")
                 UIView.performWithoutAnimation { avatar.center = destination }
             }
@@ -117,6 +127,7 @@ final class PlozziOSProfileAvatarFlight {
         fileprivate func showSnapshot(_ visible: Bool) {
             avatar?.isHidden = !visible
             if !visible {
+                landsAt = nil
                 avatar?.layer.removeAnimation(forKey: "profile-to-center")
                 layer.removeAnimation(forKey: "picker-dissolve")
             }
@@ -124,6 +135,7 @@ final class PlozziOSProfileAvatarFlight {
         }
 
         fileprivate func clear() {
+            landsAt = nil
             layer.removeAnimation(forKey: "picker-dissolve")
             avatar?.layer.removeAllAnimations()
             avatar?.removeFromSuperview()
