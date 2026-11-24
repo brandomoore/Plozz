@@ -418,6 +418,10 @@ public struct LibraryBrowseView: View {
             : (section.style == .poster ? .poster : .landscape)
     }
 
+    private func recommendedRowArtworkArea(_ section: LibrarySection) -> ArtworkArea {
+        section.id == "continueWatching" ? .continueWatching : .recommended
+    }
+
     private func recommendedRow(_ section: LibrarySection) -> some View {
         MediaRowView(
             title: section.displayName,
@@ -428,7 +432,7 @@ public struct LibraryBrowseView: View {
             showsResumeChip: section.id == "continueWatching",
             onSelect: onSelect
         )
-        .environment(\.plozzArtworkArea, section.id == "continueWatching" ? .continueWatching : .recommended)
+        .environment(\.plozzArtworkArea, recommendedRowArtworkArea(section))
         .navigationEntryFocus(.content)
     }
 
@@ -444,7 +448,7 @@ public struct LibraryBrowseView: View {
                     ? { PosterCardView.leadingLandscapeArtwork(
                         for: $0,
                         showsSeriesArtwork: section.id == "continueWatching" && continueWatchingShowsSeriesArtwork,
-                        prefersTextlessArtwork: artworkPolicy.settings.prefersTextlessArtwork(in: .continueWatching)
+                        presentationPolicy: artworkPolicy.forArea(recommendedRowArtworkArea(section))
                     ) } : nil
             )
         }
@@ -479,7 +483,7 @@ public struct LibraryBrowseView: View {
                     showsResumeChip: section.id == "continueWatching",
                     onSelect: onSelect
                 )
-                .environment(\.plozzArtworkArea, section.id == "continueWatching" ? .continueWatching : .recommended)
+                .environment(\.plozzArtworkArea, recommendedRowArtworkArea(section))
                 .navigationEntryFocus(.content)
             }
         }

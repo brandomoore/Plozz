@@ -58,12 +58,18 @@ final class LandscapeCardArtworkTests: XCTestCase {
             XCTAssertEqual(Array(rendered.prefix(2)), expected)
             XCTAssertEqual(warmed.prefix(2).map(ArtworkReference.remote), expected)
             XCTAssertEqual(row.prefix(2).map(ArtworkReference.remote), expected)
+            XCTAssertEqual(PosterCardView.leadingLandscapeArtwork(
+                for: movie, showsSeriesArtwork: false, presentationPolicy: policy
+            ).first, expected.first)
         }
         assertOrder(browse, [.remote(background), alternate])
         assertOrder(browse.forArea(.collections), [alternate, secondAlternate])
         assertOrder(.init(area: .browse), [alternate, secondAlternate])
         movie.artworkSelections.append(.init(placement: .landscapeCard, references: [.remote(native)]))
         assertOrder(browse, [.remote(native), .remote(background)])
+        XCTAssertEqual(PosterCardView.leadingLandscapeArtwork(
+            for: movie, showsSeriesArtwork: true, presentationPolicy: policy(.library).forArea(.continueWatching)
+        ).first, .remote(background))
     }
 
     func testOnUsesCleanBackgroundsWithoutOverridingLibraryPreference() {

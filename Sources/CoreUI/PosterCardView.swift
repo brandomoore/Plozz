@@ -1835,13 +1835,15 @@ public extension PosterCardView {
         for item: MediaItem,
         showsSeriesArtwork: Bool,
         policy: CardArtworkPolicy = .standard,
-        prefersTextlessArtwork: Bool = true
+        presentationPolicy: ArtworkPresentationPolicy
     ) -> [ArtworkReference] {
-        guard showsSeriesArtwork else { return policy.references(for: item, style: .landscape) }
+        guard showsSeriesArtwork else {
+            return policy.references(for: item, style: .landscape, policy: presentationPolicy)
+        }
         let ladder = item.kind == .episode
             ? item.seriesArtworkReferences(prefersPortrait: false)
-            : policy.references(for: item, style: .landscape, prefersLandscapeKeyArt: false)
-        guard prefersTextlessArtwork else { return ladder }
+            : policy.references(for: item, style: .landscape, prefersLandscapeKeyArt: false, policy: presentationPolicy)
+        guard presentationPolicy.prefersTextlessArtwork else { return ladder }
         return PosterCardPresentation.preferringTextless(
             TextlessBackdropStore.shared.backdrop(for: item),
             over: ladder
