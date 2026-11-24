@@ -81,7 +81,7 @@ public struct ContinueWatchingArtworkSource: Sendable {
     func references(textlessBackdrop: URL?) -> [ArtworkReference] {
         var ladder = item.kind == .episode
             ? item.seriesArtworkReferences(prefersPortrait: style == .poster)
-            : cardPolicy.references(for: item, style: style, prefersLandscapeKeyArt: false)
+            : cardPolicy.references(for: item, style: style, prefersLandscapeKeyArt: false, policy: policy)
         if titleLogo != nil {
             let titled = PosterCardPresentation.titleBearingArtwork(for: item)
             let candidates = item.artworkReferences(for: .homeHero, preferringLibrarySelection: true)

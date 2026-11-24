@@ -41,6 +41,18 @@ final class LandscapeCardArtworkTests: XCTestCase {
         XCTAssertTrue(PosterCardPresentation.titleBearingArtwork(for: value).contains(.remote(native)))
     }
 
+    func testLibraryBrowseUsesSelectedBackgroundBeforeTheAlternateChosenForDetails() {
+        var movie = item(titled: false)
+        let alternate = ArtworkReference.remote(URL(string: "https://art.example/alternate.jpg")!)
+        movie.artworkSelections = [.init(placement: .detailBackdrop, references: [alternate])]
+        var settings = ArtworkSettings(preference: .online)
+        settings.setOverride(.library, for: .browse)
+        let browse = ArtworkPresentationPolicy(area: .browse, settings: settings)
+        XCTAssertEqual(Array(card.references(for: movie, style: .landscape, policy: browse).prefix(2)),
+                       [.remote(background), alternate])
+        XCTAssertEqual(card.references(for: movie, style: .landscape, policy: policy()).first, alternate)
+    }
+
     func testOnUsesCleanBackgroundsWithoutOverridingLibraryPreference() {
         for value in [item(titled: false), item()] {
             let selected = source(value, mode: .on)

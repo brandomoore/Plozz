@@ -1278,7 +1278,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   movie/show cards have a separate `landscapeCard` key-art placement: advertised
   Jellyfin/Emby Thumb images and validated share landscape/thumb sidecars do not
   depend on the hero's backdrop ordering. Artwork-only cards can fill a missing
-  native slot from enabled metadata providers; explicit Library stays native-first.
+  native slot from enabled metadata providers; explicit Library uses the selected
+  server background before alternate detail-page artwork when no landscape thumbnail exists.
   Custom collection rows persist Logo as On or Off (default); retired Automatic
   values decode as Off. On prefers clean backgrounds and reuses Continue
   Watching's logo composition, but artwork-type and textless-availability guesses

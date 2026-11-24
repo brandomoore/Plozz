@@ -18,6 +18,27 @@ import CoreNetworking
 /// captions stayed perfectly correct — which is what made it read as an artwork
 /// bug rather than a URL one.
 final class PlexAbsoluteArtworkURLTests: XCTestCase {
+    func testLibraryCardsKeepTypedPostersAndEpisodeStillsWhenThumbIsMissing() throws {
+        let provider = makeProvider()
+        let thumb = "https://art.example/selected.jpg"
+        let poster = "https://art.example/cover.jpg"
+        let snapshot = "https://art.example/still.jpg"
+        for (kind, topLevel, expected) in [
+            ("movie", "", poster), ("show", "", poster), ("episode", "", snapshot),
+            ("movie", thumb, thumb), ("episode", thumb, thumb)
+        ] {
+            let json = """
+            {"ratingKey":"42","type":"\(kind)","thumb":"\(topLevel)",
+             "grandparentThumb":"https://art.example/series.jpg",
+             "Image":[{"type":"clearLogo","url":"https://art.example/logo.png"},
+                      {"type":"coverPoster","url":"\(poster)"},{"type":"snapshot","url":"\(snapshot)"}]}
+            """
+            let item = provider.map(metadata: try JSONDecoder().decode(PlexMetadata.self, from: Data(json.utf8)))
+            let placement: ArtworkPlacement = kind == "episode" ? .episodeThumbnail : .poster
+            XCTAssertEqual(item.artworkReferences(for: placement).first, .remote(try XCTUnwrap(URL(string: expected))))
+        }
+    }
+
     func testSelectedSquareBackgroundIsSeparateFromPosterAndLandscapeArtwork() async throws {
         for path in [
             "/library/metadata/42/squareArt/123",

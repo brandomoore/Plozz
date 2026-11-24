@@ -2055,8 +2055,7 @@ public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginPr
         // the show here meant an episode never exposed its still at all — every
         // surface asking for `.episodeThumbnail` got series art instead. Jellyfin
         // maps this the same way (own primary image, series poster separately).
-        let posterPath = isEpisode ? (dto.thumb ?? dto.grandparentThumb)
-            : (kind == .playlist ? (dto.composite ?? dto.thumb) : dto.thumb)
+        let posterPath = Self.posterPath(for: dto, kind: kind)
         let viewCount = dto.viewCount ?? 0
         let viewedLeafCount = dto.viewedLeafCount ?? 0
         let leafCount = dto.leafCount ?? 0
@@ -2170,14 +2169,22 @@ public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginPr
         )
     }
 
+    private static func posterPath(for dto: PlexMetadata, kind: MediaItemKind) -> String? {
+        if kind == .playlist, let composite = dto.composite, !composite.isEmpty { return composite }
+        if let thumb = dto.thumb, !thumb.isEmpty { return thumb }
+        let imageType = kind == .episode ? "snapshot" : "coverposter"
+        if let path = dto.Image?.first(where: {
+            $0.type?.lowercased() == imageType && $0.url?.isEmpty == false
+        })?.url { return path }
+        return kind == .episode ? dto.grandparentThumb : nil
+    }
+
     /// Maps metadata returned by plex.tv Discover without routing its image paths
     /// through the viewer's local Plex server.
     private func mapDiscover(metadata dto: PlexMetadata) -> MediaItem {
         var item = map(metadata: dto)
         let isEpisode = item.kind == .episode
-        let posterPath = isEpisode
-            ? (dto.thumb ?? dto.grandparentThumb)
-            : dto.thumb
+        let posterPath = Self.posterPath(for: dto, kind: item.kind)
         item.posterURL = client.discoverImageURL(path: posterPath)
         item.seriesPosterURL = isEpisode
             ? client.discoverImageURL(path: dto.grandparentThumb)

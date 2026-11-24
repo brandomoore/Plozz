@@ -941,7 +941,7 @@ public struct PosterCardView: View {
 
     // MARK: Artwork
     private var artworkReferences: [ArtworkReference] {
-        artworkPolicy.references(for: item, style: style)
+        artworkPolicy.references(for: item, style: style, policy: presentationArtworkPolicy)
     }
 
     private var cardArtworkPresentationPolicy: ArtworkPresentationPolicy {
