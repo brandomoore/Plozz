@@ -1164,7 +1164,7 @@ final class PlozziOSProfileHomeEntrance {
         // becomes ready before the identity has finished traveling.
         let readyAt = CACurrentMediaTime()
         let landedAt = flight?.profileID == profileID ? flight?.landsAt : nil
-        fade.beginTime = pickerView.layer.convertTime(max(readyAt, landedAt ?? readyAt) + 0.25, from: nil)
+        fade.beginTime = pickerView.layer.convertTime(max(readyAt, landedAt ?? readyAt) + 0.60, from: nil)
         fade.fillMode = .backwards
         fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         pickerView.layer.opacity = 0
