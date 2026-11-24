@@ -2737,6 +2737,11 @@ including its embedded guide; standalone guide and library styling is unchanged.
 Channels change only on the remote's Channel Up / Down buttons (`.pageUp` /
 `.pageDown`, see `LiveChannelRemotePresses`), never on Left/Right.
 
+The tvOS transport declares the timeline as its default focus. If native
+navigation stalls on More, pressing toward the other toolbar buttons requests
+the nearest one, or the timeline if there are no others. Down requests the
+timeline. This recovery does not run inside the More menu.
+
 Guide opens `LiveChannelGuideOverlay`, the player's own lineup over the playing
 picture. It is modelled on the Multiview picker but is not the browse guide:
 nothing retunes while browsing, it opens on the playing channel, and Menu returns
