@@ -113,6 +113,7 @@ struct LiveChannelOverlay: View {
     @Environment(\.locale) private var locale
     @State private var openMenu: LiveChannelTrackMenuKind?
     #if os(tvOS)
+    @Environment(\.layoutDirection) private var layoutDirection
     @State private var returningMenu: LiveChannelTrackMenuKind?
     #else
     @State private var menuReturnFocus: LiveChannelControl?
@@ -279,6 +280,7 @@ struct LiveChannelOverlay: View {
         }
         #endif
         #if os(tvOS)
+        .defaultFocus($focus, .timeline)
         .observingSystemPlaybackAudio(trackOptions.systemAudio, isVisible: true)
         .onChange(of: openMenu.map(hasTVMenu) ?? true) { _, available in
             if !available { closeMenu() }
@@ -742,6 +744,16 @@ struct LiveChannelOverlay: View {
                     toggleMenu(.playback)
                 }
                 .accessibilityIdentifier("live-channel-playback")
+                #if os(tvOS)
+                .background {
+                    if openMenu == nil, !cardOpen {
+                        TVFocusActivityObserver(
+                            onActivity: {}, observesDirectionalPresses: false,
+                            onFailedMove: recoverMoveFromMore
+                        )
+                    }
+                }
+                #endif
             }
         }
         .reportSubtitleControlsFrame(
@@ -756,6 +768,26 @@ struct LiveChannelOverlay: View {
             if !cardOpen { badgesTop = top }
         }
     }
+
+    #if os(tvOS)
+    // Called only when UIKit couldn't move *from this button*. A successful
+    // move (including a swipe) and navigation inside the menu stay native.
+    private func recoverMoveFromMore(_ direction: MoveCommandDirection) {
+        guard openMenu == nil, !cardOpen else { return }
+        let destination: LiveChannelControl
+        switch direction {
+        case .left where layoutDirection == .leftToRight, .right where layoutDirection == .rightToLeft:
+            if showsSubtitles { destination = .subtitles }
+            else if showsAudio { destination = .audio }
+            else if canGoLive { destination = .goLive }
+            else { destination = .timeline }
+        case .down: destination = .timeline
+        default: return
+        }
+        returningMenu = nil
+        focus = destination
+    }
+    #endif
 
     private func badge(
         _ title: LocalizedStringResource, systemImage: String, control: LiveChannelControl,

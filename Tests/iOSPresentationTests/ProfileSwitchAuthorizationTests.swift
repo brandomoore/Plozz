@@ -12,6 +12,21 @@ import XCTest
 
 @MainActor
 final class ProfileSwitchAuthorizationTests: XCTestCase {
+    func testPendingHomeEntranceDoesNotMatchAfterSwitchingAwayAndBack() throws {
+        let app = try makeApp()
+        let original = app.profiles.activeProfileID
+        let alternate = app.profiles.add(name: "Other", avatarSymbol: "person.fill", colorIndex: 1)
+        let pending = PlozziOSProfileHomeEntrance(
+            origin: .launch, profileID: original, generation: app.profiles.selectionGeneration
+        )
+        XCTAssertTrue(pending.matches(app))
+        app.profiles.select(alternate.id)
+        app.profiles.select(original)
+        // The old Home report or deadline still has the correct string ID, but
+        // belongs to the previous activation and must not reveal this shell.
+        XCTAssertFalse(pending.matches(app))
+    }
+
     func testNewProfileWaitsForSettingsDismissalBeforeActivating() throws {
         let app = try makeApp()
         let original = app.profiles.activeProfileID
@@ -70,6 +85,52 @@ final class ProfileSwitchAuthorizationTests: XCTestCase {
         XCTAssertEqual(app.profiles.activeProfileID, original)
         XCTAssertEqual(app.profiles.activeProfile.name, "Renamed viewer")
         XCTAssertNil(app.profileOnboardingID)
+    }
+
+    func testCancelledSwitchRetainsOnlyTheOutgoingViewer() throws {
+        let app = try makeApp()
+        let account = Account(
+            id: "fixture", server: .init(id: "fixture", name: "Home",
+                                       baseURL: URL(string: "https://home.invalid")!, provider: .jellyfin),
+            userID: "viewer", userName: "Viewer", deviceID: "fixture"
+        )
+        try app.accountStore.add(account, token: "fixture")
+        app.accountsProviders.reloadAccounts()
+        let outgoing = app.profiles.add(name: "Viewer", isAwaitingSetup: false)
+        app.profiles.setActiveAccountIDs([account.id], for: outgoing.id)
+        app.profiles.markFirstRunProfileSetupComplete()
+        app.selectProfile(outgoing.id)
+        XCTAssertTrue(app.allowsHomeContentAccess)
+        let locked = try addLockedProfile(app)
+        app.selectProfile(locked.id)
+        XCTAssertEqual(app.profiles.activeProfileID, outgoing.id)
+        XCTAssertTrue(app.isAwaitingOtherProfilePIN)
+        XCTAssertFalse(app.allowsHomeContentAccess)
+        app.cancelProfileLockPrompt()
+        XCTAssertEqual(app.profiles.activeProfileID, outgoing.id)
+        XCTAssertFalse(app.isAwaitingOtherProfilePIN)
+        XCTAssertTrue(app.allowsHomeContentAccess)
+
+        var child = outgoing
+        child.isKids = true
+        app.profiles.update(child)
+        app.profiles.setParentalPIN(try XCTUnwrap(ParentalPIN.make(pin: "2468", iterations: 64)))
+        app.selectProfile(locked.id)
+        XCTAssertEqual(app.parentalSwitch?.target.id, locked.id)
+        XCTAssertTrue(app.isAwaitingOtherProfilePIN)
+        XCTAssertFalse(app.allowsHomeContentAccess)
+        app.cancelParentalSwitch()
+        XCTAssertEqual(app.profiles.activeProfileID, child.id)
+        XCTAssertTrue(app.allowsHomeContentAccess)
+
+        // An involuntary change to an unverified profile is not an outgoing
+        // shell to preserve: cancelling its PIN must leave the launch gate up.
+        app.profiles.select(locked.id)
+        XCTAssertTrue(app.enforceActiveProfileLock())
+        XCTAssertFalse(app.isAwaitingOtherProfilePIN)
+        app.cancelProfileLockPrompt()
+        XCTAssertTrue(app.mustChooseProfile)
+        XCTAssertFalse(app.allowsHomeContentAccess)
     }
 
     func testCancelledVerificationCannotAuthorizeAReplacementRequest() async throws {
@@ -226,6 +287,7 @@ final class ProfileSwitchAuthorizationTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         return PlozziOSAppModel(
+            appAdmissionStore: AppAdmissionStore(defaults: defaults),
             accountStore: AccountStore(secureStore: InMemorySecureStore()),
             profileStore: ProfileStore(defaults: defaults)
         )

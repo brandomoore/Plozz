@@ -1563,6 +1563,8 @@ public struct HomeView: View {
                     leadItem: row.items.first,
                     items: row.items,
                     isPlaceholder: row.loadingPlaceholderCount > 0,
+                    hasFocusableControls: (row.kind == .libraries && !row.libraries.isEmpty && row.loadingPlaceholderCount == 0)
+                        || (row.failure != nil && !viewModel.isRefreshing),
                     cardArtwork: row.style == .landscape
                         && !(row.kind == .continueWatching && visibility.continueWatchingLayout == .portrait)
                         ? { PosterCardView.leadingLandscapeArtwork(
@@ -1597,6 +1599,7 @@ public struct HomeView: View {
                         itemIDs: section.items.map(\.stablePresentationID),
                         leadItem: section.items.first, items: section.items,
                         isPlaceholder: row.isLoading,
+                        hasFocusableControls: (row.issue != nil || row.failure != nil) && !viewModel.isRefreshing,
                         cardArtwork: section.style == .landscape
                             ? { PosterCardView.leadingLandscapeArtwork(
                                 for: $0, showsSeriesArtwork: false, presentationPolicy: artworkPolicy.forArea(.homeRows)
@@ -1610,7 +1613,10 @@ public struct HomeView: View {
         // First, as in the classic layout: it names the setting hiding everything
         // else, and is what keeps a Home with nothing else to focus escapable.
         if let notice = contentNotice {
-            result.insert((FocusHeroRow(id: "home-notice", itemIDs: [], leadItem: nil), .notice(notice)), at: 0)
+            result.insert((
+                FocusHeroRow(id: "home-notice", itemIDs: [], leadItem: nil, hasFocusableControls: true),
+                .notice(notice)
+            ), at: 0)
         }
         // After Continue Watching, or first when there is none.
         if discoverState != .hidden {
@@ -1646,7 +1652,7 @@ public struct HomeView: View {
                 navigationStyle: navigationStyle,
                 isFrontmost: heroIsFrontmost,
                 featuredHero: settings.style == .heroShowcase && settings.hasFeaturedHero
-                    ? { _ in AnyView(HomeHeroSkeletonView()) } : nil
+                    ? { _, _ in AnyView(HomeHeroSkeletonView()) } : nil
             ) { row, _ in
                 // Redacted rows draw their names as skeleton pills at a real
                 // title's exact height.
@@ -1709,10 +1715,10 @@ public struct HomeView: View {
             enrich: heroMetadataEnricher,
             featuredHero: settings.style == .heroShowcase && settings.hasFeaturedHero
                 && showsFeaturedHero
-                ? { suspended in
+                ? { suspended, onActionFocused in
                     AnyView(showcaseFeaturedHero(
                         items: discoverItems, settings: settings, suspended: suspended,
-                        content: content
+                        content: content, onActionFocused: onActionFocused
                     ))
                 } : nil
         ) { row, reporter in
@@ -1730,7 +1736,8 @@ public struct HomeView: View {
     #if os(tvOS)
     @ViewBuilder
     private func showcaseFeaturedHero(
-        items: [MediaItem], settings: HeroSettings, suspended: Bool, content: HomeViewModel.Content
+        items: [MediaItem], settings: HeroSettings, suspended: Bool, content: HomeViewModel.Content,
+        onActionFocused: @escaping () -> Void
     ) -> some View {
         if items.isEmpty {
             HomeHeroSkeletonView()
@@ -1754,6 +1761,7 @@ public struct HomeView: View {
                 seerConnected: heroSeerConnected, canRequestDiscoveryItem: heroRequestIdentity,
                 onRequest: onRequestItem, requestAvailability: onRequestAvailability,
                 onRequestSeasons: onRequestSeasonsItem,
+                onFocusGained: onActionFocused,
                 onPinnedItemsChanged: { heroRuntime.pinnedItemIDs = $0 },
                 onTrailerReturnItemChanged: { heroRuntime.trailerReturnItemID = $0 },
                 onItemExposed: { viewModel.recordHeroExposure($0) },
@@ -1859,6 +1867,7 @@ public struct HomeView: View {
                 notice: notice,
                 onReload: { Task { await viewModel.load() } }
             )
+            .background { NativeFocusRegionObserver(onFocusEntered: reporter.entered) }
         case .discover(let items, let isLoading):
             MediaRowView(
                 title: Text(LocalizedStringResource(

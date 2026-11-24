@@ -81,7 +81,9 @@ public final class HomeLibraryVisibilityModel {
     }
 
     /// Called only by a real Home refresh or the open arranger, never a timer.
-    public func prepareServerDefaults(accounts: [ResolvedAccount], now: Date = Date()) async {
+    public func prepareServerDefaults(
+        accounts: [ResolvedAccount], now: Date = Date(), homeLoad: HomeLoadLibraryInventory? = nil
+    ) async {
         guard visibility.rowCustomization?.defaults == .matchServer else { return }
         let sources = accounts.sorted { $0.account.id < $1.account.id }
         let scope = ["server-home-v2"] + sources.flatMap {
@@ -119,14 +121,18 @@ public final class HomeLibraryVisibilityModel {
         visibility.rowCustomization?.resolvedDefaults =
             cachedServerDefaults?.scope == scope ? cachedServerDefaults?.defaults : nil
         let request: Task<[String: Result<ServerHomeLayout?, AppError>], Never>
+        let inventoryOwner: HomeLoadLibraryInventory?
         if serverRequestScope == requestScope, let pending = serverRequest {
             request = pending
+            // Only the Home load that started the read can accept its staged inventory.
+            inventoryOwner = nil
         } else {
             serverRequest?.cancel()
             serverRequestID = UUID()
             if serverRequestScope != requestScope { serverMatchFailures = [:] }
             serverRequestScope = requestScope
-            request = Task { await Self.loadServerLayouts(representatives) }
+            inventoryOwner = homeLoad
+            request = Task { await Self.loadServerLayouts(representatives, homeLoad: homeLoad) }
             serverRequest = request
         }
         let requestID = serverRequestID
@@ -180,12 +186,13 @@ public final class HomeLibraryVisibilityModel {
         var ordered = Set<HomeRowID>()
         resolved.order = resolved.order.filter { ordered.insert($0).inserted }
         acceptServerDefaults(resolved, scope: scope, requestScope: requestScope, now: now)
+        inventoryOwner?.accept()
         serverMatchFailures = failures
         if !failures.isEmpty { lastServerCheck = nil }
     }
 
     private nonisolated static func loadServerLayouts(
-        _ sources: [ResolvedAccount]
+        _ sources: [ResolvedAccount], homeLoad: HomeLoadLibraryInventory?
     ) async -> [String: Result<ServerHomeLayout?, AppError>] {
         await withTaskGroup(of: (String, Result<ServerHomeLayout?, AppError>).self) { group in
             var next = 0
@@ -196,6 +203,13 @@ public final class HomeLibraryVisibilityModel {
                 group.addTask {
                     do {
                         try Task.checkCancellation()
+                        if let homeLoad, let provider = source.provider as? any HomeLayoutInventoryProviding {
+                            let read = try await provider.serverHomeLayoutWithInventory(for: source)
+                            if let inventory = read.inventory {
+                                await homeLoad.stage(inventory, from: source, providerID: provider.homeInventoryProviderID)
+                            }
+                            return (source.account.id, .success(read.layout))
+                        }
                         return (source.account.id, .success(try await source.provider.serverHomeLayout()))
                     } catch is CancellationError {
                         return (source.account.id, .failure(.cancelled))

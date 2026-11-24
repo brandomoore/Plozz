@@ -4,8 +4,8 @@ Use this for the agent-driven optimization loop without installing on an Apple
 TV, iPhone, or iPad. It complements [physical profiling](performance-debugging.md),
 not a replacement for device-specific evidence. No cloud account, real media
 server, credential, or external model service is required.
-The separately authorized `home-jellyfin-live` investigation below is the
-exception; no suite, including `all`, selects it automatically.
+Live-server workloads require separate authorization and explicit scenario
+selection; no suite, including `all`, selects them automatically.
 
 ## Agent entry point
 
@@ -106,6 +106,498 @@ Artwork bytes use the normal bounded cache; compare repeated, warmed-byte-cache
 runs and retain the recorded starting disk-cache size rather than purging caches.
 Raw traces and XCTest evidence can contain private media: keep them local and
 publish only sanitized aggregates.
+
+For **first sign-in frames**, use the standalone tvOS `PlozzFocusHost` instead
+of the navigation driver. Use a fresh process for each command. Start external
+`simctl io ... recordVideo` and wait for “Recording started” **before** launching
+`account` or `profile`. With the authorized loopback broker URLs in the environment:
+
+```sh
+host=com.thatcube.Plozz.FocusHost
+SIMCTL_CHILD_PLOZZ_JELLYFIN_ONBOARDING_BROKER="$PLOZZ_JELLYFIN_ONBOARDING_BROKER" \
+  xcrun simctl launch --terminate-running-process "$SIM" "$host" --first-frame-account
+
+export SIMCTL_CHILD_PLOZZ_JELLYFIN_HOME_BROKER="$PLOZZ_JELLYFIN_HOME_BROKER"
+xcrun simctl launch --terminate-running-process "$SIM" "$host" --first-frame-seed
+# Wait for seededUs in the seed PID's report. Keep this same broker/session alive.
+xcrun simctl launch --terminate-running-process "$SIM" "$host" --first-frame-profile
+```
+
+Read `Library/Caches/first-frame-<launch PID>.json` in the host's data
+container. Reject `failure` or missing required anchors. `authSuccessUs` starts
+at real password-service success; verify the first **library selection** pixels.
+For the returning viewer, `gateUs` starts at profile selection; verify shell,
+populated Home, and (where present) `contentFocusUs` separately. The seed saves
+profile configuration, not a token; the cold process restores the authorized
+credential from the broker in memory before normal `RootView` bootstrap.
+The yellow strip's first frame matches `referenceTargetUs` approximately;
+use the movie's actual frame **PTS**, not DTS, assumed FPS or callback time.
+The remaining bits mark gate, auth/authorization, next callback, content and
+focus. They can coalesce. Read the screen **outside** the strip for first pixels.
+To attach a profiler before the gate, add `--first-frame-hold` and touch
+`Library/Caches/first-frame-<PID>.go` once ready. Diagnostics are already armed.
+
+### Showcase: requests to prepare a row of series (#472)
+
+Run `showcase-enrichment-jellyfin`, `showcase-enrichment-emby` and
+`showcase-enrichment-plex` together with `run --platform tvOS --sim-id <UUID>
+--scenario ...`. Each exercises the production row prefetch, metadata enricher
+and provider mapping against in-memory HTTP responses. The 16 series each have
+two seasons. Counts cover one complete preparation, not an entire Home load.
+
+| Requests per provider | Before | After |
+|---|---:|---:|
+| Series detail | 16 | 16 |
+| Season lists | 16 | 0 |
+| Episode lists | 32 | 0 |
+| Refocusing prepared cards | 0 | 0 |
+| Explicit Play (resolves the expected episode) | 3 | 3 |
+| Unpinned carousel enrichment | 4 | 4 |
+
+With five retained samples on each side, median workload CPU was 3.97 → 1.75 ms
+for Jellyfin, 4.24 → 2.26 ms for Emby, and 3.58 → 2.18 ms for Plex. These are
+client CPU and provider-call measurements, not live server CPU, startup latency
+or scrolling FPS. The optimization avoids computing a play target the
+presentation would discard; it does not cache requests across users or loads.
+
+**Live Jellyfin control:** select `showcase-series-live-jellyfin` with a
+dedicated `PLOZZ_LIVE_HOME_BROKER` serving `/jellyfin`. This takes one real
+series from the viewer's library and runs the previous pinning behavior against
+the fixed behavior in the same binary. It alternates order, disables the HTTP
+response cache, bounds each pass to 24 read requests, and checks that the two
+presentations are equal. Setup and library selection are outside the timed
+region. In five retained pairs, client reads were **3 → 1**, decoded response
+bytes **18,505 → 2,038**, and median elapsed time **152 → 51 ms**. This measures
+preparing that series, not the time to launch the app.
+
+**First pixels and scrolling (tvOS simulator, real servers):**
+
+| From → visible result | Baseline | Candidate |
+|---|---:|---:|
+| Jellyfin password success → first library-selection pixels | 149 ms | 182 ms |
+| Returning profile selection → first Home shell pixels | 409 ms | 4,533 ms |
+| Returning profile selection → first rail artwork | 1,397 ms | 4,938 ms |
+| Returning profile selection → focus in populated Home | 3,972 ms | 5,074 ms |
+
+These are paired single captures, not medians. Three further candidate captures
+reached the first shell pixels at **6.50, 0.59 and 0.69 s**. In the slow one,
+profile authorization finished at 77 ms. Preselection process samples did not
+isolate the cause of the delay before Home appeared. The lower series-enrichment
+cost is **not** evidence of a faster first frame.
+
+**Returning-profile crossover:** six fresh processes per build, same signed-in
+Jellyfin viewer, simulator, optimized harness and prelaunch video. Only the two
+Showcase production files differed between binaries. Builds ran in balanced
+`ABBABAABABBA` order. All 12 launches showed the following milestones,
+measured from profile selection (median, with full range):
+
+| What the recording showed | Before Showcase change | After Showcase change |
+|---|---:|---:|
+| First Home shell pixels | 462 ms (453–503) | 493 ms (450–535) |
+| First rail artwork | 798 ms (751–1,596) | 840 ms (786–865) |
+| Focus inside populated Home | 938 ms (836–1,596) | 938 ms (885–1,022) |
+
+The original 409 ms started **2.28 s after the launch command** and measured
+faint sidebar pixels, not usable Home. Timed from the launch command instead,
+the crossover medians were **2.772 → 2.767 s** for shell pixels and
+**3.262 → 3.213 s** for focus in populated Home. These include the fixture's
+automated selection of the returning profile. The crossover did not reproduce the
+multi-second stalls; it does not explain them. In a separate same-viewer
+baseline experiment, the first shell took 536 and 535 ms without a local Home
+snapshot, versus 569 and 483 ms on the corresponding warm relaunches. Diagnostic
+runs verified that both the miss and the successful read/decode happened
+*before* profile selection. The original run did not record cache hits. Server
+and OS caches were not flushed; only one cache timing run had a focus witness.
+
+On the separate carousel navigation workload (no production hero enrichment),
+both Jellyfin runs completed 34 directional presses with 30 focus changes.
+The validating relay forwarded 23 → 22 metadata GETs, including 3 → 2 exact
+repeats, **all before the first Down**. Both runs forwarded 18 artwork GETs
+after first Down, none repeated. Maximum navigation display-link gap was
+40 → 33 ms; the initial artwork cache differed, so do not claim a scrolling
+speedup. The actual Jellyfin application and console logs confirmed session
+lifecycle but did not record successful request paths. On Plex, native logs
+identified 38 artwork completions (3 repeated targets) and no metadata
+completions after first Down. Emby completed the navigation workload; its
+native log showed five disconnected artwork requests, not a complete access
+trail. These are not measurements of server CPU or physical display FPS.
+
+### Plex: one fewer library-list request per Home refresh (#472)
+
+Match Server layout and Home content both need the viewer's library sections.
+Home now uses the layout's fresh, successful read once instead of requesting the
+same list again. Navigation still reads independently, as do future refreshes.
+There is no time-based cache; a newer inventory or access denial supersedes the
+earlier response even if Home is still waiting for promoted rows.
+
+The same real Plex viewer ran the carousel traversal four times per build:
+three fresh processes on a simulator with warm artwork and one on a new
+simulator without app data. Native Plex logs counted completed GETs for the
+viewer, not requests inferred from the UI. All responses were HTTP 200.
+
+| Per traversal | Before | After |
+|---|---:|---:|
+| `/library/sections` reads | 3 | 2 |
+| Section response bytes | 2,799–2,805 | 1,870–1,876 |
+| Total metadata reads (unique targets) | 17 (15) | 16 (15) |
+| Metadata completions after first Down | 0 | 0 |
+| Libraries / items / focus changes | 3 / 74 / 30 | 3 / 74 / 30 |
+
+All eight runs completed 34 directional presses with no navigation display-link
+gap over 50 ms. In the fresh-simulator pair, artwork completions during scrolling
+went **29 → 40**, while their total response bytes went **2.91 → 1.61 MB**;
+none were repeated targets. Warm runs had no artwork completions after first
+Down. Artwork demand varied; the reliable saving here is the single metadata
+request, not a change in scrolling speed or overall artwork traffic.
+
+The Jellyfin control forwarded 22 metadata GETs on each build (two repeated
+targets, all before first Down). Jellyfin and Emby both retained their item
+counts (83 and 66), with 30 focus changes and no discovery, layout or row
+failures in either build.
+
+### Dense Home: scrolling while server rows arrive (#472)
+
+On `d7c639d1a`, iPhone 17 Pro simulator (iOS 26.2), run
+`mobile-home-one-server-startup-scroll`, `mobile-home-multi-server-startup-scroll`
+and `mobile-home-multi-server-scroll` together. Run
+`bcfcd0bbb127422f9280fc0f2a6246d1` passed with one warmup and five retained
+samples per scenario. Figures below are medians, from release of the simulated
+provider responses, **not** from sign-in or first pixels:
+
+| Mobile Home | First populated row | All rows ready | Counted provider calls |
+|---|---:|---:|---:|
+| 1 source, 2 rows, 40 cards | 343 ms | 350 ms | 5 |
+| 20 sources, 40 rows, 800 cards | 623 ms | 9.90 s | 100 |
+
+With 40 rows, the median longest main-actor scheduling gap was **85 ms during
+loading** (80–95 ms) versus **49 ms after loading** (46–53 ms) over the same
+24 animated scroll targets. The two-row control fit on screen and is **not**
+a scrolling baseline. Each provider deliberately staggers its response times;
+row count, source count and latency all change between configurations. The
+fixtures use cached artwork and make no requests to a real server. These
+measurements show contention on the loaded page, not server CPU or display FPS.
+
+**tvOS, holding server count fixed:** four alternating launches of the same
+optimized production `RootView` used one loopback Jellyfin fixture, the same
+40 libraries, and 20 distinct movies and posters per library. Only the number
+of enabled server rows changed. The featured hero was disabled, but the
+saved default row style remained Showcase, not classic carousel. Prelaunch video and
+native focus measured returning-profile selection independently of data loading.
+
+| tvOS simulator (two recorded runs per configuration) | 3 rows / 60 cards | 40 rows / 800 cards |
+|---|---:|---:|
+| Selection to first distinct Home sidebar in recording | 0.85–1.27 s | 10.19–11.79 s |
+| Selection to focus in Home content | 1.30–1.80 s | 10.18–11.80 s |
+| Peak sampled app resident memory | 432–438 MiB | 937–957 MiB |
+| Requests reaching loopback, selection through completion report | 113–164 | 1,364–1,979 |
+
+All 40 dense row requests succeeded exactly once. In the two dense runs, **917
+of 918** and **1,157 of 1,157** artwork reads had distinct path/query keys:
+most of that traffic was not retrying the same image request. Single-item
+detail did repeat: **382 reads for 270 distinct keys**, and **758 for 640**.
+By first native content focus the origin had already received 108 and 146
+artwork reads respectively, although only 13 and 14 of the 40 row queries
+had started. No traffic reached a real Jellyfin server.
+Gaps of up to 1.7 s between recorded frames limit the
+precision of first-pixel timing. Full dense Home loads took 151–153 s with
+recording, versus 23 s in a separately paced, unrecorded navigation run; these
+are not hardware load-time estimates. In that run the same six verified focus
+moves took 11.47 s while rows were arriving and 3.65 s once settled, including
+XCTest overhead. Focus subsequently reached row nine. This isolates a repeatable
+row-count problem, not the cause of the earlier intermittent small-Home stalls.
+
+**What other clients defer.** Jellyfin Android TV [starts a query-backed rail's
+initial request when adding it](https://github.com/jellyfin/jellyfin-androidtv/blob/45c52925661ff51427cea46ebabcd3de656276cc/app/src/main/java/org/jellyfin/androidtv/ui/home/HomeFragmentBrowseRowDefRow.kt#L27-L44),
+but binds cards through [reusable presenters](https://github.com/jellyfin/jellyfin-androidtv/blob/45c52925661ff51427cea46ebabcd3de656276cc/app/src/main/java/org/jellyfin/androidtv/ui/presentation/CardPresenter.kt#L84-L95).
+Jellyfin Web likewise [resumes every Home section](https://github.com/jellyfin/jellyfin-web/blob/fa7831bd1fd72e61b3133d2234832201d6dc803e/src/components/homesections/homesections.js#L130-L140),
+then [registers the returned cards' images for lazy loading](https://github.com/jellyfin/jellyfin-web/blob/fa7831bd1fd72e61b3133d2234832201d6dc803e/src/elements/emby-itemscontainer/emby-itemscontainer.js#L423-L446)
+with a [viewport margin of 50%](https://github.com/jellyfin/jellyfin-web/blob/fa7831bd1fd72e61b3133d2234832201d6dc803e/src/components/lazyLoader/lazyLoaderIntersectionObserver.js#L7-L21).
+Neither requires a vertical scroll to fetch every kind of row metadata. For
+Plozz, count row queries separately from poster and detail reads: deferring
+the latter can leave all 40 rows indexed without making the viewer wait for
+800 cards to be prepared.
+
+#### Does limiting the classic carousel to the first four rows help?
+
+**No clear startup win; worse rapid navigation.** An optimized tvOS simulator
+host ran the full returning-profile picker and Home, using a local
+Jellyfin-shaped origin with 40 shelves of 20 distinct movies and one additional
+resumable movie for the carousel hero. The comparison kept the dataset, hero,
+provider and enabled rows fixed. All versions completed 40 successful, unique
+shelf reads (24,520 compressed body bytes), publishing 41 nonempty rows and
+801 entries including Continue Watching. The four-row experiment deferred row
+**views**, not row data. A second experiment simply wrapped each row in one
+`VStack` without limiting the number of views.
+
+| From profile selection (two recorded starts per version) | Original carousel | Four-row limit | Single wrapper, no limit |
+|---|---:|---:|---:|
+| First recognizable shelf 1 artwork | 913–990 ms | 894–899 ms | 849–909 ms |
+| First visible bright Resume action | 994–1,230 ms | 988–1,000 ms | 1,029–1,066 ms |
+| Image requests received by visible Resume | 17–18 | 17–35 | 19–36 |
+
+Recording began before process launch. Original launch-command to visible Resume
+was 3.25–3.53 s including the chooser and test gate; this was not initial
+password sign-in. Native focus and video pixels were observed separately.
+Two starts per version with fresh profiles/ports but shared OS caches do not
+establish a small timing difference. This fixture explicitly selects carousel;
+it does not invalidate the slower dense Home measurements above.
+
+To collide scrolling with unfinished work, a separate run delayed shelf reads
+from shelf 4 onward. The remote sent eight Downs about 220 ms apart, then
+eight Ups. With no intentional dwell after XCTest verified focused Resume,
+17–18 shelves had finished before the first press. Original Home reached shelf 8
+and returned to Resume in both trials: on shelves 2–8, native focus took
+11–37 ms from input; the first recognizable posters took 137–279 ms, including
+scroll animation. The four-row limit **missed the third Down twice**, reaching
+only shelf 7; first posters on shelves it did reach took 163–471 ms. The
+wrapper-only version reached shelf 8 and returned, with first posters in
+95–192 ms in its one immediate trial.
+
+After **10 s without input**, every version had all 40 shelves' titles and
+none had requested a poster for shelves 2–40. Original and wrapper each had
+requested 20 distinct shelf-1 posters; the four-row version had requested 7.
+Subsequent first visits to shelves 2–8 showed recognizable posters after
+151–188 ms (original), 114–187 ms (wrapper), or 289–358 ms (four-row).
+Brief placeholders were visible; the pixel test did **not** require every
+poster or even the focused poster to be painted. No traffic reached a real
+server. Keep classic Home unchanged: neither the four-row limit nor preloading
+all posters is justified by these trials.
+
+#### Isolating the dense Showcase layout
+
+The original dense fixture changed `HeroSettings.default.isEnabled`, not the
+saved style. On tvOS, switching off the featured hero does not turn Showcase
+rows into classic carousel rows. To isolate the layout, a follow-up used the
+**same binary, enabled hero and 40 × 20 dataset**, changing only the saved
+style in Showcase → carousel → Showcase order. The object of measurement was
+returning-profile selection to native Home content focus, not a display callback.
+
+| Unrecorded simulator starts | Carousel | Showcase |
+|---|---:|---:|
+| Selection to first native Home content focus | 1.05 s | 27.12 / 93.27 s |
+| Image GETs completed by that focus | 32 | 692 / 623 |
+| Single-item detail GETs completed by that focus | 2 | 178 / 198 |
+
+Across each full load the local origin received all 40 shelf queries exactly
+once and Home published 41 nonempty rows / 801 entries. Timings varied widely;
+this isolates a slow layout, not a specific CPU hot spot or a hardware estimate.
+In a separate prelaunch recording the original Showcase's first shelf artwork
+appeared at about 9.3 s, and the bright Resume action at about 23.9 s.
+
+**Rejected experiment:** limiting speculative detail and artwork work to nearby
+shelves (including card appearance-triggered prefetch) reduced response bodies
+received through two seconds after completion from **6.94–7.43 MB to
+0.63–0.67 MB**. Exact-key duplicate requests fell from 150–151 to 18–24;
+no shelf queries or content were lost. But fast navigation after a 10 s dwell
+left shelf 7 gray on the descent: recognizable artwork appeared only on the way
+back, about 2.24 s after its Down, versus 185 ms on the original. Eight Ups
+returned to Resume on the original, but not on the candidate, including in an
+unrecorded repeat. The change was **not adopted**. These are HTTP receipts on
+a loopback Jellyfin-shaped origin, not live-server CPU measurements.
+
+**Where the time went.** In one profiled launch per style, the picker took
+about 1.5 s in both. From selection to first native Home focus, Showcase took
+38.02 s elapsed but only 8.25 s of main-thread CPU; carousel took 1.07 s
+elapsed and 0.86 s of main-thread CPU. In Showcase, 3,238 of 4,155 main-thread
+samples were waiting inside RenderBox display during a Core Animation
+transaction. Image-queue surface waits and buffer registration accounted for
+3,049 of those samples; neither signature appeared in the carousel control.
+This identifies a wait, not the layer responsible for it.
+
+Removing only the Showcase viewport fade mask did **not** isolate the cause.
+In run order, selection to native focus took **84.4 s original → 67.7 s
+without mask → 53.4 s original → 40.0 s without mask → 21.1 s original**.
+Both apparent gains disappeared against the next original run; RenderBox
+display waits still accounted for 84% and 76% of samples without the mask.
+All five runs fetched each of 40 shelves once and published 801 entries.
+These unrecorded trials did not time first pixels. Keep the existing fade.
+
+#### Preparing more Showcase shelves while the viewer stays on the hero
+
+A simulator prototype kept each row's native owner and measured size, but
+attached the first four shelves first and added more while idle or approaching
+them. The viewer did not have to scroll to fetch row data or prepare later views.
+In five alternating recorded starts, first shelf artwork moved from **8.85–11.05 s
+to 1.99–2.09 s** after profile selection, and first native Home focus from
+**17.96–19.19 s to 5.92–8.82 s**. In the 10-second dwell trial, all 41 row views
+were attached before the first Down. Some extra rows were attached before the
+first visible Resume button; this was not a strict first-frame gate.
+
+Staging also introduced unnecessary reads. A poster on shelf 16, for example,
+was decoded at 3.59 s, evicted at 7.20 s, then explicitly prefetched at 8.12 s
+when its row was attached. This was the same URL **and** decode variant. The
+origin sent `Cache-Control: no-store`; there was no reusable encoded response.
+In all 30 sampled repeats where a preceding insert and eviction could be
+unambiguously attributed, the second caller was the row's explicit prefetch.
+This does not attribute every repeated request to eviction.
+
+A correction initiated speculative prefetch on real card focus rather than
+buffered card appearance for deferred poster rows only. Visible cards could
+still load directly; neither row fetching nor cache policy changed. Six matched
+recorded launches, one per configuration and input pattern:
+
+| 10 s on hero before first Down | Original | Staged | Staged + corrected prefetch |
+|---|---:|---:|---:|
+| Selection to visible highlighted Resume | 32.91 s | 6.82 s | 5.57 s |
+| Repeated artwork GETs through navigation report | 2 | 446 | 30 |
+| Total response bodies through report | 6.13 MB | 12.81 MB | 5.11 MB |
+| Shelf reached after eight Downs | 8 | 8 | 8 |
+
+With immediate input, repeated artwork GETs were **10 / 339 / 23** and total
+bodies **6.83 / 11.65 / 4.99 MB**, respectively. But eight Downs reached only
+shelf **6 / 7 / 7**. All six runs fetched each of 40 shelves once, published
+41 nonempty rows / 801 entries, and returned to Resume. These are local HTTP
+receipts, not estimates of server CPU or production traffic. The correction
+isolates a real prefetch cost, not a fix for the missed early navigation.
+
+#### Final featured Showcase: startup and rapid navigation
+
+The second Down really reached the app. Row 1 already owned native focus, but
+SwiftUI was still propagating the change that re-enabled the other rows. UIKit
+found no eligible destination until the next press. The final implementation
+releases the first-entry reservation at the row host when UIKit commits focus;
+it does not wait for an animation or replay the input. The staging policy also
+prepares the nearest eligible shelf above focus if it becomes ready or the
+order changes, without spending its lookahead on disabled recovery controls.
+
+Final comparison: same optimized Apple TV simulator host, full returning-profile
+picker, local Jellyfin-shaped origin and 40 shelves of 20 distinct movies plus
+Continue Watching. Video was armed before launch. The driver verified a
+visible highlighted Resume button before pressing Down, either immediately
+or after a 10 s dwell. Times run **from profile selection**, not password sign-in.
+One original and one final start per input pattern:
+
+| Immediate / dwell runs, respectively | Original | Final |
+|---|---:|---:|
+| First recognizable shelf 1 artwork | 13.76 / 39.45 s | 1.93 / 2.54 s |
+| First native Home content focus | 23.68 / 48.68 s | 5.45 / 6.20 s |
+| First recorded highlighted Resume | 24.11 / 49.55 s | 5.64 / 6.47 s |
+| Completed HTTP response bodies through navigation report | 6.36 / 6.94 MB | 4.83 / 4.99 MB |
+| Repeated artwork GETs through report | 3 / 1 | 6 / 29 |
+
+Every run reached shelf 8 in order, returned to Resume in eight Ups, fetched
+each shelf exactly once and published 41 nonempty rows / 801 entries. The
+final version used fewer total bytes, **not fewer repeated artwork reads**
+than the original. Recognizable shelf 2 artwork followed Down 2 by 729 / 691 ms;
+accepting focus is not the same as painting a poster. In a separate controlled
+case, one Up reached a newly enabled Retry above focus with idle preparation
+disabled. Neither simulator times nor local HTTP body bytes measure physical
+Apple TV performance or real-server CPU.
+
+The real Jellyfin and Plex viewers authenticated and loaded Home, but the
+adjacent-row navigation assertion failed on **both original and final**.
+The native-sidebar one-card-row check also skipped to the same wrong card
+in both versions. Those checks remain unresolved, not passes. Native Jellyfin
+logs showed session lifecycle rather than successful GET paths; a bounded
+Plex log slice was not isolated to this client.
+
+#### Review follow-up: wait for a usable target, skip shelves already attached
+
+The comparison here is against `7fd4ad1f7`, **not** the unstaged Home above.
+It used the same 40-shelf simulator fixture, recording before launch, with one
+returning-profile launch per build and input pattern. All four runs reached shelf
+2 on Down 2, continued to shelf 8, returned to Resume, and fetched every shelf once.
+
+| Metric | Immediate (before → after) | 10 s dwell (before → after) |
+|---|---:|---:|
+| Profile selection → first shelf artwork | 2.07 → 2.22 s | 2.31 → 2.26 s |
+| Profile selection → visibly highlighted Resume | 6.15 → 5.20 s | 4.07 → 5.62 s |
+| Down 2 → shelf 2 native focus | 35 → 29 ms | 568 → 446 ms |
+| Artwork GETs through navigation report | 624 → 704 | 684 → 704 |
+| Of those, repeated artwork GETs | 12 → 30 | 32 → 32 |
+
+These runs establish navigation correctness, not a consistent startup speedup.
+Most additional reads were distinct URLs; the immediate run also made 18 more
+repeats. Counts stop at the navigation report, not after the server settles.
+They do not establish eventual traffic, real-server CPU, or scrolling frame rate.
+
+The checked-in `ShowcaseNavigationTests/testRapidDownTwiceFromFeaturedHeroFocusesSecondShelf`
+tests the native handoff independently of timing luck. It waits for the painted
+Resume action and withholds the first shelf's SwiftUI focus report. Nothing is
+polled between the two remote presses; the expected result is a native shelf 1
+→ shelf 2 transition and final focus on shelf 2. Disconnecting just the native
+row-entry callback made this assertion fail; restoring it made the test pass.
+
+#### What the 40-shelf Home requested before the viewer could navigate
+
+On `83774fd4c`, the synthetic origin logged **224 and 240** movie-detail GETs
+started by first native Home focus in the immediate and dwell launches above.
+Only **128 and 136** were distinct request keys: **96 and 104 repeats** occurred
+before the viewer pressed Down. One attempt aborted in the immediate sample.
+These counts exclude artwork, shelf membership, and the featured title. Each of
+the 40 base shelves was fetched once. Starting an HTTP request is not evidence
+that a frame was delayed or a server CPU core was busy.
+
+The Showcase detail prefetcher selected 16 titles per shelf and keyed its task
+on the items in *all* shelves; publishing another shelf could cancel and repeat
+pending work. Focus also needs a path to recover if it lands on a title owned
+by a speculative request that is then cancelled.
+
+Direct, same-viewer checks on populated Recently Added movie shelves also
+showed why **skipping every detail fetch** is not equivalent to controlling
+prefetch. On Jellyfin, four shelf records matched detail for title, year,
+overview, certification and artwork references, but lacked genres and taglines.
+Requesting those two fields on the shelf added 5,598 bytes across 20 items
+without changing membership or order; fetching the four full records cost
+59,475 bytes. On Plex, the four records already matched the detail descriptions
+and artwork references but not all genres; the four full responses totaled
+76,292 bytes.
+
+On Emby and Silo, each sample covered three movies and three series. Emby's
+six detail reads totaled 71,252 bytes; five added certification and genres,
+and four added taglines. Asking the shelves for genres and taglines added
+7,599 bytes, but only one of six records then matched detail on all nine
+fields checked. Silo's six detail reads totaled 89,785 bytes. All six added
+ratings and cast, and all six had a different logo reference; image bytes
+were not compared. These were API probes, not app traffic savings. They do
+not establish that a wider shelf response would help all shelves or providers.
+
+#### Warming neighboring details and posters under heavy load
+
+The candidate prepares full details for plausible next cards and only starts
+directional poster warming after a horizontal move within a staged shelf.
+Base shelf requests, displayed posters, and idle attachment still run without
+scrolling. We compared it to `83774fd4c` using the same optimized tvOS host,
+returning profile, 40-shelf Jellyfin-shaped origin and remote driver. Video
+and diagnostics were armed before launch. Each build had three immediate and
+three 10-second dwell runs; the builds were tested in groups, not interleaved.
+
+| Median, baseline → candidate | Immediate input | 10 s dwell |
+|---|---:|---:|
+| Launch → first recognizable Home shell | 8.16 → 8.95 s | 8.21 → 7.48 s |
+| Profile selection → first recognizable Home shell | 2.07 → 1.79 s | 2.03 → 1.77 s |
+| Profile selection → first shelf artwork | 2.07 → 2.08 s | 2.03 → 2.25 s |
+| Profile selection → visibly highlighted Resume | 5.38 → 6.10 s | 5.57 → 5.56 s |
+| Down 2 → shelf 2 native focus | 39 → 36 ms | 510 → 458 ms |
+| Down 2 → shelf 2 recognizable artwork | 771 → 774 ms | 837 → 776 ms |
+| Movie-detail GETs completed by first native Home focus | 220 → 5 | 216 → 4 |
+| Exact repeats among those GETs | 96 → 1 | 92 → 0 |
+| All non-art metadata requests at the settled endpoint | 844 → 91 | 844 → 85 |
+| Artwork GETs at the settled endpoint | 680 → 568 | 682 → 568 |
+| Exact repeats among those artwork GETs | 30 → 4 | 30 → 4 |
+
+The settled endpoint is eight seconds after verified return to Resume and full
+row publication, not eight seconds after launch. A metadata-only control (one
+start per input pattern) had 4 / 6 movie-detail reads at first focus, but still
+695 / 704 settled artwork GETs. In every timed run, all 40 shelf responses
+arrived once, 41 rows / 801 entries were published, eight Downs reached shelf 8
+in order, and eight Ups restored Resume. A separate remote test verified
+horizontal warming and reversal on both eager and deferred shelves. A sparse
+list fixture also rendered the correct full synopsis after vertical entry,
+four Rights and three Lefts.
+
+This reduced traffic, **not consistently time to usable Home**. There were
+still 434 artwork GETs (3.00 MB) on unvisited shelves 10–40 in every group;
+the log cannot distinguish display from prefetch callers. Largest observed
+navigation frame gaps were 1,150 → 888 ms immediate and 715 → 677 ms after
+dwell, not evidence of smooth hardware scrolling. In separate startup-through-
+return process samples, main-thread CPU was 18.44 s over 24.52 s elapsed
+before and 15.27 s over 21.36 s after (one sample per build). SwiftUI/UIKit
+sizing and layout dominated; `FocusHeroMotionSurface.sizeThatFits` was the
+nearest app frame in 479 / 358 stack observations. This points to reducing
+redundant row measurements, not running UIKit layout on a background queue.
+These are simulator and loopback origin measurements, not live server CPU,
+password-sign-in timing, or physical Apple TV performance.
 
 ## Baseline → attribution → candidate → regression
 
@@ -902,6 +1394,116 @@ scroll verification. `mobile-home-multi-server-scroll` is the negative control:
 it traverses the same page only after content finishes loading. Neither mounts
 the complete root shell or reproduces real share scans, network image decoding,
 slow-provider failures, or physical-device presented-frame timing.
+
+For touch scrolling, run `HomeScrollGestureTests` in `PlozziOSInteractionTests`
+on a phone and a full-width tablet. The hosted programmatic-scroll controls
+above use a **390 × 844 compact window even on an iPad simulator**. The UI
+tests instead assert the native window width and size class, drive a finger
+drag, and require the page to coast farther than the finger moved. The settled
+case repeats the same traversal; the during-publication case relaunches for
+each swipe, starts with four complete shelves, and requires more to publish
+during native motion. It checks document height, painted posters, all 40
+shelves / 800 titles, and 100 fixture provider reads. This is a hero-disabled
+Home with locally seeded poster responses, not sign-in timing or live traffic.
+
+Check which metrics the simulator actually exported. On iOS 26.2 with
+Xcode 27.1, the dragging/deceleration interval had a duration but neither it
+nor `XCTHitchMetric(application:)` returned hitch measurements, even with a
+verified 350 ms main-thread stall during motion. Do not treat a missing metric
+as zero, shorter coast time as smoother scrolling, or a passing gesture test
+as evidence of a frame-pacing improvement.
+
+On the `ea15c2325` baseline, full-width simulator recordings showed the
+difference the duration metric missed: the median longest gap between visible
+poster movements during a swipe was 408 ms on iPad and 222 ms on iPhone while
+the remaining shelves loaded, versus 35 ms on both once loaded. A trial that
+reused unfiltered shelf arrays yielded 307 / 255 ms during loading and 30 /
+33 ms after loading, respectively. It was not retained as a scrolling fix.
+These are three loading and five settled swipes per build/device, tracking
+original video timestamps between 5% and 85% of travel. The injected stall
+was distinguishable in recordings on both devices. These are simulator video
+gaps, not physical display hitch ratios or proof of the same cause on hardware.
+
+A separate experiment traced a burst of unchanged headings updating to the
+Edit action that Home passes to each shelf. Giving that action stable identity
+cut heading evaluations on an instrumented iPhone swipe from 1,512 to 36.
+In uninstrumented comparisons against `ea15c2325`, the median longest visible
+pause during publication went from 330 to 249 ms on iPad but from 210 to
+236 ms on iPhone (six fresh-process swipes per arm and device). Settled values
+were 27.5 to 28.3 ms and 34.2 to 35.0 ms, respectively (ten swipes each).
+Reducing layout work was real; it did not demonstrate smoother iPhone scrolling.
+Across three further instrumented iPhone swipes on that candidate, 27 of 30
+rail-body evaluations during the visible pauses were more than one viewport
+away. No distant card appeared, started artwork resolution, or bound a bitmap.
+The instrumented distant rail builders and card bodies used only 1.4–1.9 ms
+of main-thread CPU during 218–300 ms pauses. This does not account for
+framework layout, commit, or compositing; it is not evidence to delay loading
+offscreen shelves.
+
+`HomeScrollGestureTests/testMinuteHeroProgressiveAndSettledSwipes` covers a
+different startup workload: the shipping mobile hero is enabled and synthetic
+providers deliver shelves over roughly 56 seconds, without waiting for input.
+Record before launch. Verify the first painted hero and shelf separately from
+the first usable control; on a phone the first shelf may lie below the hero.
+Compare only swipes that actually overlap new content with the post-load
+swipes, using movement of painted content rather than gesture duration.
+Expected work here is 40 shelves / 800 items, 100 content reads **plus** 20
+layout reads. This is a simulator fixture, not a password sign-in or a live
+provider benchmark. Its launch interval includes constructing synthetic
+accounts and preparing compressed fixture images before Home appears.
+
+An iOS trial resolved the viewer's detail-artwork stores once per visible card
+instead of three times. Reversing the run order mattered: the median worst
+iPad pause during the 36-shelf burst went from 340 to 247 ms in the first
+round but from 350 to 448 ms in the second. The phone's first poster appeared
+115 and 118 ms later, respectively, measured from the first fixture marker.
+In eight hero-enabled launches, all 64 gestures had validated movement; the
+trial did not consistently improve the first minute on both devices and was
+rejected. A separate baseline iPhone trace placed 206–315 ms of main-thread
+CPU within a 357 ms burst pause. Nearby stacks showed SwiftUI transactions
+and card construction; the clock uncertainty precludes assigning the pause
+to one function.
+
+A returning-viewer launch of the signed-in mobile app against Jellyfin showed
+a different workload: five latest-library responses with 68 item slots all
+finished before the first swipe. Of 51 item-detail GETs in the first minute,
+26 repeated a request for the same path and query. All 26 followed or overlapped
+another HTTP 200 response; that alone does not establish that a read was wasted.
+Call-site tracing isolated one redundant read: the mobile hero fetched a movie
+and immediately requested the same movie again as its own metadata root. Reusing
+the successful same-account response brought item-detail GETs from 51 to 47;
+restoring the baseline brought them back to 51. Distinct item count stayed at
+25 in each run, though the title sets varied. This was one viewer on an iPhone
+simulator. It establishes a request reduction, not lower server CPU, faster
+Home readiness, or improved scroll frame pacing.
+
+The hero title and Play button also asked for the same library movie or
+episode concurrently. In a separate 100-second returning iPhone simulator
+test with real Jellyfin, those two callers made 18 item GETs before sharing
+the response, 9 with sharing, and 18 after reversal. All three runs returned
+the same five Latest lists and 71 ordered items. For the six target items
+common to all runs, first-minute counts were 10, 5, and 10. These are
+caller-tagged relay counts, not totals for the page. Sharing ends with the
+current hero resolution; an episode still needs its series for the title.
+This comparison measured neither first paint after sign-in nor scrolling.
+
+For live scrolling, use a fresh process as the unit of comparison. Keep the
+viewer, viewport, drag distance and cache policy fixed. Counterbalance clean
+and instrumented launches. Score movement of the painted page during the
+moving, in-bounds portion of the drag using the original video timestamps.
+Before scoring a capture path, check known smooth motion, a 100 ms hold, and
+a clip with samples deliberately omitted. The last case must be **unknown**,
+not a hitch: repeated images and absent images are different evidence.
+
+On `c6091e4c5`, the clean returning-viewer iPhone simulator had the same
+median longest gap (45 ms) at launch +8 s and +65 s across six paired launches.
+The initial iPad recordings had no scorable pairs. A separate full-width iPad
+simulator cohort using calibrated HEVC gave five of six scorable pairs:
+43.3 ms early and 40.0 ms settled (medians). One early drag had a 130 ms
+painted pause with continuous footage; none of the settled drags reached
+75 ms. A different early drag had 201.7 ms of *missing footage* and was
+excluded. These comparisons sample two short windows on simulators, not
+continuous first-minute behavior, first sign-in, or a physical 120 Hz display.
 
 Matched startup-scroll runs `4019d336b4b041708f291bb8c258f96c` and
 `b6cd29350be84d0e9de813b972c764fc` retained the same completed work and 24
