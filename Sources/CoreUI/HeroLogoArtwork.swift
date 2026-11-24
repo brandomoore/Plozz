@@ -178,7 +178,7 @@ public struct HeroLogoFallback: Sendable {
         Self(
             identity: Identity(
                 itemID: identity.itemID, sourceAccountID: identity.sourceAccountID,
-                query: identity.query.forArtworkLanguage(language)
+                query: identity.query.forArtworkLanguage(MetadataQuery.normalizedArtworkLanguage(language))
             ),
             localizedResolve: localizedResolve
         )
