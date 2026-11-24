@@ -957,6 +957,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
         actions.selectAudio = { viewModel.selectAudioOption(id: $0); onInteraction() }
         actions.selectSubtitle = { viewModel.selectSubtitleOption(id: $0); onInteraction() }
         actions.setDialogueEnhancement = { viewModel.setDialogEnhanceEnabled($0); onInteraction() }
+        actions.setVolumeBoost = { viewModel.setVolumeBoost($0); onInteraction() }
         actions.setSpeed = { viewModel.setPlaybackSpeed($0); onInteraction() }
         actions.setQuality = { quality in
             guard viewModel.streamingQualityAvailable, var options = viewModel.streamingOptions,

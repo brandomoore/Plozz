@@ -574,6 +574,15 @@ the output/content; availability and preference acknowledgement are not proof of
 processing for every engine route. Undocumented integration carries OS
 compatibility and App Review risk. This system-preference bridge is tvOS-only.
 
+**Volume Boost** is a separate player adjustment, off for each new playback
+session. On Apple TV, focus its Audio row and press left or right; on iPhone
+and iPad, choose a percentage in Audio. Percentages are added signal amplitude
+(100% doubles it), not device volume. Plozzigen applies gain before its peak
+limiter, and turns shaping off at Off. Rapid presses settle into one adjustment.
+Boost is offered only where the engine can rebuild at the playhead; it is
+hidden for player-managed audio and on remuxed titles with a selectable spatial
+stream that shaping would prevent from being copied.
+
 On iPhone and iPad, VOD and Live TV share adaptive native `PlayerMoreMenuButton`
 controls. Portrait uses one ellipsis. Landscape shows Audio, Subtitles, the
 current speed (on demand), and an ellipsis, omitting unavailable controls.

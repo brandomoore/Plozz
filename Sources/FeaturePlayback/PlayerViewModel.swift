@@ -1028,6 +1028,7 @@ public final class PlayerViewModel {
             if self.engine.status == .ready, !self.engine.isSessionReloading,
                !self.controls.upscaling.isChanging {
                 self.controls.engineCapabilities = self.engine.capabilities
+                self.controls.volumeBoost = self.engine.volumeBoost
                 self.controls.upscaling.isAvailable = self.engine.canChangeVideoUpscaling
             }
             self.engineHandoff.notePresentedFrame()
@@ -1085,6 +1086,7 @@ public final class PlayerViewModel {
             guard let self, !self.didStop, self.engineToken == callbackEngineToken,
                   !self.engine.isSessionReloading else { return }
             self.controls.engineCapabilities = self.engine.capabilities
+            self.controls.volumeBoost = self.engine.volumeBoost
             self.subtitleController.loadTrackOptions()
             self.subtitleController.applyImportedAudioIfPossible()
             if let request = self.request {
@@ -2335,6 +2337,7 @@ public final class PlayerViewModel {
         // Delays + dialog enhance reset on every load: they're per-stream and
         // carrying a previous file's −500ms offset onto a fresh one is awful.
         controls.audioDelaySeconds = 0
+        controls.volumeBoost = engine.volumeBoost
         controls.subtitleDelaySeconds = 0
         controls.dialogEnhanceEnabled = false
         engine.setAudioDelay(0)
@@ -2735,6 +2738,12 @@ public final class PlayerViewModel {
         engine.setPlaybackSpeed(clamped)
         preferencesStore.savePlaybackSpeed(clamped)
         nowPlaying?.refresh()
+    }
+
+    public func setVolumeBoost(_ boost: PlayerVolumeBoost) {
+        guard !didStop, engine.capabilities.contains(.volumeBoost) else { return }
+        engine.setVolumeBoost(boost)
+        controls.volumeBoost = engine.volumeBoost
     }
 
     public func setAudioDelay(_ seconds: TimeInterval) {

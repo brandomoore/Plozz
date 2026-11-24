@@ -139,6 +139,7 @@ public struct PlayerMoreMenuActions {
     public var selectAudio: (Int) -> Void = { _ in }
     public var selectSubtitle: (Int) -> Void = { _ in }
     public var setDialogueEnhancement: (Bool) -> Void = { _ in }
+    public var setVolumeBoost: (PlayerVolumeBoost) -> Void = { _ in }
     public var setSpeed: (Double) -> Void = { _ in }
     public var setQuality: (StreamingQuality) -> Void = { _ in }
     public var setDolbyVisionFELConversion: (Bool) -> Void = { _ in }
@@ -163,7 +164,7 @@ public enum PlayerMoreMenu {
         var sections: [PlayerMenuSection] = []
         if !model.subtitleOptions.isEmpty || model.subtitleDownload.canSearch { sections.append(.subtitles) }
         if !model.audioOptions.isEmpty || model.engineCapabilities.contains(.dialogEnhance)
-            || model.engineCapabilities.contains(.audioDelay) { sections.append(.audio) }
+            || !model.engineCapabilities.intersection([.audioDelay, .volumeBoost]).isEmpty { sections.append(.audio) }
         if availability.maximumSpeed != nil, model.engineCapabilities.contains(.playbackSpeed) { sections.append(.speed) }
         if availability.quality != nil { sections.append(.quality) }
         if availability.multiview { sections.append(.multiview) }
@@ -216,13 +217,22 @@ public enum PlayerMoreMenu {
             entries[.subtitles] = UIMenu(title: localized(PlayerMenuSection.subtitles.title), children: subtitles)
         }
         if !model.audioOptions.isEmpty || model.engineCapabilities.contains(.dialogEnhance)
-            || model.engineCapabilities.contains(.audioDelay) {
+            || !model.engineCapabilities.intersection([.audioDelay, .volumeBoost]).isEmpty {
             let menu = PlayerAudioMenu.make(
                 options: model.audioOptions,
                 dialogueEnhancement: model.engineCapabilities.contains(.dialogEnhance) ? model.dialogEnhanceEnabled : nil,
                 locale: locale, onSelect: actions.selectAudio, onSetDialogueEnhancement: actions.setDialogueEnhancement
             )
             var audio = menu.children
+            if model.engineCapabilities.contains(.volumeBoost) {
+                let choices = PlayerVolumeBoost.allCases.map { boost in
+                    let title = boost == .off ? localized("Off") : (Double(boost.rawValue) / 100).formatted(.percent.locale(locale))
+                    return UIAction(title: title, state: model.volumeBoost == boost ? .on : .off) { _ in
+                        actions.setVolumeBoost(boost)
+                    }
+                }
+                audio.append(UIMenu(title: localized("Volume Boost"), options: .singleSelection, children: choices))
+            }
             if model.engineCapabilities.contains(.audioDelay) {
                 audio.append(UIMenu(options: .displayInline, children: [
                     destination("Audio Sync…", .audioSync)
@@ -413,6 +423,7 @@ private struct PlayerNativeSectionMenu: View {
                 guarded.selectAudio = { if isCurrent() { actions.selectAudio($0) } }
                 guarded.selectSubtitle = { if isCurrent() { actions.selectSubtitle($0) } }
                 guarded.setDialogueEnhancement = { if isCurrent() { actions.setDialogueEnhancement($0) } }
+                guarded.setVolumeBoost = { if isCurrent() { actions.setVolumeBoost($0) } }
                 guarded.setSpeed = { if isCurrent() { actions.setSpeed($0) } }
                 guarded.setQuality = { if isCurrent() { actions.setQuality($0) } }
                 guarded.setDolbyVisionFELConversion = { if isCurrent() { actions.setDolbyVisionFELConversion($0) } }

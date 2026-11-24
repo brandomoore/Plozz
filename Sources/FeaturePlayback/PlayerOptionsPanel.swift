@@ -933,6 +933,19 @@ struct PlayerOptionsPanel: View {
                 }
             ))
         }
+        if model.engineCapabilities.contains(.volumeBoost) {
+            let slot = -102
+            let boost = model.volumeBoost
+            let value = boost == .off ? Text("Off") : Text(Double(boost.rawValue) / 100, format: .percent)
+            let option = PlayerOptionsRowSpec(slot: slot, title: "Volume Boost", kind: .number(value: value) {
+                actions.setVolumeBoost(model.volumeBoost.stepped($0))
+            })
+            adjustments.append(TrackRow(
+                id: slot, header: nil, title: Text(option.title), subtitle: nil,
+                isSelected: false, isToggle: false, submenu: option,
+                action: { actions.setVolumeBoost(model.volumeBoost.stepped(1)) }
+            ))
+        }
         if !adjustments.isEmpty, !rows.isEmpty { rows[0].startsSection = true }
         rows = adjustments + rows
         #endif

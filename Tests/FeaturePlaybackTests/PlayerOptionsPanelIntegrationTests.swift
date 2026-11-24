@@ -11,6 +11,29 @@ import XCTest
 final class PlayerOptionsPanelIntegrationTests: XCTestCase {
     private typealias Screen = PlayerControls.SubtitleScreen
 
+    #if os(tvOS)
+    func testVolumeBoostAdjustsInPlaceOnlyWhenSupported() throws {
+        let model = PlayerControlsModel()
+        var actions = PlayerOptionsActions()
+        actions.setVolumeBoost = { model.volumeBoost = $0 }
+        func boostRow() -> PlayerOptionsRowSpec? {
+            PlayerOptionsPanel.audioRows(model: model, actions: actions)
+                .compactMap(\.submenu).first { if case .number = $0.kind { true } else { false } }
+        }
+        XCTAssertNil(boostRow())
+        model.engineCapabilities = [.volumeBoost]
+        XCTAssertTrue(model.hasAudioControls)
+        let row = try XCTUnwrap(boostRow())
+        guard case let .number(_, step) = row.kind else { return XCTFail("Expected an inline adjustment") }
+        for percent in [25, 50, 75, 100, 150, 200, 250, 300, 300] {
+            step(1)
+            XCTAssertEqual(model.volumeBoost.rawValue, percent)
+        }
+        for _ in 0..<9 { step(-1) }
+        XCTAssertEqual(model.volumeBoost, .off)
+    }
+    #endif
+
     func testAudioSyncAndUpscalingUseTheExistingOptionsNavigation() throws {
         throw XCTSkip(
             "The tvOS package-test process reports system audio settings, so the "

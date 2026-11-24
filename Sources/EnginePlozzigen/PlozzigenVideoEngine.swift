@@ -398,7 +398,25 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             canReanchor: engine.canSeek,
             canReload: engine.sessionReloadRefusal == nil
         ) { result.insert(.audioDelay) }
+        if engine.canSeek, engine.sessionReloadRefusal == nil,
+           !liveOutputPolicy.sharesAudioSession, engine.playbackBackend != .audio,
+           Self.supportsVolumeBoost(route: engine.videoRoute, delivery: engine.audioDelivery,
+                                    tracks: engine.audioTracks) {
+            result.insert(.volumeBoost)
+        }
         return result
+    }
+
+    nonisolated static func supportsVolumeBoost(route: VideoRoute, delivery: AudioDelivery, tracks: [TrackInfo]) -> Bool {
+        guard !tracks.isEmpty else { return false }
+        switch (route, delivery) {
+        case (.software, .decoded): return true
+        case (.loopback, .streamCopy), (.loopback, .bridged):
+            // Shaping follows track switches. Don't arm it on a title where a
+            // later selection could otherwise stream-copy spatial audio.
+            return !tracks.contains { $0.isAtmos && $0.codec.lowercased() == "eac3" }
+        default: return false
+        }
     }
 
     nonisolated static func supportsAudioDelay(
@@ -454,6 +472,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     deinit {
+        volumeBoostCommit?.cancel()
         progressTimer?.cancel()
         liveSourceResetCancellable?.cancel()
         outputPolicyReload?.cancel()
@@ -1108,6 +1127,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     private func beginOutputLoad() async -> UUID? {
+        resetVolumeBoost()
         allowsVideoUpscalingOverride = false
         outputLoadGeneration = UUID()
         let generation = outputLoadGeneration
@@ -1609,6 +1629,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     private func stopEngine(resetDisplayCriteria: Bool) {
+        resetVolumeBoost()
         #if PLOZZ_FRAME_ASS
         resetFrameArtwork()
         nextFrameSelection = nil
@@ -1677,6 +1698,42 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     public var maximumPlaybackSpeed: Double { Double(engine.maxSupportedRate) }
+
+    public private(set) var volumeBoost: PlayerVolumeBoost = .off
+    private var volumeBoostCommit: Task<Void, Never>?
+
+    private func resetVolumeBoost() {
+        volumeBoostCommit?.cancel()
+        volumeBoostCommit = nil
+        volumeBoost = .off
+    }
+
+    nonisolated static func volumeBoostCompressor(_ boost: PlayerVolumeBoost) -> AudioShaping.Compressor? {
+        // A unity ratio applies only makeup gain. Aether's shaping graph adds
+        // the peak limiter after it; Off bypasses both stages.
+        boost == .off ? nil : .init(thresholdDB: 0, ratio: 1, makeupGainDB: boost.gainDB)
+    }
+
+    public func setVolumeBoost(_ boost: PlayerVolumeBoost) {
+        guard capabilities.contains(.volumeBoost), !outputLoadInProgress, volumeBoost != boost else { return }
+        volumeBoostCommit?.cancel()
+        volumeBoost = boost
+        // One playhead-preserving rebuild after a burst of remote presses.
+        volumeBoostCommit = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled, let self else { return }
+            self.volumeBoostCommit = nil
+            guard self.capabilities.contains(.volumeBoost), !self.outputLoadInProgress else {
+                let applied = self.engine.audioShaping.compressor?.makeupGainDB ?? 0
+                self.volumeBoost = PlayerVolumeBoost.allCases.first { $0.gainDB == applied } ?? .off
+                self.onTracksChanged?()
+                return
+            }
+            var shaping = self.engine.audioShaping
+            shaping.compressor = Self.volumeBoostCompressor(boost)
+            self.engine.setAudioShaping(shaping)
+        }
+    }
 
     public func setAudioDelay(_ seconds: TimeInterval) {
         guard capabilities.contains(.audioDelay) else { return }

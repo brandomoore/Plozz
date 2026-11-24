@@ -5,6 +5,25 @@ import XCTest
 @testable import EnginePlozzigen
 
 final class AetherReleaseIntegrationTests: XCTestCase {
+    func testVolumeBoostAppliesLinearGainAndLeavesSpatialCopyAndNativePlaybackAlone() throws {
+        let plain = TrackInfo(id: 1, name: "Stereo", codec: "aac", language: "en", isDefault: true)
+        let spatial = TrackInfo(id: 2, name: "Surround", codec: "eac3", language: "en",
+                                channels: 6, isDefault: false, isAtmos: true)
+        let supports = PlozzigenVideoEngine.supportsVolumeBoost
+        XCTAssertTrue(supports(.loopback, .streamCopy, [plain]))
+        XCTAssertFalse(supports(.loopback, .streamCopy, [plain, spatial]))
+        XCTAssertTrue(supports(.software, .decoded, [spatial]))
+        XCTAssertFalse(supports(.remoteBypass, .playerManaged, [plain]))
+        XCTAssertFalse(supports(.software, .decoded, []))
+
+        XCTAssertNil(PlozzigenVideoEngine.volumeBoostCompressor(.off))
+        for (boost, expected) in [(PlayerVolumeBoost.quarter, 1.25), (.double, 2), (.extra300, 4)] {
+            let compressor = try XCTUnwrap(PlozzigenVideoEngine.volumeBoostCompressor(boost))
+            XCTAssertEqual(compressor.ratio, 1)
+            XCTAssertEqual(pow(10, compressor.makeupGainDB / 20), expected, accuracy: 0.00001)
+        }
+    }
+
     func testMP4SubtitleNamesDoNotCollideWithGeneratedNativeRenditionSuffixes() throws {
         let demuxer = Demuxer()
         defer { demuxer.close() }

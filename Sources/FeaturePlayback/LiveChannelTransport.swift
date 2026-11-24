@@ -598,6 +598,7 @@ struct LiveChannelOverlay: View {
         trackOptions.subtitlesRenderHDR = source.isHDR
         trackOptions.engineCapabilities = source.capabilities
         trackOptions.audioDelaySeconds = tracks.engine.audioDelaySeconds
+        trackOptions.volumeBoost = tracks.engine.volumeBoost
         trackOptions.secondarySubtitleImagePrimaryFormat = TrackMenuBuilder.imagePrimaryFormat(
             selectedPrimaryID: source.selectedSubtitle, engineTracks: source.subtitles, providerTracks: []
         )
@@ -621,6 +622,12 @@ struct LiveChannelOverlay: View {
             )
         }
         actions.setSubtitleStyle = { tracks.setSubtitleStyle($0) }
+        actions.setVolumeBoost = { boost in
+            guard tracks.matchesSource(channelID: channelID, input: input),
+                  tracks.engine.capabilities.contains(.volumeBoost) else { return }
+            tracks.engine.setVolumeBoost(boost)
+            trackOptions.volumeBoost = tracks.engine.volumeBoost
+        }
         actions.setAudioDelay = { value in
             guard tracks.matchesSource(channelID: channelID, input: input),
                   tracks.engine.capabilities.contains(.audioDelay), value.isFinite else { return }
@@ -673,7 +680,7 @@ struct LiveChannelOverlay: View {
     // MARK: Badges
 
     private var showsAudio: Bool {
-        if trackOptions.engineCapabilities.contains(.audioDelay) { return true }
+        if !trackOptions.engineCapabilities.intersection([.audioDelay, .volumeBoost]).isEmpty { return true }
         #if os(tvOS)
         return Self.showsAudio(trackCount: tracks.audioTracks.count, systemAudio: trackOptions.systemAudio)
         #else
@@ -1778,6 +1785,10 @@ extension LiveChannelOverlay {
         actions.setDialogueEnhancement = { enabled in
             tracks.engine.setDialogEnhanceEnabled(enabled)
             trackOptions.dialogEnhanceEnabled = enabled
+            onControlActivity()
+        }
+        actions.setVolumeBoost = { boost in
+            trackActions.setVolumeBoost(boost)
             onControlActivity()
         }
         return actions
