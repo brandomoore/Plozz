@@ -331,7 +331,7 @@ class SynchronizationTests(unittest.TestCase):
         self.assertEqual(github.issues[0]["state"], "closed")
         self.assertEqual(len(records(github, "report")), 1)
         receipt = discord.messages[THREAD][-1]["embeds"][0]
-        self.assertIn("existing issue: [GitHub issue #1]", receipt["description"])
+        self.assertIn("Your bug report was linked to an existing issue: [GitHub issue #1]", receipt["description"])
         self.assertEqual(receipt["fields"], [])
         self.assertFalse(any("state" in data for _, _, data in github.writes))
         before = (len(github.writes), len(discord.writes))
@@ -413,8 +413,9 @@ class SynchronizationTests(unittest.TestCase):
         discord, github = Discord(), GitHub()
         synchronize(discord, github)
         embed = BRIDGE.discord_records(discord.messages[THREAD], "issue:1")[0]["embeds"][0]
-        self.assertIn(f"We created [GitHub issue #1](https://github.com/{BRIDGE.REPO}/issues/1)", embed["description"])
-        self.assertIn("to track your bug report", embed["description"])
+        self.assertTrue(embed["description"].startswith(
+            f"[GitHub issue #1](https://github.com/{BRIDGE.REPO}/issues/1) was created to track your bug report."
+        ))
         self.assertEqual(embed["fields"], [])
         discord.writes.clear()
         for identifier, login, body in [

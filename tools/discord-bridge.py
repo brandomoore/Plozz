@@ -963,9 +963,9 @@ def tracking_embed(index, thread, number):
     subject = "your bug report" if bug else "your feature request"
     link = f"[GitHub issue #{number}]({url})"
     if index.reports[thread["id"]]["is_issue"]:
-        text = f"We created {link} to track {subject}."
+        text = f"{link} was created to track {subject}."
     else:
-        text = f"We linked {subject} to an existing issue: {link}."
+        text = f"{subject.capitalize()} was linked to an existing issue: {link}."
     return {
         "title": "Thanks for the report!" if bug else "Thanks for the idea!",
         "url": url, "description": text + " Replies here are public on GitHub.", "fields": [],
@@ -985,8 +985,8 @@ def testflight_update(thread, resolution):
     pending = [devices[p] for p in platforms if p not in resolution["deliveries"]]
     if pending:
         names = "Apple TV, iPhone, and iPad" if len(pending) == 2 else pending[0]
-        return "Waiting for TestFlight", f"The {subject} is ready. We'll post here when you can try it on {names}."
-    return "Waiting for TestFlight", f"The {subject} is ready. We're checking TestFlight availability."
+        return "Waiting for TestFlight", f"The {subject} is ready. An update will appear here when you can try it on {names}."
+    return "Waiting for TestFlight", f"The {subject} is ready. TestFlight availability isn't confirmed yet."
 
 
 def sync_legacy_replies(discord, thread, messages, index, number):
