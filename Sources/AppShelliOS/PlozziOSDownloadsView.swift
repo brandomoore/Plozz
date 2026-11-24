@@ -926,7 +926,7 @@ struct PlozziOSDownloadSettingsView: View {
                 }
             } footer: {
                 if model.maximumDownloadMegabitsPerSecond != nil {
-                    Text("Background downloads pause or run at full speed.")
+                    Text("The speed limit doesn’t apply to background downloads.")
                 }
             }
             .settingsSearchGroup(["downloads-speed", "downloads-custom-speed", "downloads-background"])

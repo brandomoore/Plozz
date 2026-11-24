@@ -30,7 +30,10 @@ public struct MetadataQuery: Sendable, Hashable {
         return copy
     }
 
-    public private(set) var artworkLanguage: String
+    /// Keep the language tag until the provider is known: TVDB distinguishes
+    /// regions and scripts that TMDb's ISO 639-1 image tags cannot express.
+    public private(set) var artworkLocale: String
+    public var artworkLanguage: String { Self.normalizedArtworkLanguage(artworkLocale) }
     /// External text only; native server/NFO metadata is never translated.
     public private(set) var metadataLanguage: String
 
@@ -46,7 +49,7 @@ public struct MetadataQuery: Sendable, Hashable {
 
     public func forArtworkLanguage(_ identifier: String) -> Self {
         var copy = self
-        copy.artworkLanguage = Self.normalizedArtworkLanguage(identifier)
+        copy.artworkLocale = identifier
         return copy
     }
 
@@ -87,7 +90,7 @@ public struct MetadataQuery: Sendable, Hashable {
         metadataLanguage: String = "en",
         scheduleStartDate: Date? = nil
     ) {
-        self.artworkLanguage = Self.normalizedArtworkLanguage(artworkLanguage)
+        self.artworkLocale = artworkLanguage
         self.metadataLanguage = Locale.canonicalLanguageIdentifier(from: metadataLanguage)
         self.scheduleStartDate = scheduleStartDate
         self.contentType = contentType
@@ -108,7 +111,7 @@ public struct MetadataQuery: Sendable, Hashable {
     /// same show are the same query whether or not the caller could offer help, so
     /// gathering more hints must never split a cache entry or a dedupe key.
     public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.artworkLanguage == rhs.artworkLanguage
+        lhs.artworkLocale == rhs.artworkLocale
             && lhs.scheduleStartDate == rhs.scheduleStartDate
             && lhs.metadataLanguage == rhs.metadataLanguage
             && lhs.contentType == rhs.contentType && lhs.kind == rhs.kind && lhs.title == rhs.title
@@ -118,7 +121,7 @@ public struct MetadataQuery: Sendable, Hashable {
     }
 
     public func hash(into hasher: inout Hasher) {
-        hasher.combine(artworkLanguage)
+        hasher.combine(artworkLocale)
         hasher.combine(scheduleStartDate)
         hasher.combine(metadataLanguage)
         hasher.combine(contentType)
@@ -163,7 +166,7 @@ public struct MetadataQuery: Sendable, Hashable {
             providerIDs: ids,
             episodeHints: episodeHints,
             titleAlternates: titleAlternates,
-            artworkLanguage: artworkLanguage,
+            artworkLanguage: artworkLocale,
             metadataLanguage: metadataLanguage,
             scheduleStartDate: scheduleStartDate
         )
@@ -215,7 +218,7 @@ public struct MetadataQuery: Sendable, Hashable {
             providerIDs: providerIDs,
             episodeHints: episodeHints,
             titleAlternates: titleAlternates,
-            artworkLanguage: artworkLanguage,
+            artworkLanguage: artworkLocale,
             metadataLanguage: metadataLanguage,
             scheduleStartDate: scheduleStartDate
         )

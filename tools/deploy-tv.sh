@@ -113,6 +113,7 @@ export GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS-'safe.bareRepository=all'}
 
 source tools/lib/apple-build-lease.sh
 acquire_apple_build_shared_lease "plozz/deploy-tv"
+tools/prepare-frame-ass-engine.sh --verify-only
 source tools/lib/swift-package-storage.sh
 PLOZZ_TV_CLONED_SOURCE_PACKAGES="${PLOZZ_TV_CLONED_SOURCE_PACKAGES:-$ROOT/.build/package-workspaces/deploy-tv}"
 configure_plozz_package_resolution "$PLOZZ_TV_CLONED_SOURCE_PACKAGES"

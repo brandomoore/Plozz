@@ -1155,10 +1155,11 @@ public struct PosterCardView: View {
         let snapshot = item
         let placements: [ArtworkPlacement] = style == .poster
             ? [.seriesPoster] : [.detailBackdrop, .seriesPoster]
+        let language = presentationArtworkPolicy.artworkLanguage
         return {
             await ArtworkSession.artworkResolveLimiter.run {
                 if Task.isCancelled { return nil }
-                return await ArtworkRouter.shared.artworkURL(for: snapshot, placements: placements)
+                return await ArtworkRouter.shared.artworkURL(for: snapshot, placements: placements, language: language)
             }
         }
     }

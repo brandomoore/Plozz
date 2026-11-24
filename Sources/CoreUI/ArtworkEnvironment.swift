@@ -8,7 +8,8 @@ public struct ArtworkPresentationPolicy: Equatable, Sendable {
     public let settings: ArtworkSettings
     public let providers: MetadataProviderSettings
     public let placement: ArtworkPlacement?
-    public let logoLanguage: String
+    public let artworkLanguage: String
+    public var logoLanguage: String { MetadataQuery.normalizedArtworkLanguage(artworkLanguage) }
 
     public init(
         area: ArtworkArea = .browse,
@@ -21,7 +22,7 @@ public struct ArtworkPresentationPolicy: Equatable, Sendable {
         self.settings = settings
         self.providers = providers
         self.placement = placement
-        self.logoLanguage = MetadataQuery.normalizedArtworkLanguage(logoLanguage)
+        self.artworkLanguage = logoLanguage
     }
 
     public var prefersOnlineArtwork: Bool { settings.prefersOnlineArtwork(in: area, placement: placement) }
@@ -41,15 +42,15 @@ public struct ArtworkPresentationPolicy: Equatable, Sendable {
         metadataSettings.artworkPolicyIdentity
             + "|placement:\(placement?.rawValue ?? "_")"
             + "|preference:\(settings.preference(in: area).rawValue)"
-            + "|artwork-language:\(logoLanguage)"
+            + "|artwork-language:\(artworkLanguage)"
     }
 
     public func forArea(_ area: ArtworkArea) -> Self {
-        Self(area: area, settings: settings, providers: providers, placement: placement, logoLanguage: logoLanguage)
+        Self(area: area, settings: settings, providers: providers, placement: placement, logoLanguage: artworkLanguage)
     }
 
     public func forPlacement(_ placement: ArtworkPlacement?) -> Self {
-        Self(area: area, settings: settings, providers: providers, placement: placement, logoLanguage: logoLanguage)
+        Self(area: area, settings: settings, providers: providers, placement: placement, logoLanguage: artworkLanguage)
     }
 
     public var heroPolicy: Self {

@@ -838,6 +838,21 @@ final class ShareProviderLocatorTests: XCTestCase {
         XCTAssertNil(ordinary.strongETag)
     }
 
+    func testTrackerPauseMeasuresUnplayedFileWithoutTrustingCatalogRuntime() async throws {
+        let file = try RemoteFileEntry(relativePath: "movie.mkv", kind: .file, size: 4096,
+                                       modifiedAt: Date(timeIntervalSince1970: 10))
+        let prober = LocatorStreamProber(facts: ProbedStreamFacts(durationSeconds: 596.48))
+        let provider = makeProvider(stat: file, streamProber: prober)
+        var item = MediaItem(id: "f:movie.mkv", title: "Film", kind: .movie, runtime: 600)
+        let seconds = try await provider.trackerResumeDuration(for: item)
+        XCTAssertEqual(seconds, 596.48)
+        item.versions = [.init(id: "movie.mkv"), .init(id: "other-cut.mkv")]
+        let ambiguous = try await provider.trackerResumeDuration(for: item)
+        XCTAssertNil(ambiguous)
+        let count = await prober.callCount
+        XCTAssertEqual(count, 1)
+    }
+
     func testSupplementalProbeIsCachedAndPropagatesAtmosIntoPlayback() async throws {
         let entry = try RemoteFileEntry(
             relativePath: "movie.mkv",

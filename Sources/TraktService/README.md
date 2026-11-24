@@ -116,7 +116,114 @@ retain their Retry-After deadline across relaunch.
 Provider-supported idempotency would be needed to eliminate that failure window.
 Older app versions must be upgraded to honor coordination.
 
-History sync is outbound; server resume state remains server-owned.
+Playback reporting remains outbound; server resume state remains server-owned.
+The history reader used by 2-way sync and Settings' one-time comparison starts
+without a baseline by reading every page of `/users/me/history` and `/sync/playback`, requiring stable
+pagination totals, exact page sizes and unique record IDs. The relevant
+`/sync/last_activities` timestamps must remain unchanged across the read. Missing,
+capped, malformed or changing results fail the comparison instead of becoming a
+partial import. Reads reuse coordinated OAuth refresh and retain profile/grant
+fences before and after each request.
+
+Later checks compare `/sync/last_activities` with the four saved revisions:
+movie watches, episode watches, movie pauses, and episode pauses. With an intact
+baseline, an unchanged foreground check or relaunch needs one activity GET and no
+history or playback pages. Pending local work can still require pre-write validation.
+An updated pause refreshes only the relevant current playback list. A watched
+change reads the affected kind's [watched-title summary](https://github.com/trakt/trakt-api/blob/dab7797de4e30bdd3fa0f98c0f8b5d8509845991/projects/api/src/contracts/users/subroutes/watched.ts)
+and fetches individual movie or show histories that need verification. The
+summary is not a change feed: it includes unchanged titles, but not their
+individual plays. A watch-date cursor alone would miss backdated plays,
+deletions and equal-count replacements. Bulk edits can read the affected kind
+when that takes fewer pages. Missing baselines or missing native IDs also
+require a broader read; an invalid or changing response cannot advance a revision.
+Removing a tracker record does not authorize clearing a share. Cache files are
+local, disposable, isolated by profile and OAuth grant, and never contain tokens.
+If only the final watch page corrects the total downward and its size explains the
+correction exactly, Plozz discards that read and checks two open-ended date ranges.
+Both must paginate completely and together reproduce the exact set of individual
+play IDs. A mismatch, duplicate outside the overlap, or activity change still stops sync.
+Paused playback and export do not use this recovery path.
+The app requests 250 watches per page and still caps the read at 100,000 entries.
+On HTTP 429, history reads honor the service cooldown. A snapshot may retry the
+same GET once after a short `Retry-After` (up to 15 seconds); longer waits or
+repeated throttles stop the check. No partial result is applied.
+When diagnostics are enabled, `TRAKT_HISTORY incomplete` records which check rejected
+the response (activity timestamps, pagination, or duplicate records). It uses fixed labels,
+never account identifiers, URLs, header values, or watch history.
+`TRAKT_HISTORY requests` counts activity, watch-page, playback-page and summary
+GETs for a completed snapshot, including retries but excluding later pre-write checks.
+
+The shared importer previews exact server users and requires selected-row
+confirmation before writing through the existing watch outbox. It rechecks server
+state and authorization, excludes current playback, and never enables ongoing
+sync or creates a new tracker scrobble. Rewatches collapse to a watched-state
+change; individual play dates/counts are not written to media servers.
+Episode imports require matching episode and parent IDs in the same namespace,
+with the episode ID distinct from the parent's and a single matching episode
+coordinate. Trakt coordinates alone do not establish a server's episode order.
+Unconfirmed identities remain unmatched. A paused percentage strictly between
+0% and 100% can set progress on a selected share, using the measured duration
+of its matched file. It cannot change a managed server. The boundary values
+do not imply an explicit clear or completed watch.
+
+The **2-way sync** enrollment can import watched states and pauses into
+Plozz history for selected media shares. The first check imports eligible
+existing watches and pauses automatically. Its
+connection identity survives coordinated refresh/relaunch and changes on each
+new sign-in, including identical returned tokens. Disconnect revokes device-local
+permission before coordinated credential removal. See the [shared consent lifecycle](../FeatureSettings/README.md).
+
+API shape references: Trakt's
+[history client](https://github.com/trakt/trakt-rippple/blob/282a49fa049bcf325e126b4932e6c8d91d580860/Rippple/Trakt%20API/TraktAPIService.swift)
+and [sync contracts](https://github.com/trakt/trakt-api/blob/dab7797de4e30bdd3fa0f98c0f8b5d8509845991/projects/api/src/contracts/sync/index.ts).
+Playback pagination is explicitly requested; a headerless response is not a
+complete snapshot. These contracts and fixture checks are not authenticated
+round-trip acceptance evidence.
+
+## Guarded historical export
+
+**Export server history** uses the shared read-only preview, explicit server-user/
+library selection and separate confirmation on TV, iPhone and iPad. It exports
+only watched movies and individually identified episodes with a known server watch
+date. Unknown dates remain unsupported until their readback semantics are verified;
+an existing watch with an unavailable date still prevents duplicate export, but
+cannot verify a dated write. No current-time substitute, repeat-play count,
+scrobble backfill, show/season expansion, rating change or server write is made.
+
+Public external-ID lookup and fresh canonical detail must agree with the source.
+Episodes also require corroborated parent IDs and exact season/episode coordinates.
+The immutable authenticated `user.ids.uuid`, native media ID and kind form the
+receipt target; titles and mutable source metadata do not. Complete history,
+watchlists, paused playback and current watching protect existing state.
+Movie, show, season and episode watchlist entries are all protected; a planned
+season protects only episodes in that season, not unrelated seasons.
+Activity checks include `watchlist.updated_at` so removals invalidate cached
+protection. Missing pagination, changing owners/activity and malformed evidence
+fail closed.
+
+An export-only serial gate leaves at least 1.01 seconds after each operation
+before admitting the next. Full source/tracker authorization runs after that wait,
+then coordinated access-token retrieval and the profile/grant guard run immediately
+before dispatch. Reads do not enter this writer gate. A 429 stops delivery without
+automatic retry; its bounded cooldown survives relaunch. This does not claim to
+coordinate other applications or every existing realtime request.
+
+Each `/sync/history` request contains exactly one native movie or episode and an
+explicit UTC `watched_at`. The current OpenAPI acknowledgement requires HTTP 200,
+with redirects left unfollowed to prevent automatic resubmission,
+exactly one addition, zero updates and empty not-found buckets. Independent
+item-history readback must confirm the same native identity and date. Known
+non-delivery clears only the current attempt's receipt; ambiguous transport,
+cancellation after dispatch or malformed acknowledgements retain the replay
+fence. Presence after an uncertain reply does not establish authorship. Trakt
+does not deduplicate item/date submissions, and local receipts are not remote
+idempotency or distributed atomicity.
+
+Contract: [Trakt API](https://trakt.docs.apiary.io/), external-ID lookup,
+user settings/watching, activity and history endpoints. Synthetic service and
+native fixtures do not replace authenticated account round-trip acceptance.
+
 External-player callbacks use the same durable watch outbox as in-app playback.
 Returning before completion sends `/scrobble/pause` with the reported percentage
 for Trakt's paused playback data, as well as saving server resume state. This is

@@ -2183,15 +2183,23 @@ public struct PlexClient: Sendable {
         // percent-encoded so its query string isn't merged into the outer one —
         // without the inner token the transcoder fetch is unauthorized and the
         // poster/background comes back blank.
-        let innerURL = "\(path)?X-Plex-Token=\(token)"
-        let encodedInner = innerURL.addingPercentEncoding(withAllowedCharacters: .plexQueryValueAllowed) ?? innerURL
+        guard var source = URLComponents(string: path), source.host == nil, !path.hasPrefix("//"),
+              let encodedToken = token.addingPercentEncoding(withAllowedCharacters: .plexQueryValueAllowed)
+        else { return nil }
+        let tokenItem = URLQueryItem(name: "X-Plex-Token", value: encodedToken)
+        source.fragment = nil
+        source.percentEncodedQueryItems = (source.percentEncodedQueryItems ?? []).filter {
+            $0.name.removingPercentEncoding?.caseInsensitiveCompare(tokenItem.name) != .orderedSame
+        } + [tokenItem]
+        guard let encodedInner = source.string?.addingPercentEncoding(withAllowedCharacters: .plexQueryValueAllowed)
+        else { return nil }
         components.percentEncodedQueryItems = [
             URLQueryItem(name: "width", value: String(width)),
             URLQueryItem(name: "height", value: String(height)),
             URLQueryItem(name: "minSize", value: "0"),
             URLQueryItem(name: "upscale", value: "0"),
             URLQueryItem(name: "url", value: encodedInner),
-            URLQueryItem(name: "X-Plex-Token", value: token)
+            tokenItem
         ]
         return components.url
     }

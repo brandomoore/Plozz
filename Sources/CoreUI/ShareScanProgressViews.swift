@@ -245,6 +245,9 @@ public struct ShareScanStatusCard: View {
             SettingsSectionGroup(headerTitle) {
                 ForEach(states) { state in
                     ShareScanStatusRow(state: state)
+                        #if os(iOS)
+                        .padding(.vertical, MobileSettingsMetrics.rowVerticalInset - MobileSettingsMetrics.controlVerticalInset)
+                        #endif
                 }
             } footer: {
                 Text("Your libraries stay usable while this finishes — titles and artwork keep filling in.")

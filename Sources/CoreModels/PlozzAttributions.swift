@@ -97,7 +97,7 @@ public enum PlozzAttributions {
                 "Playback is powered by AetherEngine by Vincent Herbst, under "
                 + "LGPL-3.0 with an Apple Store exception. "
                 + "Upstream: https://github.com/superuser404notfound/AetherEngine. "
-                + "Source: https://github.com/brandomoore/AetherEngine/tree/d98f93de1bc05635279ab5ce7831910327452e3f",
+                + "Source: https://github.com/brandomoore/AetherEngine/tree/5d8bd5bddf09c7bfe4155dc62bb04ece62b63c03",
             licenses: [.init("LGPL-3.0", family: .lgpl)]
         ),
         PlozzAttribution(
@@ -105,9 +105,9 @@ public enum PlozzAttributions {
             detail:
                 "FFmpeg n8.1.3 provides libavcodec, libavformat, libavutil, "
                 + "libswresample, libswscale and libavfilter for media decoding "
-                + "and the playback bridge. Packaged by FFmpegBuild 3.15.0. "
+                + "and the playback bridge. Packaged by FFmpegBuild 3.18.0. "
                 + "Source and component notices: "
-                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.15.0. "
+                + "https://github.com/superuser404notfound/FFmpegBuild/tree/3.18.0. "
                 + "Upstream: https://ffmpeg.org.",
             licenses: [.init("LGPL-2.1+", family: .lgpl)]
         ),

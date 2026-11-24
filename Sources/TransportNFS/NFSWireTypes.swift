@@ -72,6 +72,8 @@ public struct NFSFileAttributes: Sendable, Equatable {
     public let fileID: UInt64
     public let fsID: UInt64
     public let modifiedAt: Date
+    /// Catalog change evidence, not an ETag or a playback precondition.
+    public let changeToken: String?
 
     public var isDirectory: Bool { type == .directory }
     public var isRegularFile: Bool { type == .regular }
@@ -107,15 +109,20 @@ extension XDRDecoder {
         _ = try decodeUInt32()               // rdev.specdata2
         let fsID = try decodeUInt64()        // fsid
         let fileID = try decodeUInt64()      // fileid
-        _ = try decodeTime()                 // atime
-        let mtime = try decodeTime()         // mtime
-        _ = try decodeTime()                 // ctime
+        _ = try decodeTime()                 // atime changes on reads, not edits
+        let mtime = try decodeTime()
+        let ctime = try decodeTime()
+        let hasChangeEvidence = type == .regular && fileID != 0 && ctime.seconds != 0
+            && mtime.nanoseconds < 1_000_000_000 && ctime.nanoseconds < 1_000_000_000
         return NFSFileAttributes(
             type: type,
             size: size,
             fileID: fileID,
             fsID: fsID,
-            modifiedAt: mtime
+            modifiedAt: Date(timeIntervalSince1970: Double(mtime.seconds) + Double(mtime.nanoseconds) / 1_000_000_000),
+            changeToken: hasChangeEvidence
+                ? "\(fsID):\(fileID):\(size):\(mtime.seconds).\(mtime.nanoseconds):\(ctime.seconds).\(ctime.nanoseconds)"
+                : nil
         )
     }
 
@@ -137,9 +144,7 @@ extension XDRDecoder {
     }
 
     /// `nfstime3` — seconds + nanoseconds since the Unix epoch.
-    private mutating func decodeTime() throws -> Date {
-        let seconds = try decodeUInt32()
-        let nanoseconds = try decodeUInt32()
-        return Date(timeIntervalSince1970: Double(seconds) + Double(nanoseconds) / 1_000_000_000)
+    private mutating func decodeTime() throws -> (seconds: UInt32, nanoseconds: UInt32) {
+        try (decodeUInt32(), decodeUInt32())
     }
 }

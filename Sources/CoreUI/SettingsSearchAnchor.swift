@@ -393,20 +393,13 @@ private struct SettingsSearchNativeRowHighlight: View {
 
 /// The row owner draws after padding, rather than expanding a control's bounds by guessed insets.
 struct SettingsSearchRowHighlight: ViewModifier {
-    let isFirst: Bool
-    let isLast: Bool
-    let cornerRadius: CGFloat
+    let cornerRadii: RectangleCornerRadii
 
     func body(content: Content) -> some View {
         content
             .backgroundPreferenceValue(SettingsSearchHighlightKey.self) { highlighted in
                 if highlighted {
-                    SettingsSearchGlow(shape: UnevenRoundedRectangle(
-                        topLeadingRadius: isFirst ? cornerRadius : 0,
-                        bottomLeadingRadius: isLast ? cornerRadius : 0,
-                        bottomTrailingRadius: isLast ? cornerRadius : 0,
-                        topTrailingRadius: isFirst ? cornerRadius : 0
-                    ))
+                    SettingsSearchGlow(shape: UnevenRoundedRectangle(cornerRadii: cornerRadii))
                 }
             }
             // A nested row consumes its highlight so an enclosing row cannot also light up.

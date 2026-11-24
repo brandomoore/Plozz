@@ -10,6 +10,8 @@ import Foundation
 /// treated as a confirmed write (so a Trakt 409 must be swallowed as success by the
 /// implementation, never rethrown).
 public protocol WatchMutationApplying: Sendable {
+    var trackerPlaybackAdmissions: [String: String]? { get }
+    func reportTrackerPlayback(_ delivery: TrackerPlaybackDelivery) async throws
     func requireServerScope(_ scope: WatchMutationServerScope) async throws
     /// A newer server play can supersede a queued reset without being a local
     /// outbox entry. Read failures must throw, not authorize the stale write.
@@ -50,6 +52,10 @@ public protocol WatchMutationApplying: Sendable {
 }
 
 public extension WatchMutationApplying {
+    var trackerPlaybackAdmissions: [String: String]? { nil }
+    func reportTrackerPlayback(_ delivery: TrackerPlaybackDelivery) async throws {
+        throw TrackerPlaybackDeliveryError.unsupportedIdentity
+    }
     func serverPlaybackSupersedes(_ mutation: WatchMutation, on target: WatchMutationTarget) async throws -> Bool { false }
     func requireServerScope(_ scope: WatchMutationServerScope) async throws {
         throw WatchMutationServerScopeError.unsupportedApplier
@@ -124,6 +130,7 @@ public actor WatchStateReconciler {
     private var state: WatchOutboxState
     private var isDraining = false
     private var drainRequestedWhileDraining = false
+    private var drainWaiters: [CheckedContinuation<Void, Never>] = []
 
     /// `(accountID:itemID)` plus the originating server viewer identify each
     /// **live in-app playback session**. A delayed stop cannot end another Home
@@ -196,7 +203,7 @@ public actor WatchStateReconciler {
     }
 
     /// Number of mutations still awaiting drain — for diagnostics / tests.
-    public var pendingCount: Int { state.pending.count }
+    public var pendingCount: Int { state.pending.count + state.trackerPlayback.filter { !$0.delivered }.count }
 
     /// A snapshot of the persisted state — for diagnostics / tests.
     public func snapshot() -> WatchOutboxState { state }
@@ -256,6 +263,90 @@ public actor WatchStateReconciler {
 
     // MARK: - Enqueue
 
+    @discardableResult
+    public func enqueueTrackerPlayback(_ delivery: TrackerPlaybackDelivery) -> Bool {
+        do { try delivery.sample.validate() }
+        catch {
+            FanoutDiagnostics.emit("tracker.playback invalid clock evidence")
+            onPersistenceFailure()
+            return false
+        }
+        let previous = state
+        state.trackerPlayback.removeAll {
+            $0.delivered && now().timeIntervalSince($0.sample.capturedAt) > clockTTL
+        }
+        if let index = state.trackerPlayback.firstIndex(where: {
+            $0.id == delivery.id && $0.connectionID == delivery.connectionID && $0.trackerID == delivery.trackerID
+        }) {
+            let old = state.trackerPlayback[index]
+            guard old.serverScope == delivery.serverScope, old.sample.capturedAt < delivery.sample.capturedAt,
+                  !old.sample.isFinal else { return false }
+            var next = delivery
+            next.completedAt = old.completedAt ?? delivery.completedAt
+            next.blocked = old.blocked
+            next.attempts = old.attempts
+            next.nextAttemptAt = old.nextAttemptAt
+            state.trackerPlayback[index] = next
+        } else {
+            guard state.trackerPlayback.count < 1_000 else {
+                FanoutDiagnostics.emit("tracker.playback queue capacity reached")
+                onPersistenceFailure()
+                return false
+            }
+            state.trackerPlayback.append(delivery)
+        }
+        guard persist() else { state = previous; return false }
+        return true
+    }
+
+    private func drainTrackerPlayback() async {
+        for original in state.trackerPlayback where !original.delivered && !original.blocked {
+            guard original.nextAttemptAt.map({ $0 <= now() }) ?? true else { continue }
+            do {
+                try original.sample.validate()
+                guard applier is any WatchMutationAuthorizationEnforcing else {
+                    throw WatchMutationServerScopeError.unsupportedApplier
+                }
+                let permission = WatchMutationDeliveryAuthorization(serverScope: original.serverScope) { [weak self, applier] in
+                    try await applier.requireServerScope(original.serverScope)
+                    guard let self, await self.containsTrackerPlayback(original) else {
+                        throw WatchMutationAuthorizationError.superseded
+                    }
+                }
+                try await WatchMutationDeliveryAuthorization.$current.withValue(permission) {
+                    try await WatchMutationDeliveryAuthorization.check()
+                    try await applier.reportTrackerPlayback(original)
+                }
+                guard let index = state.trackerPlayback.firstIndex(of: original) else { continue }
+                if original.sample.isFinal { state.trackerPlayback.remove(at: index) }
+                else { state.trackerPlayback[index].delivered = true }
+            } catch {
+                let failure = error as? TrackerPlaybackDeliveryError
+                guard let index = state.trackerPlayback.firstIndex(where: {
+                    $0.id == original.id && $0.connectionID == original.connectionID
+                        && $0.trackerID == original.trackerID && $0.serverScope == original.serverScope
+                }), failure != nil || state.trackerPlayback[index] == original else { continue }
+                var next = state.trackerPlayback[index]
+                next.attempts += 1
+                switch failure {
+                case .connectionChanged, .unsupportedIdentity, .accessDenied, .remoteConflict, .unconfirmed:
+                    next.blocked = true
+                case .retryAfter(let delay):
+                    next.nextAttemptAt = now().addingTimeInterval(max(1, delay ?? 60))
+                case nil:
+                    next.nextAttemptAt = now().addingTimeInterval(min(3_600, 30 * pow(2, Double(min(next.attempts, 7)))))
+                }
+                state.trackerPlayback[index] = next
+                FanoutDiagnostics.emit("tracker.playback delivery failed blocked=\(next.blocked)")
+            }
+            guard persist() else { return }
+        }
+    }
+
+    private func containsTrackerPlayback(_ delivery: TrackerPlaybackDelivery) -> Bool {
+        state.trackerPlayback.contains(delivery)
+    }
+
     /// Records `mutation`'s intent durably, applying **stale-write suppression** and
     /// **coalescing** before the network is ever touched:
     ///  - If a newer action for the same title has already been accepted (clock),
@@ -314,7 +405,15 @@ public actor WatchStateReconciler {
             return false
         }
 
-        captureWetrakrWatch(&mutation)
+        if mutation.trakt != nil || mutation.traktProgress != nil {
+            let admissions = TrackerActivationStore.$eventDate.withValue(mutation.capturedAt) {
+                applier.trackerPlaybackAdmissions
+            }
+            mutation.trakt?.trackerAdmissions = admissions
+            mutation.traktProgress?.trackerAdmissions = admissions
+            captureWetrakrWatch(&mutation)
+            Self.filterTrackerDestinations(&mutation, current: admissions)
+        }
         let acceptedMutation: WatchMutation
         if let index = state.pending.firstIndex(where: {
             $0.coalesceKey == key && $0.authorization == mutation.authorization
@@ -478,7 +577,9 @@ public actor WatchStateReconciler {
         operation: @Sendable () async throws -> Result
     ) async throws -> Result {
         let parent = WatchMutationDeliveryAuthorization.current
-        let permission = WatchMutationDeliveryAuthorization(serverScope: mutation.serverScope) { [weak self] in
+        let permission = WatchMutationDeliveryAuthorization(
+            serverScope: mutation.serverScope, sourceRequirement: mutation.authorization
+        ) { [weak self] in
             try await WatchMutationDeliveryAuthorization.$current.withValue(parent) {
                 try await WatchMutationDeliveryAuthorization.check()
             }
@@ -556,9 +657,11 @@ public actor WatchStateReconciler {
                 merged.traktPending = existing.traktPending
             }
             // A still-owed tracker write survives later non-unwatch convergence.
-            merged.simklPending = incoming.simklPending || existing.simklPending
-            merged.anilistPending = incoming.anilistPending || existing.anilistPending
-            merged.malPending = incoming.malPending || existing.malPending
+            if incoming.trakt == nil {
+                merged.simklPending = incoming.simklPending || existing.simklPending
+                merged.anilistPending = incoming.anilistPending || existing.anilistPending
+                merged.malPending = incoming.malPending || existing.malPending
+            }
             if !incoming.wetrakrPending, existing.wetrakrPending, incoming.trakt == nil {
                 merged.wetrakrPending = true
                 merged.wetrakrAccountIdentity = existing.wetrakrAccountIdentity
@@ -587,6 +690,7 @@ public actor WatchStateReconciler {
         let session = mutation.optimisticTargets.first.map {
             LiveSession(target: $0, serverScope: mutation.serverScope)
         }
+
         let watch: WetrakrWatch
         if let session, liveSessions.contains(session),
            let existing = liveWetrakrWatches[session], existing.identity == identity {
@@ -608,7 +712,31 @@ public actor WatchStateReconciler {
         mutation.wetrakrPending = state.appliedWetrakr[watch.key] == nil
     }
 
+    private static func filterTrackerDestinations(_ mutation: inout WatchMutation, current: [String: String]?) {
+        guard let current else { return }
+        func admits(_ tracker: String, _ captured: [String: String]?) -> Bool {
+            guard let active = current[tracker] else { return false }
+            // A pre-activation entry cannot prove which grant captured it.
+            // Retire only its tracker mirrors; server convergence is independent.
+            return captured?[tracker] == active
+        }
+        let captured = mutation.trakt?.trackerAdmissions
+        if !admits("trakt", captured) { mutation.traktPending = false }
+        if !admits("simkl", captured) { mutation.simklPending = false }
+        if !admits("wetrakr", captured) { mutation.wetrakrPending = false }
+        if !admits("anilist", captured) { mutation.anilistPending = false }
+        if !admits("myanimelist", captured) { mutation.malPending = false }
+        if !admits("trakt", mutation.traktProgress?.trackerAdmissions) { mutation.traktProgress = nil }
+    }
+
     // MARK: - Drain
+
+    /// A visible import must not revoke its approval while an earlier drain still owns delivery.
+    public func drainAndWait() async {
+        guard isDraining else { await drain(); return }
+        drainRequestedWhileDraining = true
+        await withCheckedContinuation { drainWaiters.append($0) }
+    }
 
     /// Attempts to apply every pending mutation. Best-effort and idempotent: a
     /// target that fails stays queued for the next drain; a target that succeeds is
@@ -623,12 +751,16 @@ public actor WatchStateReconciler {
         isDraining = true
         defer {
             isDraining = false
+            let waiters = drainWaiters
+            drainWaiters = []
+            for waiter in waiters { waiter.resume() }
             scheduleAutomaticRetry()
         }
 
         repeat {
             drainRequestedWhileDraining = false
             pruneExpired()
+            await drainTrackerPlayback()
             // Iterate over a snapshot of ids so we can mutate `state.pending` safely.
             for mutationID in state.pending.map(\.id) {
                 guard let index = state.pending.firstIndex(where: { $0.id == mutationID }) else { continue }
@@ -986,6 +1118,10 @@ public actor WatchStateReconciler {
             onServerStateApplied(confirmed)
         }
 
+        if mutation.traktPending || mutation.traktProgress != nil || mutation.simklPending || mutation.wetrakrPending
+            || mutation.anilistPending || mutation.malPending {
+            Self.filterTrackerDestinations(&mutation, current: applier.trackerPlaybackAdmissions)
+        }
         if mutation.traktPending, let intent = mutation.trakt {
             let key = mutation.traktIdempotencyKey(dayBucket: WatchMutation.dayBucket(for: mutation.capturedAt))
             if state.appliedTrakt[key] != nil {

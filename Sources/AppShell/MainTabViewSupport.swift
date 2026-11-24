@@ -622,6 +622,9 @@ private func makePlayerViewModel(
             watchBridge: watchBridge,
             identitySources: identitySources
         ),
+        onTrackerPlayback: { sample in
+            Task { @MainActor in watchBridge.trackerPlayback(sample) }
+        },
         adoptedResolved: adoptedResolved
     )
     episodeViewModel.onSubtitleStyleChanged = onSubtitleStyleChanged

@@ -258,6 +258,29 @@ public enum TrackLabeling {
         }
         if providerName == nil, detectedName != nil { qualifiers.append(.autoDetected) }
 
+        // A server may tag a stream just "fr" but name it "French (France) SDH".
+        // Use the region as detail, and let the existing localized flag say SDH once.
+        if let providerName, let title = sourceTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+           let open = title.firstIndex(of: "("), let close = title[open...].firstIndex(of: ")") {
+            let languagePrefix = title[..<open].trimmingCharacters(in: .whitespaces)
+            let english = Locale(identifier: "en")
+            let names = [languageName(forCode: language, in: locale), languageName(forCode: language, in: english)]
+            let detail = title[title.index(after: open)..<close].trimmingCharacters(in: .whitespaces)
+            let tail = title[title.index(after: close)...].trimmingCharacters(in: CharacterSet(charactersIn: " ()")).lowercased()
+            if names.compactMap({ $0 }).contains(where: { $0.caseInsensitiveCompare(languagePrefix) == .orderedSame }),
+               !detail.isEmpty, !detail.contains("("), !["sdh", "forced", "cc"].contains(detail.lowercased()),
+               qualifiers.allSatisfy({ if case .version = $0 { false } else { true } }),
+               tail.isEmpty || (tail == "forced" && isForced) || (tail == "sdh" && qualifiers.contains(.hearingImpaired)) {
+                let regionalTitle = String(title[...close])
+                if providerName == languageName(forCode: language, in: locale) {
+                    if languagePrefix.caseInsensitiveCompare(providerName) == .orderedSame {
+                        return TrackLabel(base: .content(regionalTitle), qualifiers: qualifiers)
+                    }
+                    // Preserve an authored descriptor in its original language.
+                    return TrackLabel(base: base, qualifiers: [.title(regionalTitle)] + qualifiers)
+                }
+            }
+        }
         return retainingSourceTitle(
             sourceTitle, in: TrackLabel(base: base, qualifiers: qualifiers),
             language: language ?? detectedLanguage, locale: locale
@@ -328,6 +351,25 @@ public enum TrackLabeling {
         let format = audioFormatHint(
             codec: codec, channels: channels, isAtmos: isAtmos, profile: profile, isDTSX: isDTSX
         )
+        // Compare compact container names against the actual stream, not a guess
+        // based on the name. Keep unknown additions and contradictory layouts.
+        let compactName = sourceTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? title
+        let compactTokens = compactName.uppercased().split(whereSeparator: \.isWhitespace)
+        let hasBTM = compactTokens.first == "BTM"
+        let description = compactTokens.dropFirst(hasBTM ? 1 : 0).joined(separator: " ")
+        let ddp = channels.flatMap(channelLayoutName).map { "DDP" + $0 }
+        let matchesDDP = audioCodecName(codec) == "Dolby Digital+" && ddp.map {
+            description == $0 || (source.objectBased && description == $0 + " ATMOS")
+        } == true
+        // Some servers concatenate the authored name, language and format with " - ".
+        // Only discard that generated display title when every segment is accounted for.
+        let knownSegments = [compactName, language, baseLanguageNm, languageName(forCode: language, in: Locale(identifier: "en")),
+                             format, "Dolby Digital Plus", "Dolby Digital+", "Default",
+                             source.objectBased ? "Dolby Digital Plus + Dolby Atmos" : nil]
+            .compactMap { $0?.lowercased() }
+        let compactDisplay = matchesDDP && title.components(separatedBy: " - ").allSatisfy {
+            knownSegments.contains($0.lowercased())
+        }
         let generatedFormatTitle = isAudioFormatTitle(
             title, languageName: baseLanguageNm, codec: codec, channels: channels, format: format,
             profile: source.name != audioCodecName(codec) ? profile : nil
@@ -336,7 +378,7 @@ public enum TrackLabeling {
         let base: TrackLabel.Base
         var formatIsBase = false
         if let languageNm,
-           !generatedFormatTitle, !isGenericTitle(title),
+           !generatedFormatTitle, !compactDisplay, !isGenericTitle(title),
            let range = title.range(of: baseLanguageNm ?? languageNm, options: .caseInsensitive) {
             if title.range(of: languageNm, options: .caseInsensitive) == nil {
                 var detailedTitle = title
@@ -347,7 +389,7 @@ public enum TrackLabeling {
             }
         } else if let languageNm {
             base = .content(languageNm)
-        } else if generatedFormatTitle, let format {
+        } else if generatedFormatTitle || compactDisplay, let format {
             base = .content(format)
             formatIsBase = true
         } else if !isGenericTitle(title) {
@@ -380,7 +422,7 @@ public enum TrackLabeling {
         }
 
         return retainingSourceTitle(
-            sourceTitle, in: TrackLabel(base: base, qualifiers: qualifiers),
+            matchesDDP ? nil : sourceTitle, in: TrackLabel(base: base, qualifiers: qualifiers),
             language: language, locale: locale
         )
     }

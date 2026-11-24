@@ -1134,6 +1134,13 @@ struct MainTabView: View {
                 trakt: trakt,
                 simkl: simkl,
                 wetrakr: wetrakr,
+                publicMetaDB: syncServices.publicMetaDB,
+                makePublicMetaDBHistoryImport: syncServices.makePublicMetaDBHistoryImport,
+                makeTraktHistoryImport: syncServices.makeTraktHistoryImport,
+                makeSimklHistoryImport: syncServices.makeSimklHistoryImport,
+                makeWetrakrHistoryImport: syncServices.makeWetrakrHistoryImport,
+                makeAniListHistoryImport: syncServices.makeAniListHistoryImport,
+                makeMALHistoryImport: syncServices.makeMALHistoryImport,
                 seer: seer,
                 anilist: anilist,
                 mal: mal,
@@ -1439,7 +1446,9 @@ struct MainTabView: View {
         case .music:
             return AnyView(musicTabContent)
         case .settings:
-            return AnyView(settingsTabContent)
+            // Give this native tab its own navigation root, independent of a
+            // detail pushed in the previous tab. Settings still owns its subpages.
+            return AnyView(NavigationStack { settingsTabContent })
         case .allLibraries, .library:
             guard let libraryEntry else {
                 return AnyView(homeTabContent(isActive: isActive))
@@ -2098,6 +2107,10 @@ struct MainTabView: View {
             )
         }
         .mediaItemActionHandler(mediaItemActionHandler)
+        .onChange(of: syncServices.publicMetaDB?.catalogNavigation?.id) { _, _ in
+            guard let item = syncServices.publicMetaDB?.consumeCatalogNavigation() else { return }
+            openTitleFromLiveTV(item)
+        }
         .liveTVGuideAutoUpdate(
             accountIDs: accounts.map(\.account.id),
             authorizationID: accountsProviders.liveTVAuthorizationID,

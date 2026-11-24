@@ -15,6 +15,13 @@ extension SiloProviderTests {
         return provider.map(dto)
     }
 
+    private func watchFile(id: String = "file", duration: Double) -> String {
+        """
+        {"file_id":"\(id)","resolution":"1080p","codec_video":"h264","codec_audio":"aac",
+         "container":"mkv","file_size":100,"duration":\(duration),"bitrate":2000}
+        """
+    }
+
     func testContainerRollupsPreserveRemainingCountsAndPartialHistory() throws {
         for kind in [MediaItemKind.series, .season] {
             let item = try watchItem(kind: kind, fields: """
@@ -86,6 +93,77 @@ extension SiloProviderTests {
         }
         let sortOnly = try watchItem(kind: .movie, fields: #""sort_metrics":{"progress_ratio":0.4}"#)
         XCTAssertEqual(sortOnly.playedPercentage, 0.4)
+    }
+
+    func testSingleFileRuntimePreservesSecondsForMoviesAndEpisodes() throws {
+        for kind in [MediaItemKind.movie, .episode] {
+            let item = try watchItem(kind: kind, fields: """
+                "runtime":169,"position_seconds":1044.003,
+                "versions":[\(watchFile(duration: 10144))]
+                """)
+            XCTAssertEqual(item.runtime, 10144)
+            XCTAssertEqual(item.resumePosition, 1044.003)
+            XCTAssertEqual(try XCTUnwrap(item.playedPercentage), 1044.003 / 10144, accuracy: 0.000001)
+        }
+    }
+
+    func testExplicitProgressDurationsOutrankSingleFileFallback() throws {
+        for (fields, expected) in [
+            (#""duration_seconds":1200,"user_data":{"played":false,"duration_seconds":1800}"#, 1200.0),
+            (#""user_data":{"played":false,"duration_seconds":1800}"#, 1800.0)
+        ] {
+            let item = try watchItem(kind: .movie, fields: """
+                "runtime":60,"versions":[\(watchFile(duration: 600))],\(fields)
+                """)
+            XCTAssertEqual(item.runtime, expected)
+        }
+    }
+
+    func testMissingInvalidAndAmbiguousFilesDoNotSupplyAPlaybackRuntime() throws {
+        for versions in [
+            "[]", "[\(watchFile(duration: 0))]", "[\(watchFile(duration: -1))]",
+            "[\(watchFile(id: "first", duration: 600)),\(watchFile(id: "second", duration: 650))]"
+        ] {
+            let item = try watchItem(kind: .movie, fields: #""runtime":60,"versions":\#(versions)"#)
+            XCTAssertEqual(item.runtime, 3600)
+        }
+        for kind in [MediaItemKind.series, .season] {
+            let item = try watchItem(kind: kind, fields: """
+                "runtime":60,"versions":[\(watchFile(duration: 600))]
+                """)
+            XCTAssertEqual(item.runtime, 3600)
+        }
+    }
+
+    func testSingleFileRuntimeAllowsMatchingTrackerResumeWithoutRelaxingMismatchGuard() throws {
+        let item = try watchItem(kind: .movie, fields: """
+            "runtime":169,"tmdb_id":"550","versions":[\(watchFile(duration: 10144))]
+            """)
+        let account = Account(
+            id: "account1", server: context(try credential().encoded()).session.server,
+            userID: "user1:profile1", userName: "Viewer", deviceID: "device1"
+        )
+        for (runtime, expected) in [
+            (10144.233, TrackerHistoryImportPlan.Comparison.ready),
+            (10146.5, .incompatibleRuntime)
+        ] {
+            let observation = try TrackerHistoryObservation(
+                recordID: "resume", kind: .movie, identities: [.external(source: "tmdb", value: "550")],
+                fact: .resume(seconds: 1044.003, runtime: runtime, updatedAt: nil)
+            )
+            let plan = TrackerHistoryImportPlan(
+                snapshot: try .init(
+                    trackerID: "tracker", connectionID: "connection", observations: [observation], expectedCount: 1
+                ),
+                serverScope: .init(profile: .init(id: "profile", name: "Test"), accounts: [account]),
+                candidates: [.init(
+                    accountID: account.id, item: item, canWriteWatched: true, canWriteResume: true, isPlaying: false
+                )]
+            )
+            XCTAssertEqual(plan.rows.first?.comparison, expected)
+            let change: TrackerHistoryImportPlan.Change? = expected == .ready ? .resume(1044.003) : nil
+            XCTAssertEqual(plan.rows.first?.change, change)
+        }
     }
 
     func testInvalidRollupsDoNotBecomeEpisodeBadgesOrOverflow() throws {

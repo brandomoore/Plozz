@@ -94,9 +94,10 @@ class MainLandingTests(unittest.TestCase):
                 patch.object(MAIN.subprocess, "run") as run:
             MAIN.pre_push(self.root, "refs/heads/feature a refs/heads/main b\n")
         commands = [call.args[0] for call in run.call_args_list]
-        self.assertEqual(len(commands), 3)
-        self.assertEqual(commands[0], ["tools/l10n-guard.sh"])
-        self.assertIn("--validate-only", commands[1])
-        self.assertNotIn("--reuse-if-unchanged", commands[1])
-        self.assertIn("--check-snapshot", commands[2])
+        self.assertEqual(len(commands), 4)
+        self.assertEqual(commands[0], [sys.executable, "tools/testflight-resolutions.py", "--lint", "b", "a"])
+        self.assertEqual(commands[1], ["tools/l10n-guard.sh"])
+        self.assertIn("--validate-only", commands[2])
+        self.assertNotIn("--reuse-if-unchanged", commands[2])
+        self.assertIn("--check-snapshot", commands[3])
         self.assertTrue(all(call.kwargs["pass_fds"] for call in run.call_args_list))

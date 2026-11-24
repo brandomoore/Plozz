@@ -56,18 +56,34 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
     case homeRows, homeRowStyle, homeFiltering, homeLabels, continueWatching, libraries, cardLabels
     case externalPlayer, skipMarkers, liveSubtitleStyle, musicPlayer, topShelf
     case downloads, profiles, sync, metadata, diagnostics, trackers, liveTVSources
-    case playbackAdvanced, streamingAdvanced, metadataDiagnostics, detailRatingSources
+    case playerTabs, playbackAdvanced, streamingAdvanced, metadataDiagnostics, detailRatingSources
     case liveTVGuide, liveTVVisibility, profileAppearance, profileSettings, accountLibraries, seerr
-    case releaseNotes
+    case releaseNotes, publicMetaDB
+    case trakt, simkl, wetrakr, anilist, myanimelist, lastfm
+
+    public var trackerAccount: (rowID: String, name: String)? {
+        switch self {
+        case .publicMetaDB: ("publicmetadb", "PublicMetaDB")
+        case .trakt: ("trakt", "Trakt")
+        case .simkl: ("simkl", "Simkl")
+        case .wetrakr: ("wetrakr", "WeTrakr")
+        case .anilist: ("anilist", "AniList")
+        case .myanimelist: ("mal", "MyAnimeList")
+        case .lastfm: ("lastfm", "Last.fm")
+        default: nil
+        }
+    }
 
     public var path: [SettingsSearchLabel] {
         if self == .seerr { return [.verbatim("Seerr")] }
+        if let trackerAccount { return SettingsSearchPage.trackers.path + [.verbatim(trackerAccount.name)] }
         return localizedPath.map(SettingsSearchLabel.localized)
     }
 
     private var localizedPath: [LocalizedStringResource] {
         switch self {
         case .playback: ["Playback"]
+        case .playerTabs: ["Playback", "Player", "Player tabs"]
         case .subtitles: ["Subtitles"]
         case .subtitleStyle: ["Subtitles", "Customize subtitle style"]
         case .theme: ["Appearance", "Theme"]
@@ -112,7 +128,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
         case .profileAppearance: ["Profiles", "Appearance"]
         case .profileSettings: ["Profiles", "Manage profile"]
         case .accountLibraries: ["Libraries"]
-        case .seerr: []
+        case .seerr, .publicMetaDB, .trakt, .simkl, .wetrakr, .anilist, .myanimelist, .lastfm: []
         case .detail: ["Screens & Navigation", "Movie & show details"]
         case .liveTV: ["Live TV"]
         case .language: ["Language"]
@@ -122,7 +138,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
 
     public var symbol: String {
         switch self {
-        case .playback, .externalPlayer, .skipMarkers, .playbackAdvanced, .streamingAdvanced: "play.rectangle"
+        case .playback, .playerTabs, .externalPlayer, .skipMarkers, .playbackAdvanced, .streamingAdvanced: "play.rectangle"
         case .subtitles, .subtitleStyle, .liveSubtitleStyle: "captions.bubble"
         case .theme, .cards, .artwork, .circadian, .cardLabels: "paintpalette"
         case .allScreens, .navigation, .home, .hero, .detail, .heroContent, .heroRatings,
@@ -137,7 +153,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
         case .sync: "icloud"
         case .metadata, .metadataDiagnostics: "sparkles.rectangle.stack"
         case .diagnostics: "ladybug"
-        case .trackers: "link"
+        case .trackers, .publicMetaDB, .trakt, .simkl, .wetrakr, .anilist, .myanimelist, .lastfm: "link"
         case .seerr: "sparkles.tv"
         case .releaseNotes: "doc.text"
         }
@@ -157,7 +173,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
     public var platform: SettingsSearchEntry.Platform? {
         switch self {
         case .downloads, .streamingAdvanced, .detailRatingSources: .mobile
-        case .topShelf: .television
+        case .topShelf, .lastfm: .television
         default: nil
         }
     }
@@ -249,10 +265,7 @@ public struct SettingsSearchEntry: Identifiable, Hashable, Sendable {
     }
 
     public func destinationPage(on platform: Platform) -> SettingsSearchPage {
-        if (id == "subtitle-remember" || id == "cross-server-watch-sync") && platform != .television {
-            return .playback
-        }
-        return page
+        page
     }
 
     public var cardCaptionView: CardCaptionView? {
@@ -380,7 +393,7 @@ public enum SettingsSearchCatalog {
     }
 
     public static let entries: [SettingsSearchEntry] = baseEntries + baseEntries.filter {
-        $0.page == .subtitleStyle && $0.subtitlePage != .dual
+        $0.page == .subtitleStyle && $0.subtitlePage != .dual && $0.id != "file-ass-override"
     }.map { entry in
         SettingsSearchEntry(
             "live-\(entry.id)", page: .liveSubtitleStyle, title: entry.title, keywords: entry.keywords,
@@ -422,15 +435,15 @@ public enum SettingsSearchCatalog {
               keywords: "automatically start play next episode binge stop after each episode continuous playback"),
         .init("autoplay-next-playlist", page: .playback, title: "Autoplay next playlist item",
               keywords: "automatically start play next video playlist continuous playback"),
-        .init("player-tab-chapters", page: .playback, title: "Chapters",
+        .init("player-tab-chapters", page: .playerTabs, title: "Chapters",
               keywords: "player tabs show hide chapters scenes navigation"),
-        .init("player-tab-cast", page: .playback, title: .localized(PlayerOptionalTab.cast.title),
+        .init("player-tab-cast", page: .playerTabs, title: .localized(PlayerOptionalTab.cast.title),
               keywords: "player tabs show hide cast actors people"),
-        .init("player-tab-episodes", page: .playback, title: "Episodes",
+        .init("player-tab-episodes", page: .playerTabs, title: "Episodes",
               keywords: "player tabs show hide episodes season series navigation"),
-        .init("player-tab-playlist", page: .playback, title: "Playlist",
+        .init("player-tab-playlist", page: .playerTabs, title: "Playlist",
               keywords: "player tabs show hide playlist queue navigation"),
-        .init("continue-watching-in-player", page: .playback, title: .localized(PlayerOptionalTab.continueWatching.title),
+        .init("continue-watching-in-player", page: .playerTabs, title: .localized(PlayerOptionalTab.continueWatching.title),
               keywords: "player tabs show hide continue watching switch title resume another movie show"),
         .init("show-up-next-card", page: .playback, title: "Show Up Next card",
               keywords: "next episode popup countdown end credits"),

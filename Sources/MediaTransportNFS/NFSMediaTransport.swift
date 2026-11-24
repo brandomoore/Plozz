@@ -237,7 +237,8 @@ final class NFSMediaTransportFileSystem: MediaTransportFileSystem, @unchecked Se
                     relativePath: childPath,
                     kind: entry.kind,
                     size: entry.size,
-                    modifiedAt: entry.modifiedAt
+                    modifiedAt: entry.modifiedAt,
+                    changeToken: entry.changeToken
                 )
             }
         } catch {
@@ -255,7 +256,8 @@ final class NFSMediaTransportFileSystem: MediaTransportFileSystem, @unchecked Se
                 relativePath: normalizedPath,
                 kind: entry.kind,
                 size: entry.size,
-                modifiedAt: entry.modifiedAt
+                modifiedAt: entry.modifiedAt,
+                changeToken: entry.changeToken
             )
         } catch {
             throw mapNFSError(error)

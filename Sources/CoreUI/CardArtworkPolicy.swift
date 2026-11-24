@@ -27,7 +27,7 @@ public enum CardArtworkPolicy: Hashable, Sendable {
                     return url
                 }
                 guard !Task.isCancelled, allowsGenericFallback else { return nil }
-                return await router.artworkURL(for: item, placements: [.detailBackdrop, .poster])
+                return await router.artworkURL(for: item, placements: [.detailBackdrop, .poster], language: policy.artworkLanguage)
             }
         }
         let placements: [ArtworkPlacement]
@@ -45,7 +45,7 @@ public enum CardArtworkPolicy: Hashable, Sendable {
         let nativeFallback = style == .landscape && item.kind == .episode
             ? item.libraryArtworkURL(item.fallbackArtworkURL) : nil
         return {
-            await router.artworkURL(for: item, placements: placements) ?? nativeFallback
+            await router.artworkURL(for: item, placements: placements, language: policy.artworkLanguage) ?? nativeFallback
         }
     }
 

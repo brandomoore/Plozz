@@ -158,6 +158,9 @@ struct HomeHeroInteractionFixture: View {
         }
         model.accountsProviders.reloadAccounts()
         model.settings.heroBackground.settings.homeTrailerEnabled = false
+        model.settings.spoilers.settings = .init(
+            isEnabled: ProcessInfo.processInfo.arguments.contains("--protect-episodes")
+        )
         model.settings.heroBackground.settings.detailMode = HeroInteractionProvider.hasDetailTrailer ? .trailer : .off
         _appModel = State(initialValue: model)
     }

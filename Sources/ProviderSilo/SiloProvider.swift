@@ -33,6 +33,7 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
 
     public var capabilities: ProviderCapability { [.video, .libraryCollections, .personalCollections, .remoteSubtitles] }
     public var catalogIdentityRequiresEnrichment: Bool { true }
+    public var catalogResumeRequiresEnrichment: Bool { true }
 
     public func libraries() async throws -> [MediaLibrary] {
         let response: SiloCollection<SiloLibrary> = try await client.request("/user/libraries")
@@ -70,6 +71,25 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
         }
         let dto: SiloItem = try await client.request("/catalog/items/\(try SiloAPI.pathComponent(id))")
         return map(dto)
+    }
+
+    public func trailers(for itemID: String) async throws -> [MediaItem] {
+        guard Self.collectionIdentity(itemID) == nil else { return [] }
+        let detail: SiloTrailerDetail = try await client.request("/catalog/items/\(try SiloAPI.pathComponent(itemID))")
+        func isTrailer(_ kind: String?) -> Bool { kind == "trailer" || kind == "teaser" }
+        let local = (detail.extras ?? []).compactMap { extra -> MediaItem? in
+            guard isTrailer(extra.kind), let id = extra.content_id, id != itemID,
+                  (try? SiloAPI.pathComponent(id)) != nil else { return nil }
+            return MediaItem(id: id, title: extra.title ?? detail.title, kind: .video,
+                             isTrailer: true, isExtra: true, parentTitle: detail.title,
+                             runtime: extra.duration_seconds, sourceAccountID: accountID)
+        }
+        let remote = (detail.videos ?? []).compactMap { video -> MediaItem? in
+            guard isTrailer(video.kind), video.site?.lowercased() == "youtube",
+                  let key = video.site_key, MediaItem.youTubeVideoID(fromURL: key) == key else { return nil }
+            return .youTubeTrailer(videoID: key, title: video.name ?? detail.title, parentTitle: detail.title)
+        }
+        return local + remote
     }
 
     public func children(of itemID: String) async throws -> [MediaItem] {
@@ -399,13 +419,23 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
         for (key, value) in [("Imdb", dto.imdb_id), ("Tmdb", dto.tmdb_id), ("Tvdb", dto.tvdb_id)] {
             if let value, !value.isEmpty { ids[key] = value }
         }
-        let itemKind = kind ?? MediaItemKind(rawValue: dto.type ?? "") ?? .unknown
+        let isExtra = dto.type == "extra"
+        let itemKind = kind ?? (isExtra ? .video : MediaItemKind(rawValue: dto.type ?? "") ?? .unknown)
         let anchor = SiloCatalogIdentity.parse(dto.content_id, kind: itemKind)
         if let anchor, dto.series_id == nil || dto.series_id == anchor.seriesID {
             ids.merge(anchor.providerIDs) { declared, _ in declared }
         }
         let isContainer = itemKind == .series || itemKind == .season
-        let runtime = dto.duration_seconds ?? dto.user_data?.duration_seconds ?? dto.runtime.map { $0 * 60 }
+        var fileRuntime: TimeInterval?
+        if (itemKind == .movie || itemKind == .episode), versions.count == 1, let duration = versions.first?.duration {
+            if duration.isFinite && duration > 0 {
+                fileRuntime = duration
+            } else {
+                PlozzLog.networking.error("Silo returned an invalid file duration.")
+            }
+        }
+        // A single file's seconds are more precise than catalog runtime in whole minutes.
+        let runtime = dto.duration_seconds ?? dto.user_data?.duration_seconds ?? fileRuntime ?? dto.runtime.map { $0 * 60 }
         let position = dto.position_seconds ?? dto.user_data?.position_seconds
         let played = dto.user_state?.played ?? dto.user_data?.played ?? false
         var unwatchedCount = isContainer ? dto.user_data?.unplayed_count : nil
@@ -431,7 +461,7 @@ public final class SiloProvider: MediaProvider, CapabilityReporting, MediaSortFi
         }
         return MediaItem(
             id: dto.content_id, title: dto.title, originalTitle: dto.original_title,
-            kind: itemKind,
+            kind: itemKind, isExtra: isExtra,
             overview: dto.overview, parentTitle: dto.series_title,
             seasonNumber: dto.season_number ?? anchor?.seasonNumber,
             episodeNumber: dto.episode_number ?? anchor?.episodeNumber,
@@ -623,7 +653,10 @@ extension SiloProvider: WatchStateProviding, ResumeStateWriting, WatchlistProvid
     }
 
     public func setResumePosition(_ seconds: TimeInterval, itemID: String, capturedAt: Date) async throws {
-        guard seconds.isFinite, seconds >= 0, seconds < Double(Int64.max / 1000) else { throw AppError.invalidResponse }
+        guard seconds.isFinite, seconds >= 0,
+              let milliseconds = Int64(exactly: (seconds * 1000).rounded()) else {
+            throw AppError.invalidResponse
+        }
         struct Item: Encodable {
             let media_item_id: String
             let position_ms: Int64
@@ -633,7 +666,7 @@ extension SiloProvider: WatchStateProviding, ResumeStateWriting, WatchlistProvid
         }
         struct Body: Encodable { let items: [Item] }
         let data = try JSONEncoder().encode(Body(items: [
-            Item(media_item_id: itemID, position_ms: Int64(seconds * 1000),
+            Item(media_item_id: itemID, position_ms: milliseconds,
                  updated_at: capturedAt.ISO8601Format(.init(includingFractionalSeconds: true)))
         ]))
         struct Receipt: Decodable, Sendable {

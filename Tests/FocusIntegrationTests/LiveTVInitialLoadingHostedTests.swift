@@ -179,6 +179,10 @@ final class LiveTVInitialLoadingHostedTests: XCTestCase {
             let heroPresentation = geometry.presentedFrames.filter { $0.key != "page" }
             // Opening the rail above deliberately gives it focus. Once the saved
             // channel is visible, exercise entry rather than expecting load to steal it.
+            let rowDeadline = ContinuousClock.now + .seconds(5)
+            while geometry.guide?.visibleCells.first == nil, ContinuousClock.now < rowDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
             let cell = try XCTUnwrap(geometry.guide?.visibleCells.first)
             let system = try XCTUnwrap(UIFocusSystem.focusSystem(for: window))
             let owner = try XCTUnwrap(NavigationRailFocusHostController.containing(cell))

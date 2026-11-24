@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resolve explicitly declared fixes after external TestFlight delivery, without an LLM."""
+"""Close explicitly declared main fixes and separately notify verified TestFlight delivery."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 from urllib.parse import quote
 
 
@@ -27,7 +28,7 @@ PLATFORMS = {"tvOS": "TV_OS", "iOS": "IOS"}
 NAMES = {"tvOS": "Apple TV", "iOS": "iPhone and iPad"}
 DECLARATION_KEYS = ("TestFlight-Issue:", "TestFlight-Fix:")
 TRAILER = re.compile(
-    r"(?:TestFlight-Issue: |TestFlight-Fix: #)([1-9][0-9]*) \[(tvOS|iOS|tvOS,iOS|iOS,tvOS)\]"
+    r"(?:TestFlight-Issue: |TestFlight-Fix: #)([1-9][0-9]*) \[(tvOS|iOS|tvOS, *iOS|iOS, *tvOS)\]"
 )
 SESSION_FOOTER = re.compile(
     r"\n\n+(Copilot-Session: [0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\s*\Z"
@@ -79,7 +80,7 @@ def commit_declarations(commit, body):
         if number in seen:
             raise InvalidDeclaration(f"{commit}: issue #{number} is declared more than once.")
         seen.add(number)
-        result.append({"issue": number, "commit": commit, "platforms": sorted(match[2].split(","))})
+        result.append({"issue": number, "commit": commit, "platforms": sorted(p.strip() for p in match[2].split(","))})
     return result
 
 
@@ -115,7 +116,8 @@ def declared_fixes(sources=("HEAD",)):
                 if ancestor(commit, previous["commit"]):
                     continue
                 if not ancestor(previous["commit"], commit):
-                    failures.append(f"Issue #{number} has competing fixes; add one final declaration after integration.")
+                    pair = ", ".join(sorted((commit, previous["commit"])))
+                    failures.append(f"Issue #{number} has competing fixes ({pair}); add one final declaration after integration.")
                     competing.add(number)
                     continue
             fixes[number] = fix
@@ -135,6 +137,19 @@ def declared_fixes(sources=("HEAD",)):
         (fix for number, fix in fixes.items() if number not in competing),
         key=lambda item: item["issue"],
     ), failures
+
+
+def lint_declarations(base, head):
+    base, head = (git("rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}") for ref in (base, head))
+    if not git("log", "-1", "--format=%H", "--grep=^TestFlight-Issue:", "--grep=^TestFlight-Fix:", f"{base}..{head}"):
+        return
+    _, existing = declared_fixes((base,))
+    _, proposed = declared_fixes((base, head))
+    problems = sorted(set(proposed) - set(existing))
+    for sha in git("log", "--format=%H", "--grep=^TestFlight-Fix:", f"{base}..{head}").splitlines():
+        problems.append(f"{sha}: use TestFlight-Issue: N [platforms], not the GitHub closing keyword TestFlight-Fix.")
+    if problems:
+        raise Error("\n".join(problems))
 
 
 def verified_release_source(release):
@@ -157,7 +172,7 @@ def delivered_releases(apple, github, minimum):
     return result
 
 
-def resolution_body(receipt):
+def resolution_body(receipt, *, on_main=False, delivery_known=True):
     metadata = BRIDGE.RESOLUTION_HEADER + json.dumps(receipt, sort_keys=True, separators=(",", ":")) + " -->"
     lines = []
     for platform in BRIDGE.RESOLUTION_PLATFORMS:
@@ -170,9 +185,12 @@ def resolution_body(receipt):
     missing = set(receipt["platforms"]) - set(receipt["deliveries"])
     if missing:
         names = ", ".join(NAMES[p] for p in BRIDGE.RESOLUTION_PLATFORMS if p in missing)
-        text = f"Implemented; **awaiting external TestFlight availability for {names}**. This issue stays open until delivery."
+        text = (f"Fixed on `main`. The fix is coming in the next TestFlight release for {names}."
+                if on_main else f"Implemented; **awaiting external TestFlight availability for {names}**.")
+        if on_main and not delivery_known:
+            text = f"Fixed on `main`. External TestFlight availability has not yet been verified for {names}."
     elif receipt["status"] == "awaiting_release":
-        text = "Delivery history is recorded below. This issue stays open until a qualifying build is currently available on every affected platform."
+        text = "Delivery history is recorded below. A current build has not been verified for every affected platform."
     else:
         text = f"The fix has reached external TestFlight testers. [Update in TestFlight]({ANNOUNCEMENTS.TESTFLIGHT})."
     if lines:
@@ -222,7 +240,7 @@ def ensure_awaiting_label(github, issue):
     github.call("POST", f"/repos/{BRIDGE.REPO}/issues/{issue['number']}/labels", {"labels": [AWAITING_LABEL]})
 
 
-def resolve_issues(github, fixes, releases, *, publish=False):
+def resolve_issues(github, fixes, releases, *, publish=False, delivery_known=True):
     failures = []
     for fix in fixes:
         number = fix["issue"]
@@ -231,10 +249,17 @@ def resolve_issues(github, fixes, releases, *, publish=False):
             issue = github.call("GET", path)
             if "pull_request" in issue:
                 raise Error(f"#{number} is a pull request, not an issue.")
-            if issue["state"] != "open":
+            closed = issue["state"] == "closed"
+            if closed and (issue.get("state_reason") != "completed" or
+                           AWAITING_LABEL not in {label["name"] for label in issue.get("labels", [])}):
                 continue
             comments = github.pages(path + "/comments")
             comment, receipt = fix_record(comments, fix)
+            if closed and comment is None and not any(
+                prior and prior["status"] == "awaiting_release" and ancestor(prior["commit"], fix["commit"])
+                for prior in (BRIDGE.release_resolution(c, number) for c in comments)
+            ):
+                continue  # Follow a superseding declaration, but never enroll by label alone.
             previously_delivered = receipt["status"] == "delivered"
             declared_at = datetime.fromisoformat(git("show", "-s", "--format=%cI", fix["commit"]))
             if was_reopened(github, number, declared_at):
@@ -243,6 +268,7 @@ def resolve_issues(github, fixes, releases, *, publish=False):
             if reverted(fix["commit"], "HEAD"):
                 print(f"WARNING: issue #{number}'s fixing commit was reverted; leaving it open.")
                 continue
+            on_main = ancestor(fix["commit"], "HEAD")
             available = set()
             for release in releases:
                 if not ancestor(fix["commit"], release["source"]) or reverted(fix["commit"], release["source"]):
@@ -254,15 +280,23 @@ def resolve_issues(github, fixes, releases, *, publish=False):
                             key: release[key] for key in ("build", "version", "tag", "source")
                         })
             ready = available == set(fix["platforms"])
+            if not on_main and not available:
+                continue
             if ready:
                 receipt["status"] = "delivered"
-            body = resolution_body(receipt)
-            print(f"Issue #{number}: {'delivered; close' if ready else 'awaiting release'} ({'sync' if publish else 'check'})")
+            elif previously_delivered:
+                if not on_main:
+                    continue
+                # Finish interrupted main closure/label cleanup without announcing delivery again.
+                ready = True
+            body = resolution_body(receipt, on_main=on_main, delivery_known=delivery_known)
+            close = not closed and (on_main or ready)
+            print(f"Issue #{number}: {receipt['status']}{'; close' if close else ''} ({'sync' if publish else 'check'})")
             if not publish:
                 continue
             # Recheck after the source/API reads; do not overwrite a new human decision.
             current = github.call("GET", path)
-            if current["state"] != "open" or current["updated_at"] != issue["updated_at"]:
+            if current["state"] != issue["state"] or current["updated_at"] != issue["updated_at"]:
                 print(f"WARNING: issue #{number} changed during verification; deferred to the next run.")
                 continue
             if comment is None or (ready and not previously_delivered):
@@ -271,65 +305,94 @@ def resolve_issues(github, fixes, releases, *, publish=False):
                 github.call("PATCH", f"/repos/{BRIDGE.REPO}/issues/comments/{comment['id']}", {"body": body})
             if not ready:
                 ensure_awaiting_label(github, current)
-                continue
             if was_reopened(github, number, declared_at):
                 print(f"WARNING: issue #{number} was reopened during notification; not closing it.")
                 continue
             current = github.call("GET", path)
-            if current["state"] != "open":
+            if current["state"] != issue["state"]:
                 continue
-            if AWAITING_LABEL in {label["name"] for label in current.get("labels", [])}:
+            if ready and AWAITING_LABEL in {label["name"] for label in current.get("labels", [])}:
                 github.call("DELETE", path + "/labels/" + quote(AWAITING_LABEL, safe=""))
+            if not close:
+                continue
             github.call("PATCH", path, {"state": "closed", "state_reason": "completed"})
             verified = github.call("GET", path)
             if verified["state"] != "closed" or verified.get("state_reason") != "completed":
                 raise Error(f"Issue #{number}'s completed state did not persist.")
         except (Error, ValueError, KeyError, TypeError) as error:
             detail = str(error) if isinstance(error, Error) else "Invalid resolution metadata or API response."
-            failures.append(f"Issue #{number}: {detail}")
-    if failures:
-        raise Error("\n".join(failures))
+            failures.append((error, f"Issue #{number}: {detail}"))
+    BRIDGE.raise_sync_failures(failures)
+
+
+CHECK_ERRORS = (Error, ValueError, KeyError, TypeError, subprocess.SubprocessError)
+
+
+def diagnostic(level, message):
+    for line in message.splitlines():
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            print(f"::{level}::{line.replace('%', '%25')}", flush=True)
+        else:
+            print(f"{level.upper()}: {line}", file=sys.stderr)
+
+
+def synchronize(publish):
+    if publish and os.environ.get("TESTFLIGHT_RESOLUTION_ENABLED") != "true":
+        raise Error("TestFlight issue resolution is not explicitly enabled.")
+    github = BRIDGE.API("GitHub", os.environ.get("GITHUB_TOKEN"), write=publish)
+    failures = []
+    releases = []
+    try:
+        releases = delivered_releases(
+            BRIDGE.API("App Store Connect", ANNOUNCEMENTS.apple_token()), github,
+            NOTES.build_parts(os.environ.get("TESTFLIGHT_DISCORD_MIN_BUILD", "")),
+        )
+    except CHECK_ERRORS as error:
+        failures.append((error, str(error) if isinstance(error, Error) else "External release verification failed."))
+    try:
+        fixes, declaration_failures = declared_fixes(("HEAD", *(release["source"] for release in releases)))
+        for warning in declaration_failures:
+            diagnostic("warning", warning)
+        resolve_issues(github, fixes, releases, publish=publish, delivery_known=not failures)
+        if not fixes:
+            print("No eligible TestFlight declarations on main or available release tags; no GitHub issues changed.")
+    except CHECK_ERRORS as error:
+        failures.append((error, str(error) if isinstance(error, Error) else "Invalid release metadata or source history."))
+    if os.environ.get("DISCORD_BRIDGE_ENABLED") == "true":
+        try:
+            BRIDGE.sync_release_resolutions(
+                BRIDGE.API("Discord", os.environ.get("DISCORD_BOT_TOKEN"), write=publish),
+                github, publish=publish,
+            )
+        except Error as error:
+            failures.append((error, str(error)))
+    else:
+        print("Discord issue mirroring is disabled; no Discord posts changed.")
+    BRIDGE.raise_sync_failures(failures)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("check", "sync"), default="check")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--lint", nargs=2, metavar=("BASE", "HEAD"), help="Check incoming declarations offline.")
+    mode.add_argument("--mode", choices=("check", "sync"), default="check")
+    parser.add_argument("--recover", action="store_true", help="Retry once after a temporary service failure.")
     args = parser.parse_args()
-    publish = args.mode == "sync"
-    try:
-        if publish and os.environ.get("TESTFLIGHT_RESOLUTION_ENABLED") != "true":
-            raise Error("TestFlight issue resolution is not explicitly enabled.")
-        github = BRIDGE.API("GitHub", os.environ.get("GITHUB_TOKEN"), write=publish)
-        failures = []
+    for attempt in range(2):
         try:
-            releases = delivered_releases(
-                BRIDGE.API("App Store Connect", ANNOUNCEMENTS.apple_token()), github,
-                NOTES.build_parts(os.environ.get("TESTFLIGHT_DISCORD_MIN_BUILD", "")),
-            )
-            fixes, declaration_failures = declared_fixes(("HEAD", *(release["source"] for release in releases)))
-            failures.extend(declaration_failures)
-            resolve_issues(github, fixes, releases, publish=publish)
-            if not fixes:
-                print("No eligible TestFlight declarations on main or available release tags; no GitHub issues changed.")
-        except (Error, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
-            failures.append(str(error) if isinstance(error, Error) else "Invalid release metadata or source history.")
-        if os.environ.get("DISCORD_BRIDGE_ENABLED") == "true":
-            try:
-                BRIDGE.sync_release_resolutions(
-                    BRIDGE.API("Discord", os.environ.get("DISCORD_BOT_TOKEN"), write=publish),
-                    github, publish=publish,
-                )
-            except Error as error:
-                failures.append(str(error))
-        else:
-            print("Discord issue mirroring is disabled; no Discord posts changed.")
-        if failures:
-            raise Error("\n".join(failures))
-    except (Error, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
-        detail = str(error) if isinstance(error, Error) else "Invalid configuration, source history, or API response."
-        print(f"ERROR: {detail}", file=sys.stderr)
-        return 1
-    return 0
+            if args.lint:
+                lint_declarations(*args.lint)
+            else:
+                synchronize(args.mode == "sync")
+            return 0
+        except CHECK_ERRORS as error:
+            detail = str(error) if isinstance(error, Error) else "Invalid configuration, source history, or API response."
+            if args.recover and not args.lint and not attempt and BRIDGE.retryable_failure(error):
+                diagnostic("warning", f"{detail}\nRetrying once in 20 seconds with fresh remote state.")
+                time.sleep(20)
+                continue
+            diagnostic("error", detail)
+            return 1
 
 
 if __name__ == "__main__":

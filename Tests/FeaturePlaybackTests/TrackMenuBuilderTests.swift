@@ -256,6 +256,42 @@ final class TrackMenuBuilderTests: XCTestCase {
             + Text(LocalizedStringResource("Audio Description", locale: Locale(identifier: "en"))) + Text(verbatim: ")"))
     }
 
+    func testCompactDDPNamesShowTheFormatWithoutBTMAndPreserveAuthoredMixNames() {
+        func track(_ id: Int, _ language: String, _ title: String, atmos: Bool = false) -> MediaTrack {
+            .init(id: id, kind: .audio, displayTitle: title, sourceTitle: title, language: language,
+                  codec: "eac3", channels: 6, isAtmos: atmos)
+        }
+        let tracks = [track(1, "en", "BTM DDP5.1 Atmos", atmos: true), track(2, "en", "BTM DDP5.1"),
+                      track(3, "fr", "BTM DDP5.1")]
+        func rows(_ input: [MediaTrack]) -> [String] {
+            TrackMenuBuilder.audioOptions(tracks: input, selectedID: 1, preferred: [],
+                                         locale: Locale(identifier: "en")).map(\.nativeTitle)
+        }
+        XCTAssertEqual(rows(tracks), ["English (Dolby Digital+ Atmos)", "English (Dolby Digital+ 5.1)",
+                                      "French (Dolby Digital+ 5.1)"])
+        XCTAssertEqual(rows([tracks[1], track(4, "en", "Director mix")]),
+                       ["English (Dolby Digital+ 5.1)", "English (Director mix, Dolby Digital+ 5.1)"])
+        var untaggedLanguage = tracks[1]
+        untaggedLanguage.language = nil
+        XCTAssertEqual(rows([untaggedLanguage]), ["Dolby Digital+ 5.1"])
+        var serverTracks = tracks
+        serverTracks[0].displayTitle = "BTM DDP5.1 Atmos - English - Dolby Digital Plus + Dolby Atmos - Default"
+        serverTracks[1].displayTitle = "BTM DDP5.1 - English - Dolby Digital+"
+        XCTAssertEqual(rows(serverTracks), rows(tracks))
+    }
+
+    func testRegionalSubtitleRolesAreShownOnceAndFullIsOnlyAuthored() {
+        let names = ["French (France) SDH", "French (France) (Forced)", "French (France)", "FULL"]
+        let tracks = names.enumerated().map { i, title in
+            MediaTrack(id: i, kind: .subtitle, displayTitle: title, sourceTitle: title, language: "fr",
+                       codec: "srt", isForced: i == 1, isHearingImpaired: i == 0)
+        }
+        let options = TrackMenuBuilder.subtitleOptions(tracks: tracks, selectedID: 2, preferred: [],
+                                                       detectedLanguages: [:], locale: Locale(identifier: "en"))
+        XCTAssertEqual(options.map(\.nativeTitle), ["Off", "French (France) (SDH)", "French (France) (Forced)",
+                                                    "French (France)", "French (FULL)"])
+    }
+
     func testSampledServerMetadataHasDistinctLabelsAndStableSelections() throws {
         guard let path = ProcessInfo.processInfo.environment["PLOZZ_TRACK_METADATA_CORPUS"] else {
             throw XCTSkip("Set PLOZZ_TRACK_METADATA_CORPUS to a private, normalized metadata sample.")

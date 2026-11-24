@@ -33,6 +33,8 @@ final class ShareProviderCapabilityTests: XCTestCase {
         var movieSortRequests: [CoreModels.SortDescriptor] = []
         var sortedSeriesItems: [SortField: [MediaItem]] = [:]
         var seriesSortRequests: [CoreModels.SortDescriptor] = []
+        var watchIdentities: [(season: Int, logicalKey: String, fileID: String)] = []
+        var watchIdentityRequests: [String] = []
 
         func libraryCounts() async -> (movies: Int, tvSeries: Int, animeSeries: Int) {
             (movieItems.count, seriesItems.count, animeSeriesCount)
@@ -76,7 +78,10 @@ final class ShareProviderCapabilityTests: XCTestCase {
         func episodes(seriesKey: String, season: Int) async -> [MediaItem] { [] }
         func episodeWatchIdentities(
             seriesKey: String
-        ) async -> [(season: Int, logicalKey: String, fileID: String)] { [] }
+        ) async -> [(season: Int, logicalKey: String, fileID: String)] {
+            watchIdentityRequests.append(seriesKey)
+            return watchIdentities
+        }
         func item(id: String) async -> MediaItem? { indexedItem[id] }
         func defaultMovieRelPath(forKey key: String) async -> String? {
             defaultMoviePaths[key]
@@ -1140,9 +1145,91 @@ final class ShareProviderCapabilityTests: XCTestCase {
         XCTAssertFalse(stamped.isPlayed)
     }
 
-    /// Containers (series/season/folder/collection) carry no watch record, so
-    /// stamping must not mutate them (and must not query the catalog).
-    func testWatchStateServiceSkipsContainers() async throws {
+    @MainActor
+    func testTrackerResumeRequiresMeasurementOfCurrentUnambiguousFile() async throws {
+        let session = makeSession()
+        let account = Account(id: session.server.id, from: session)
+        let scope = WatchMutationServerScope(profile: .init(id: "profile", name: "Test"), accounts: [account])
+        let path = "movie.mkv"
+        var movie = MediaItem(id: "movie:test", title: "Movie", kind: .movie, runtime: 600,
+                              providerIDs: ["Tmdb": "550"], versions: [MediaVersion(id: path)])
+        let reader = FakeCatalogReader()
+        reader.indexedItem[movie.id] = movie
+        reader.defaultMoviePaths["test"] = path
+        let fs = CapabilityFakeFileSystem(entries: [])
+        func entry(_ changeToken: String?) throws -> RemoteFileEntry {
+            try .init(relativePath: path, kind: .file, size: 4096,
+                      modifiedAt: Date(timeIntervalSince1970: 10), changeToken: changeToken)
+        }
+        await fs.setStatEntry(try entry("original"))
+        let provider = ShareProvider(
+            session: session, sessionFactory: { try CapabilityFakeSession(fileSystem: fs, role: $0) },
+            catalogCoordinator: FakeCatalogCoordinator(reader: reader)
+        )
+        let source = TrackerServerHistorySource(
+            scope: scope, accounts: [], resolveProvider: { _ in provider }, isAuthorized: { true },
+            isPlaying: { _, _ in false }
+        )
+        let snapshot = try TrackerHistorySnapshot(trackerID: "test", connectionID: "c", observations: [
+            try TrackerHistoryObservation(recordID: "resume", kind: .movie, identities: [.external(source: "tmdb", value: "550")],
+                                          fact: .resume(seconds: 120, runtime: 596.48, updatedAt: nil))
+        ], expectedCount: 1)
+        func compare() async throws -> TrackerHistoryImportPlan.Comparison? {
+            let item = try await source.item(accountID: account.id, itemID: movie.id)
+            return TrackerHistoryImportPlan(snapshot: snapshot, serverScope: scope, candidates: [
+                .init(accountID: account.id, item: item, canWriteWatched: true, canWriteResume: true, isPlaying: false)
+            ]).rows.first?.comparison
+        }
+
+        let request = try await provider.playbackInfo(for: movie.id)
+        let revision = try XCTUnwrap(request.sourceMetadata?.sourceRevision)
+        try await provider.reportPlayback(.init(itemID: movie.id, playSessionID: nil, positionSeconds: 120,
+                                               isPaused: true, durationSeconds: 596.48, measuredFileRevision: revision),
+                                          event: .pause)
+        try await provider.setResumePosition(0, itemID: movie.id, capturedAt: Date())
+        let sameFile = try await compare()
+        XCTAssertEqual(sameFile, .ready, "Measured 596.48 supersedes the same file's rounded NFO of 600")
+
+        await fs.setStatEntry(try entry("replacement"))
+        let replaced = try await compare()
+        XCTAssertEqual(replaced, .incompatibleRuntime, "Same canonical ID, path, size and mtime; different file revision")
+        let detail = try await provider.item(id: movie.id)
+        XCTAssertEqual(detail.runtime, 600)
+
+        await fs.setStatEntry(try entry(nil))
+        let unavailable = try await compare()
+        XCTAssertEqual(unavailable, .incompatibleRuntime)
+        await fs.setStatEntry(try entry("original"))
+        movie.versions.append(MediaVersion(id: "extended.mkv"))
+        reader.indexedItem[movie.id] = movie
+        let ambiguous = try await compare()
+        XCTAssertEqual(ambiguous, .incompatibleRuntime)
+    }
+
+    func testUnboundLegacyDurationStillDrivesUIButNotTrackerEvidence() async throws {
+        let service = ShareWatchStateService(watchStore: makeWatchStore(), accountID: "acct", catalog: { FakeCatalogReader() })
+        let item = MediaItem(id: "f:m.mkv", title: "Movie", kind: .movie)
+        await service.recordPlayback(.init(itemID: item.id, playSessionID: nil, positionSeconds: 120,
+                                           isPaused: true, durationSeconds: 596.48), event: .pause)
+        let detail = await service.stamp(item)
+        let tracker = try await service.stampForTracker(item) { _ in "current" }
+        XCTAssertEqual(detail.runtime, 596.48)
+        XCTAssertEqual(detail.resumePosition, 120)
+        XCTAssertNil(tracker.runtime)
+    }
+
+    func testInvalidPlaybackDurationDoesNotReplaceCatalogRuntime() {
+        var movie = MediaItem(id: "movie:test", title: "Movie", kind: .movie)
+        movie.runtime = 600
+        for duration: TimeInterval in [.infinity, .nan, 0, -1] {
+            let record = ShareWatchStore.Record(position: 120, played: false, updatedAt: Date(), duration: duration)
+            let stamped = ShareWatchStateService.stamped(movie, with: record)
+            XCTAssertEqual(stamped.runtime, 600)
+            XCTAssertNil(stamped.playedPercentage)
+        }
+    }
+
+    func testWatchStateServiceLeavesEmptySeriesUnwatched() async throws {
         let reader = FakeCatalogReader()
         let service = ShareWatchStateService(
             watchStore: makeWatchStore(),
@@ -1155,6 +1242,25 @@ final class ShareProviderCapabilityTests: XCTestCase {
 
         XCTAssertNil(stamped.resumePosition)
         XCTAssertFalse(stamped.isPlayed)
+    }
+
+    func testContainerPageReadsEpisodeIdentitiesOncePerSeries() async throws {
+        let reader = FakeCatalogReader()
+        reader.watchIdentities = [
+            (season: 1, logicalKey: "1", fileID: "f:first.mkv"),
+            (season: 2, logicalKey: "1", fileID: "f:second.mkv"),
+        ]
+        let watch = makeWatchStore()
+        await watch.setPlayed(true, itemID: "f:first.mkv", capturedAt: Date())
+        let service = ShareWatchStateService(watchStore: watch, accountID: "acct", catalog: { reader })
+        let page = await service.stamp([
+            MediaItem(id: "series:x", title: "Series", kind: .series),
+            MediaItem(id: "season:x:1", title: "First", kind: .season),
+            MediaItem(id: "season:x:2", title: "Second", kind: .season),
+        ])
+        XCTAssertEqual(reader.watchIdentityRequests, ["x"])
+        XCTAssertEqual(page.map(\.unwatchedEpisodeCount), [1, 0, 1])
+        XCTAssertEqual(page.map(\.isPlayed), [false, true, false])
     }
 
     /// Continue Watching folds several legacy per-file records onto one canonical
@@ -1265,7 +1371,8 @@ private final class CapabilityFakeSession: MediaTransportSession, @unchecked Sen
     func isHealthy() async -> Bool { true }
 }
 
-private final class CapabilityFakeFileSystem: MediaTransportFileSystem, @unchecked Sendable {
+private actor CapabilityFakeFileSystem: MediaTransportFileSystem {
+    private var statEntry: RemoteFileEntry?
     private let entries: [RemoteFileEntry]
     private let directories: [String: [RemoteFileEntry]]
 
@@ -1293,7 +1400,10 @@ private final class CapabilityFakeFileSystem: MediaTransportFileSystem, @uncheck
         relativePath.isEmpty ? entries : directories[relativePath] ?? []
     }
 
+    func setStatEntry(_ entry: RemoteFileEntry) { statEntry = entry }
+
     func stat(relativePath: String) async throws -> RemoteFileEntry {
+        if let statEntry, statEntry.relativePath == relativePath { return statEntry }
         throw MediaTransportError.unsupportedCapability("stat")
     }
 

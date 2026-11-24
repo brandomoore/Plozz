@@ -52,6 +52,22 @@ final class DiagnosticsSharingInteractionTests: XCTestCase {
         XCTAssertTrue(send.isEnabled)
         send.tap()
         XCTAssertEqual(app.staticTexts["diagnostics-submission-count"].label, "1")
+        XCTAssertTrue(app.staticTexts["Diagnostics submitted for delivery. Thank you."].waitForExistence(timeout: 5))
+        XCTAssertNotEqual(message.value as? String, "Silo search returned no matches")
+        XCTAssertFalse(send.isEnabled)
+    }
+
+    func testFailedSubmissionKeepsDraftForRetry() {
+        launch(arguments: ["--diagnostics-enabled", "--diagnostics-fail"])
+        let field = messageField
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("Sync stopped")
+        let send = app.buttons["diagnostics-submit"]
+        send.tap()
+        XCTAssertEqual(app.staticTexts["diagnostics-submission-count"].label, "1")
+        XCTAssertEqual(field.value as? String, "Sync stopped")
+        XCTAssertTrue(send.isEnabled)
     }
 
     func testOnboardingInfoUsesNeutralThemeInk() throws {

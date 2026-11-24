@@ -7,7 +7,6 @@ import FeatureHomeCore
 import FeaturePlayback
 import MediaDownloads
 import MetadataKit
-import RatingsService
 import SeerService
 import TraktService
 import SwiftUI
@@ -28,7 +27,7 @@ struct PlozziOSItemDetailView: View {
     @Environment(HomeViewModel.self) private var homeViewModel: HomeViewModel?
     @Environment(\.locale) private var locale
     let appModel: PlozziOSAppModel
-    let provider: any MediaProvider
+    let provider: (any MediaProvider)?
     let item: MediaItem
     let seerService: SeerService?
     let originSourceAccountID: String?
@@ -43,7 +42,7 @@ struct PlozziOSItemDetailView: View {
 
     init(
         appModel: PlozziOSAppModel,
-        provider: any MediaProvider,
+        provider: (any MediaProvider)?,
         item: MediaItem,
         seerService: SeerService? = nil,
         originSourceAccountID: String? = nil,
@@ -93,13 +92,13 @@ struct PlozziOSItemDetailView: View {
     private var detailBody: some View {
         if let collection = CollectionBrowseRoute(
             item: item,
-            fallbackAccountID: originSourceAccountID ?? provider.session.server.id
+            fallbackAccountID: originSourceAccountID ?? provider?.session.server.id
         ) {
             PlozziOSLibraryDestinationView(
                 appModel: appModel,
                 route: PlozziOSLibraryRoute(collection: collection)
             )
-        } else if let library = MediaFolderNavigation.library(
+        } else if let provider, let library = MediaFolderNavigation.library(
             for: item,
             providerKind: provider.kind,
             sourceAccountID: originSourceAccountID ?? item.sourceAccountID ?? provider.session.server.id
@@ -146,22 +145,21 @@ struct PlozziOSItemDetailView: View {
             )
         }
         if let model {
-                PlozziOSCanonicalItemDetailView(
-                    appModel: appModel,
-                    provider: provider,
-                    viewModel: model,
-                    seerService: seerService,
-                    playlistOrigin: playlistOrigin,
-                    initialSeasonID: contextItem.kind == .season
-                        ? contextItem.id
-                        : contextItem.kind == .episode ? nil : contextItem.seasonID,
-                    initialEpisode: presentsEpisodeAsSubject && contextItem.kind == .episode
-                        ? contextItem
-                        : nil,
-                    presentsEpisodeAsSubject: presentsEpisodeAsSubject,
-                    openingArtwork: openingArtwork
-                )
-            } else {
+            PlozziOSCanonicalItemDetailView(
+                provider: provider,
+                viewModel: model,
+                seerService: seerService,
+                playlistOrigin: playlistOrigin,
+                initialSeasonID: contextItem.kind == .season
+                    ? contextItem.id
+                    : contextItem.kind == .episode ? nil : contextItem.seasonID,
+                initialEpisode: presentsEpisodeAsSubject && contextItem.kind == .episode
+                    ? contextItem
+                    : nil,
+                presentsEpisodeAsSubject: presentsEpisodeAsSubject,
+                openingArtwork: openingArtwork
+            )
+        } else {
             MediaSourceUnavailableView()
         }
     }
@@ -172,17 +170,20 @@ struct PlozziOSItemDetailView: View {
         let language = locale.identifier
         return DetailOpenEnvironment(
             resolveProvider: { accountID in
-                guard let accountID else { return provider }
-                guard let resolved = appModel.accountsProviders.provider(forAccountID: accountID) else {
-                    throw AppError.unauthorized
+                if let accountID {
+                    guard let resolved = appModel.accountsProviders.provider(forAccountID: accountID) else {
+                        throw AppError.unauthorized
+                    }
+                    return resolved
                 }
-                return resolved
+                guard let provider else { throw AppError.unauthorized }
+                return provider
             },
             resolveOptionalProvider: { appModel.accountsProviders.provider(forAccountID: $0) },
             identitySources: identitySources,
             crossServerSourceResolver: crossServerSourceResolver(in: accounts, identitySources: identitySources),
             continueWatchingSnapshot: { homeViewModel?.continueWatchingForDetail ?? [] },
-            ratingsProvider: RatingsServiceFactory.make(),
+            ratingsProvider: appModel.ratingsProvider,
             metadataLanguage: language,
             localizedDetailMetadataResolver: {
                 await DetailMetadataResolver.household.resolve($0, language: $1)
@@ -215,7 +216,6 @@ struct PlozziOSItemDetailView: View {
             snapshotCache: appModel.detailSnapshotCache
         )
     }
-
 }
 
 
@@ -311,7 +311,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     private let initialSeasonID: String?
     private let initialEpisode: MediaItem?
     private let playlistOrigin: VideoPlaylistPlaybackOrigin?
-    private let originProvider: any MediaProvider
+    private let originProvider: (any MediaProvider)?
     /// Whether the episode is this page's own subject rather than a season/series
     /// page's fronted child — see `showsEpisodeSubjectHero`.
     private let presentsEpisodeAsSubject: Bool
@@ -319,8 +319,7 @@ private struct PlozziOSCanonicalItemDetailView: View {
     private let capabilities = MediaCapabilities.detected()
 
     init(
-        appModel: PlozziOSAppModel,
-        provider: any MediaProvider,
+        provider: (any MediaProvider)?,
         viewModel: ItemDetailViewModel,
         seerService: SeerService? = nil,
         playlistOrigin: VideoPlaylistPlaybackOrigin? = nil,
@@ -1073,10 +1072,15 @@ private struct PlozziOSCanonicalItemDetailView: View {
             return
         }
         let origin = playlistOrigin?.containsSelection(item) == true ? playlistOrigin : nil
-        let playlist = origin.map {
-            VideoPlaylistPlaybackContext(
-                origin: $0, provider: originProvider
-            )
+        let playlist: VideoPlaylistPlaybackContext?
+        if let origin {
+            guard let originProvider else {
+                PlozzLog.app.error("Playlist playback has no authorized source provider")
+                return
+            }
+            playlist = VideoPlaylistPlaybackContext(origin: origin, provider: originProvider)
+        } else {
+            playlist = nil
         }
         // A series can't be played directly (see `playbackTarget`), so resolve
         // its next-up episode first. Every other kind plays as-is.
@@ -3406,6 +3410,7 @@ private struct PlozziOSEpisodeDownloadRow: View {
 
 struct PlozziOSDownloadThumbnail: View {
     @Environment(PlozziOSAppModel.self) private var appModel
+    @Environment(\.locale) private var locale
 
     enum Style {
         case season
@@ -3424,8 +3429,8 @@ struct PlozziOSDownloadThumbnail: View {
                 FallbackAsyncImage(
                     references: item.artworkReferences(for: .poster),
                     variant: .posterCard,
-                    asyncFallbackURL: {
-                        await ArtworkRouter.shared.artworkURL(.poster, for: item)
+                    asyncFallbackURL: { [language = locale.identifier] in
+                        await ArtworkRouter.shared.artworkURL(.poster, for: item, language: language)
                     },
                     pinIdentity: item.stablePresentationID
                 ) {
@@ -3904,6 +3909,7 @@ private struct PlozziOSInlineEpisodeSkeleton: View {
 }
 
 struct PlozziOSInlineEpisodeEntry: View {
+    @ScaledMetric(relativeTo: .subheadline) private var overviewFontSize: CGFloat = 15
     @Environment(\.plozzCardCaptionSettings) private var captionSettings
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozzCardStyle) private var cardStyle
@@ -3935,14 +3941,17 @@ struct PlozziOSInlineEpisodeEntry: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing) {
+        let spoilers = appModel.settings.spoilers.settings
+        let hidesText = spoilers.shouldHideText(for: episode)
+        let title = hidesText ? Text(spoilers.maskedTitle(for: episode)) : Text(verbatim: episode.title)
+        return VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing) {
             Button {
                 onPlay(episode, false)
             } label: {
                 episodeArtwork
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text(verbatim: episode.title))
+            .accessibilityLabel(title)
             // An unreleased episode has no file behind it, so tapping it can only
             // fail. It stays visible and legible — that IS the information — but
             // is inert, and its actions menu is withdrawn since none apply.
@@ -3960,7 +3969,7 @@ struct PlozziOSInlineEpisodeEntry: View {
                         )
                         .contentShape(Circle())
                 }
-                .accessibilityLabel("More actions for \(episode.title)")
+                .accessibilityLabel("More actions for \(title)")
                 .opacity(episode.isUpcomingUnaired ? 0 : 1)
                 .disabled(episode.isUpcomingUnaired)
             }
@@ -3998,25 +4007,30 @@ struct PlozziOSInlineEpisodeEntry: View {
 
             if captionSettings.showsLabels(in: .episodes) {
                 VStack(alignment: .leading, spacing: 3) {
-                    if let number = episode.episodeNumber {
+                    if !hidesText, let number = episode.episodeNumber {
                         Text("Episode \(number)")
                             .font(.caption2.weight(.semibold))
                             .textCase(.uppercase)
                             .plozzForeground(.secondary)
                     }
-                    Text(episode.title)
+                    title
                         .font(.headline)
                         .lineLimit(1)
                     if let overview = episode.overview, !overview.isEmpty {
-                        Text(overview.overviewMarkdown ?? AttributedString(overview))
-                            .font(.subheadline)
-                            .plozzForeground(.secondary)
-                            .lineLimit(2)
-                            .frame(
-                                maxWidth: .infinity,
-                                minHeight: 40,
-                                alignment: .topLeading
-                            )
+                        Group {
+                            if hidesText {
+                                SpoilerSafeOverviewText(
+                                    overview: overview, hidesSpoilers: true, mode: spoilers.mode,
+                                    lineCount: 2, fontSize: overviewFontSize, reservesSpace: false
+                                )
+                            } else {
+                                Text(overview.overviewMarkdown ?? AttributedString(overview))
+                                    .font(.subheadline)
+                                    .plozzForeground(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 40, alignment: .topLeading)
                     } else {
                         Color.clear.frame(height: 40).accessibilityHidden(true)
                     }
@@ -4051,16 +4065,9 @@ struct PlozziOSInlineEpisodeEntry: View {
     }
 
     private var episodeArtwork: some View {
-        // `.episodeThumbnail` rather than a hand-rolled `backdropURL ?? posterURL`:
-        // `backdropURL` is the SHOW's artwork, so preferring it showed series art
-        // on every episode row here while tvOS — which uses the shared placement —
-        // was correct. Going through the placement also picks up the external
-        // artwork fallback when a server has no still of its own.
-        FallbackAsyncImage(
-            references: episode.artworkReferences(for: .episodeThumbnail),
-            variant: .landscapeCard,
-            asyncFallbackURL: { await ArtworkRouter.shared.artworkURL(.thumbnail, for: episode) },
-            pinIdentity: episode.stablePresentationID
+        PlozziOSEpisodeStill(
+            item: episode, spoilers: appModel.settings.spoilers.settings,
+            showsPlaceholderWhileLoading: !captionSettings.showsLabels(in: .episodes)
         ) {
             // Shared with the tvOS cards so a missing episode still looks the same
             // on every platform; this was a bare filled rectangle with no glyph.
@@ -4072,7 +4079,6 @@ struct PlozziOSInlineEpisodeEntry: View {
                 ).titleLine
             )
         }
-        .showingPlaceholderWhileLoading(!captionSettings.showsLabels(in: .episodes))
         .frame(width: cardWidth, height: cardWidth * 9 / 16)
         .overlay {
             // The shared wash — this card's own gradient is where it came from.

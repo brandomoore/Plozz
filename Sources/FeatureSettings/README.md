@@ -1,5 +1,47 @@
 # FeatureSettings
 
+**Tracker v1 exposure:** Connecting a tracker starts its supported tracking activity.
+The first switch is named for the service (for example, **Use Trakt**). Turning it off
+pauses tracking without disconnecting. **Watch history** groups 2-way sync, its libraries
+and the last result. An **Experimental** badge appears beside **2-way sync** before and after
+opt-in; it does not apply to playback reporting. Library controls are hidden when 2-way sync is off. Turning it on
+asks which libraries to sync; canceling reads no history and leaves sync off. **Start sync**
+enrolls only the confirmed libraries. Once enabled, one library displays its name and badge directly. For multiple libraries,
+the collapsed row shows the selected count; expanding it lists each library once with its badge and switch.
+On mobile, the Settings list must show the entire sync error at the available width.
+While a check is running, its current stage and available page counts replace **Sync now**.
+Wrapped errors use the same inner clearance as Settings descriptions; the group owns the horizontal inset.
+**Account** groups connection status and account actions. Every tracker uses a red **Disconnect** button.
+**2-way sync** brings supported
+tracker activity into matching titles on selected media shares in Plozz. Enabling sync
+imports existing watches and supported paused positions without a second confirmation.
+For Plex, Emby, Silo, and Jellyfin libraries, Plozz can report playback to the tracker,
+but 2-way sync does not import watch history back into those libraries.
+One-time imports and exports, PublicMetaDB watchlists, history management, ratings, contributions,
+discovery, external-ID tools, and the Last.fm listening-history browser are not v1 destinations.
+The implementation notes for those tools below describe deferred code, not shipping entry points.
+
+PublicMetaDB catalog labels load verified title names, retaining the exact TMDB
+ID and child coordinates as a fallback when lookup is unavailable. **Open title
+in Plozz** uses the shell's normal detail route rather than a second playback or
+request implementation. Child history uses **Open show in Plozz** because server
+episode numbering must be resolved by the normal show page.
+
+PublicMetaDB confirmations compose every paragraph into one localized `Text`
+through `publicMetaDBConfirmationMessage`. Native dialogs can omit sibling
+message views, hiding visibility, propagation or publication disclosures.
+Keep the reviewed date or vote details in that same message.
+
+PublicMetaDB contribution reads belong to the enclosing page's
+`publicMetaDBRead` modifier, never to the lazy rows emitted by
+`PublicMetaDBReadContent`. Result-row appearance must not start another request.
+The shared read model fences connection, selection, refresh and disabled scopes;
+each action remains a separate native row. Rating browsing can show an explicitly
+capped collection, but contribution changes still require complete readback.
+Single and batch rating scores use native menu pickers with explicit accessible
+labels and values. Do not rely on the automatic tvOS picker style: it compresses
+all 101 scores into an unreadable segmented control.
+
 The household Sources page places Add Source before saved sources on TV and
 mobile. On TV, Add Source is also the workspace entry focus target and occupies
 its own connected card above saved sources, using the same grouped surfaces as Audio. IPTV source
@@ -12,13 +54,168 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+On Apple TV, a newly opened Settings page should focus its first enabled
+content control, not the Back button. Back remains reachable with the remote.
+
+PublicMetaDB connection and tracking settings are shared across TV and mobile.
+**Connect PublicMetaDB** opens direct, secure key entry on mobile without
+starting browser pairing. On TV, **Connect PublicMetaDB** immediately starts
+pairing and displays `plozz.app/pmdb`. The QR and short code appear
+when ready. Below them, **Enter API key manually** cancels pairing and
+opens the secure field, including during loading or an outage. The keyboard
+opens only when the viewer selects the field. PublicMetaDB and
+the other trackers share `TrackerConnectedStatus`, including the native-platform
+checkmark and green connected label. Replacement
+still requires confirmation; pairing never enables history or playback consent.
+Cancelling an unfinished or failed replacement restores the saved connection
+through read-only verification. A credential-persistence failure stays visible;
+closing the form cannot imply that the required retry succeeded.
+The replacement and disconnect launchers are ordinary native buttons; only
+their confirmed actions have the destructive role.
+The server watch-status setting explains watched status and playback progress
+without repeating its row label or adding a server-count availability message.
+Native media menus, Picks, list entries and history records share title-level
+controls for explicit tracker history and ratings. Publishing
+and deleting contributions require confirmation and fresh readback; votes use
+the authenticated own-vote field rather than inferring ownership from names.
+Unsupported identity is explained without guessing a match or sending a tracker request.
+External-ID controls retain conflicting contributions and offer reverse lookup,
+explicit publishing after a two-direction conflict review, exact deletion and
+votes. These actions never replace server IDs or episode ordering.
+Anime mapping pages distinguish logical seasons from TMDB coordinates, preserve
+cross-show/specials chunks, and separately confirm whole replacement,
+current-key season deletion and exact-chunk deletion. Cached or uncertain
+readback blocks replay rather than claiming the operation was confirmed.
+Community-rating lookup is a separate, default-off profile preference. Its
+description discloses title lookups and preserves existing ratings/server metadata.
+**Compare watch history** is a separate, one-time import. The review names the
+selected destination: a share changes this profile's history in Plozz; a managed
+server changes that server user's history. An anonymous share displays its name
+without a username. Confirmation does not enable ongoing sync.
+The page owns its ephemeral approval and revokes undelivered work
+on exit. Comparison and export share the grouped Settings result list. Counts,
+status and selected-only filters, title search and bounded pages let users
+review large inventories without bulk selection. Filters never alter the selection;
+competing changes to one destination item cannot be selected together. See
+[PublicMetaDBService](../PublicMetaDBService/README.md) for current
+coverage, history fidelity, and remaining integration work.
+
+**2-way sync** is off until the user enables it on the tracker account page.
+Only Plozz-managed watch state for this profile's selected network libraries can change.
+Enrollment starts the first check immediately. A single eligible share is named at the switch;
+with several shares the user chooses the destinations once. Historical import applies only to
+the originally selected shares and categories. Previously skipped history stays skipped.
+Older watched-only enrollments require a fresh opt-in before progress can be imported.
+Returning to the app checks eligible trackers after the libraries are indexed. Repeated index
+callbacks in the same foreground visit are coalesced; failed checks retain backoff. **Sync now**
+checks all eligible activity present at the start across every selected library in one action.
+Writes are batched internally and checked against current tracker and destination state.
+Disabling 2-way sync leaves reporting on and does not undo updates.
+**Last sync** shows confirmed updates from that check. Expand it for counts by
+library: matching history, skipped comparisons and their reasons, and deferred
+entries. Titles in active playback are deferred until playback ends. An unverified
+update instead names the library to check and is not automatically repeated.
+Older saved results have no per-library breakdown. Opening the result never reads or writes history.
+Pre-beta permissions cannot authorize sync. Opening settings reads no tracker history. The comparison
+entry retains its reviewed snapshot as evidence, not the previous page's write
+authorization; returning to comparison creates a fresh session.
+The comparison distinguishes a previously watched title from one never watched,
+even when the current viewing is incomplete. Its resume position is shown separately.
+
+PublicMetaDB, WeTrakr, Trakt and Simkl offer watched state and compatible resume points. AniList and
+MyAnimeList retain their completed-movie-only import restriction. Unsupported
+categories are neither displayed nor accepted by the controller. Simkl retains its
+activity-gated read path on foreground checks. None installs a polling timer.
+Anime rating, count and list-update edits do not turn an existing completed movie
+into a new completion for automatic import.
+
+Trakt, WeTrakr, Simkl, AniList and MyAnimeList expose **Export server history**, using the shared
+native export page. The user chooses one server user and library, previews,
+selects up to 50 titles, then confirms. AniList and MyAnimeList copy movie
+completion without dates or play counts. WeTrakr copies watched movies and
+exactly identified episodes with known or explicitly unknown dates, never
+repeat plays or whole-show expansion. Trakt requires a known server watch date and
+exact movie or episode/parent identities; undated sources remain unsupported.
+Simkl exports
+only exact movie-catalog matches with explicit known or unknown dates; episodes
+and anime-catalog entries remain unsupported. Existing watches, conflicting progress
+and explicit planned/on-hold/dropped list choices are protected. Back,
+source changes and reopening discard the selection. Mobile pickers, title
+switches and actions occupy separate native List rows; TV uses native directional
+focus. The confirmation discloses tracker-account effects and possible racing
+edits without granting ongoing permission. PublicMetaDB retains its richer
+watched/resume exporter and existing receipt format.
+
+Permissions use the stored connection identity, not a process-local generation.
+Refresh and relaunch preserve it; a fresh sign-in replaces it even if the service
+returns identical token bytes. Disconnect and replacement revoke the device-local
+permission before changing the credential, using its profile namespace even
+if another profile is visible. Failed revocation pauses current-process delivery
+and requires retry rather than claiming durable disconnection.
+PublicMetaDB uses a specific credential-change failure state so this required
+retry is visible instead of being swallowed by the generic unknown-error copy.
+
+Trakt and Simkl use this same comparison and approval page. A paused percentage
+can resume a matched media-share file using that file's measured duration, not a catalog estimate. Episode imports
+require corroborated episode and parent IDs rather than inferred numbering.
+Simkl's aggregate episode counts remain informational, never invented individual
+watches. Its read-only comparison checks activity before fetching changes and
+reconciles removals without clearing server state; see
+[SimklService](../SimklService/README.md).
+WeTrakr uses the same page with complete, cursor-paged individual plays and
+playing-list observations. Unknown watched dates remain unknown. Paused progress
+is eligible only with the tracker-supplied runtime and a compatible server
+runtime; active or runtime-free percentages stay informational. See
+[WeTrakrService](../WetrakrService/README.md#reviewed-server-history-comparison).
+AniList's comparison preserves list status, episode counts, repeats and personal
+scores. Only a completed, exactly matched movie can offer a watched-flag import;
+aggregate series progress never becomes individual episodes. The shared page
+also displays Simkl's aggregate counts without making them importable. See
+[AniListService](../AniListService/README.md).
+MyAnimeList uses the same informational anime-progress presentation and
+completed-movie approval rules; see [MALService](../MALService/README.md).
+The existing TV Last.fm account exposes read-only listening history, separate
+from movie/TV comparison and server play-count changes. See
+[LastFmService](../LastFmService/README.md).
+All connections keep their existing independent playback/watchlist behavior.
+Watchlist destination selection is a separate, device-local profile consent.
+It names the selected list, discloses visibility and cross-destination effects,
+and can be stopped without deleting remote records. Connecting a key does not
+enable this choice automatically.
+Playback reporting has its own confirmation and device-local profile consent.
+It explains progress/completion thresholds and duplicate-reporter limitations,
+shows unresolved delivery failures, and does not authorize history imports.
+Owned PublicMetaDB list management confirms visibility and destructive actions;
+public-list browsing is read-only. Account sheets close on key/profile changes
+so old list choices cannot be applied under a newly connected account.
+Individual history records support confirmed date changes, exact-play deletion,
+resume clearing and undropping without importing those changes to media servers.
+Multi-play deletion selects at most 50 observed records per page and confirms
+the selection before any writes. Partial completion stops further records and
+requires a fresh history read/selection, not a blind replay.
+Adding a play is explicit about preserving rewatches and unknown dates. Mobile
+uses a native date picker; TV currently uses native ISO-8601 text entry with
+explicit time-zone validation. Shared mutation state blocks double submission,
+cancels on exit and prevents immediate retries of uncertain writes.
+
 Settings search opens **Auto-hide controls** in Playback on TV, iPhone, and iPad.
 It defaults to **While playing**. **While playing
 or paused** also clears the paused picture after four idle seconds without
 resuming playback. **Never** leaves dismissal to the viewer. VoiceOver and
 Switch Control suspend automatic dismissal regardless of the profile setting.
 
-Playback's **Default zoom** uses the shared native menu on TV and mobile.
+Playback starts with **Autoplay & Up Next**, **Intros, credits & more**, and
+**Resuming playback** on Apple TV, iPhone and iPad. **Streaming quality** follows on
+mobile only. The remaining order is **Seeking**, **Player**, **Audio**, **Video**,
+**Versions**, **Discs**, **Advanced**. External player stays under **Advanced**.
+
+Playback's **Video** section groups Video upscaling and beta-only Dolby Vision
+conversion in one card, followed by a card for Video buffer
+and Live TV buffer. Apple TV adds a third card for the two display fades. Each
+switch has its own note about the corresponding Apple TV Match Content setting;
+neither switch changes the display format. Dividers separate controls within a
+card; a narrow gap separates topics.
+**Default player zoom** uses the shared native menu on TV and mobile.
 Each profile stores separate iPhone, iPad and Apple TV choices; the current platform's
 control edits only its own choice. Custom exposes the existing 50-200% range.
 Saved movie/series mode overrides take priority. Auto-crop's pinch-selected
@@ -26,6 +223,9 @@ screen-edge/cutout-safe framing instead carries across all videos for that devic
 type and profile. Changing Custom's percentage preserves that shared framing.
 The playback settings payload carries all three defaults through profile switching,
 transfer and sync.
+
+**Resuming playback** groups the resume-or-start-over prompt with the rewind
+interval for returning to a title. Skip intervals apply during playback instead.
 
 Live TV's **Clean channel names** switch is profile-scoped and off by default.
 The shared TV/mobile section previews up to three distinct original names from
@@ -90,10 +290,9 @@ Its helper note explains HDMV-only menus, automatic video playback for BD-J,
 and the watch-progress limitation once on both platforms; disc action menus
 and video pickers do not repeat it.
 
-Controls with supporting text use CoreUI's `SettingsDescribedControl` on both
-platforms. It owns helper typography and spacing, keeps the native control's
-normal clearance, and places group separators after the complete row. Settings
-summaries use `SettingsRowMetrics.descriptionFont`, not per-page caption sizes.
+Follow [Settings copy and placement](../../docs/swiftui-guidelines.md#settings-copy-and-placement)
+when choosing between a plain control, a group footer, and `SettingsDescribedControl`.
+The shared components own helper typography, spacing, and separators.
 Seerr appears in the active profile's category list, not Manage Plozz. It edits only
 that profile's connections; the existing Kids-profile restrictions still apply.
 Downloads follows Libraries in the mobile profile card and uses that profile's
@@ -104,21 +303,17 @@ under Manage Plozz. The shared section has no scope footer; device and sync
 details belong inside the relevant settings. The profile card has no repeated
 scope footer.
 
-Playback groups its five optional **Player tabs** in one shared control surface
-on TV and mobile. Labels match the player tabs, Info stays always available, and
+The last row in **Player** opens **Player tabs**. All five switches are on that
+child page on TV and mobile; Settings search opens the requested switch directly.
+Labels match the player tabs, Info stays always available, and
 visibility preferences are independent of autoplay and Up Next behavior.
 
 Playback's **Video upscaling** control is shared by TV and mobile and is
 profile-scoped. Automatic is the default, including profiles saved before the
 setting existed; Off, Standard and Animation are explicit alternatives.
-Automatic chooses Animation from anime identities or animation genres/tags,
-otherwise Standard. Standard enhances supported 8-bit SDR below 1920x1080 in
-both dimensions; Animation accepts drawn 8/10-bit SDR up to 1920x1080 inclusive.
-Both require a larger display and exclude HDR/Dolby Vision and 4K.
-The description distinguishes these limits and metadata-based selection.
-The setting applies to new playback through AetherEngine, including Live TV;
-native and external players
-are unchanged. Engine eligibility and performance fallbacks still apply.
+Only Automatic needs a hint: it chooses Animation for titles identified as anime
+or tagged as animation, otherwise Standard. Keep engine and format limits in the
+[playback reference](../../docs/playback-engines.md), not in the row.
 
 Movie & show details → Trailers & music is the shared destination for trailer
 availability, independent Home autoplay and detail background playback. Home →
@@ -156,6 +351,10 @@ Results use the current platform's destination and retain their query on Back.
 Protected destinations retain their normal profile/PIN checks; search never
 selects a server, library or user, enables a prerequisite, or submits an editor.
 Unavailable controls lead to their existing prerequisite or availability message.
+PublicMetaDB results lead to the current profile's Connect, Retry, or **Use PublicMetaDB** row.
+Search never starts pairing or grants device-local consent. **2-way sync** stays in the selected tracker:
+its grant, eligible media shares, and supported categories depend on that connection.
+Individual histories, transfers, contributions, and list contents are not indexed.
 On mobile, custom quality keeps its normal modal editor: Cancel discards the draft, Apply
 updates only the selected network, and either action returns to the search.
 
@@ -1357,6 +1556,8 @@ watch history and planning-list behavior are documented in
   auto-download) lives here; the subtitle *look* is now adjusted in the
   player while watching.
 - **Send Diagnostics** on TV and mobile uses the existing crash-reporting consent.
+  On mobile, the input gives the placeholder and draft the same inset. Successful
+  submission clears the draft; failure keeps it available for retry.
   The setting is labeled **Share Diagnostics** because it covers more than crashes.
   When sharing is off, the native **Enable Sharing** action opens the existing
   consent prompt; confirming only enables sharing, without submitting or clearing

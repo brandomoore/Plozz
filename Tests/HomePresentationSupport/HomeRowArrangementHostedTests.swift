@@ -61,6 +61,22 @@ private final class ContentPickerSelectionFixture {
 
 @MainActor
 extension HomeRowArrangementHostedTests {
+    #if os(tvOS)
+    func testContinueWatchingRefreshSlotSitsBesideTitle() {
+        func headerWidth(refreshing: Bool) -> CGFloat {
+            let header = MediaRowHeader(title: Text("Continue Watching"), leadingInset: 0)
+                .environment(\.mediaRowRefreshStatus, refreshing ? MediaRowRefreshStatus(
+                    isRefreshing: true, failure: nil, report: nil, onRetry: {}
+                ) : nil)
+                .fixedSize()
+            return UIHostingController(rootView: header)
+                .sizeThatFits(in: CGSize(width: 1280, height: 720)).width
+        }
+        let gap = headerWidth(refreshing: true) - headerWidth(refreshing: false) - MediaRowRefreshIndicator.size
+        XCTAssertEqual(gap, 8, accuracy: 1)
+    }
+    #endif
+
     func testContinueWatchingStatusDoesNotMoveTheHeadingOrCards() async throws {
         var headingY: CGFloat?
         var cardY: CGFloat?
@@ -92,10 +108,11 @@ extension HomeRowArrangementHostedTests {
                 ))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } inspect: { window in
-                let image = try await snapshot(window, name: "Continue Watching - \(name)")
-                let text = try recognizedText(in: image)
-                var headingBox = try XCTUnwrap(text.first { $0.0.contains("Continue Watching") }?.1)
-                let cardBox = try XCTUnwrap(text.first { $0.0.contains("Playable title") }?.1)
+                let image = try await snapshot(window, name: "Continue Watching - \(name)", scale: 2)
+                let text = try recognizedText(in: image, includesInverted: true)
+                let labels = text.map(\.0).joined(separator: " | ")
+                var headingBox = try XCTUnwrap(text.first { $0.0.localizedCaseInsensitiveContains("Continue") }?.1, labels)
+                let cardBox = try XCTUnwrap(text.first { $0.0.localizedCaseInsensitiveContains("Playable") }?.1, labels)
                 // Vision can group the status glyph with the heading; compare title ink only.
                 headingBox.size.width *= 0.4
                 let bitmap = try XCTUnwrap(image.cgImage)
@@ -1758,9 +1775,9 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 id: UUID().uuidString, title: "Unresolved logo", kind: .movie,
                 backdropURL: artworkURL, logoURL: url, allowsTitleBasedMetadataMatching: false
             )
-            let policy = ArtworkPresentationPolicy().forPlacement(.logo)
+            let policy = ArtworkPresentationPolicy(logoLanguage: Self.windowLocale.identifier).forPlacement(.logo)
             let key = HeroLogoMemo.key(
-                for: [.remote(url)], fallback: HeroLogoFallback(for: item) { nil },
+                for: [.remote(url)], fallback: HeroLogoFallback(for: item) { nil }.localized(to: policy.logoLanguage),
                 prefersOnlineArtwork: policy.prefersOnlineArtwork, providerPolicyIdentity: policy.identity
             )
             for scheme in [ColorScheme.light, .dark] {
@@ -4718,6 +4735,8 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         return ink
     }
 
+    private static let windowLocale = Locale(identifier: "en_US")
+
     private func withWindow<Content: View>(
         size: CGSize? = nil,
         colorScheme: ColorScheme = .dark,
@@ -4742,7 +4761,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 .environment(CardStyleSettingsModel())
                 .environment(\.themePalette, colorScheme == .dark ? ThemePalette.dark : ThemePalette.light)
                 .environment(\.colorScheme, colorScheme)
-                .environment(\.locale, Locale(identifier: "en_US"))
+                .environment(\.locale, Self.windowLocale)
                 .background(.black)
         ))
         window.makeKeyAndVisible()

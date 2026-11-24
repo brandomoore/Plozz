@@ -28,6 +28,45 @@ actor SiloHTTPStub: HTTPClient {
 }
 
 extension SiloProviderTests {
+  func testNativeTrailersPreferPlayableExtraIdentityOverRemoteMetadata() async throws {
+    let raw = try credential().encoded()
+    var responses = playbackResponses()
+    responses["/api/v2/catalog/items/local:abc"] = responses["/api/v2/catalog/items/movie:1"]?
+      .replacingOccurrences(of: "movie:1", with: "local:abc")
+      .replacingOccurrences(of: "\"type\":\"movie\"", with: "\"type\":\"extra\"")
+    responses["/api/v2/catalog/items/movie:1"] = """
+      {"title":"Film","extras":[
+        {"kind":"clip","content_id":"local:clip"},
+        {"kind":"trailer","content_id":"local:abc","file_id":42,"duration_seconds":95},
+        {"kind":"trailer","content_id":"movie:1"}],
+       "videos":[{"kind":"teaser","site":"YouTube","site_key":"abc123xyz00"},
+        {"kind":"clip","site":"YouTube","site_key":"abcdefghijk"},
+        {"kind":"trailer","site":"Vimeo","site_key":"abcdefghijk"},
+        {"kind":"trailer","site":"YouTube","site_key":"invalid"}]}
+      """
+    let http = SiloHTTPStub(responses)
+    let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw), http: http)
+    let trailers = try await provider.trailers(for: "movie:1")
+    XCTAssertEqual(trailers.map(\.id), ["local:abc", "abc123xyz00"])
+    let local = try XCTUnwrap(trailers.first)
+    XCTAssertTrue(local.isTrailer && local.isExtra)
+    XCTAssertEqual(local.runtime, 95)
+    XCTAssertEqual(trailers.last?.youTubeTrailerVideoID, "abc123xyz00")
+    let request = try await provider.playbackInfo(for: local.id)
+    XCTAssertEqual(request.item.id, local.id)
+    XCTAssertTrue(request.item.isExtra)
+    XCTAssertEqual(request.item.kind, .video)
+    XCTAssertNotNil(request.playbackSource)
+  }
+
+  func testMissingTrailerCollectionsLeaveOnlineFallbackAvailable() async throws {
+    let raw = try credential().encoded()
+    let provider = try SiloProvider(context: context(raw), credentials: SiloCredentialStub(raw),
+                                    http: SiloHTTPStub(playbackResponses()))
+    let trailers = try await provider.trailers(for: "movie:1")
+    XCTAssertTrue(trailers.isEmpty)
+  }
+
   func playbackResponses() -> [String: String] {
     [
       "/api/v2/catalog/items/movie:1": """

@@ -2857,7 +2857,8 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
                 || TrackLabeling.isHearingImpaired(dto.Title)
                 || TrackLabeling.isHearingImpaired(dto.DisplayTitle),
             isImageBasedSubtitle: isSubtitle
-                && !(dto.IsTextSubtitleStream ?? isTextSubtitleCodec(dto.Codec))
+                && !(dto.IsTextSubtitleStream ?? isTextSubtitleCodec(dto.Codec)),
+            isExternal: isSubtitle && dto.IsExternal == true
         )
     }
 

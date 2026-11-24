@@ -304,7 +304,7 @@ struct PlozziOSHomeView: View {
                     identitySources: identitySources
                 )
             },
-            ratingsProvider: RatingsServiceFactory.make(),
+            ratingsProvider: appModel.ratingsProvider,
             requestIdentityResolver: { [seer = appModel.seerService] item in
                 guard await seer.isConfigured else { return nil }
                 return await ExternalTitleMetadataResolver.shared.tmdbID(for: item)

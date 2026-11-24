@@ -112,12 +112,13 @@ public actor ArtworkRouter {
     /// External artwork for an ordered presentation ladder. Library bytes remain
     /// the first-paint resolver's responsibility. Only `.episodeThumbnail` may
     /// consult episode artwork; other episode placements resolve the owning show.
-    public func artworkURL(for item: MediaItem, placements: [ArtworkPlacement]) async -> URL? {
-        await sourcedArtworkURL(for: item, placements: placements)?.value
+    public func artworkURL(for item: MediaItem, placements: [ArtworkPlacement],
+                           language: String = Locale.current.identifier) async -> URL? {
+        await sourcedArtworkURL(for: item, placements: placements, language: language)?.value
     }
 
     public func sourcedArtworkURL(
-        for item: MediaItem, placements: [ArtworkPlacement]
+        for item: MediaItem, placements: [ArtworkPlacement], language: String = Locale.current.identifier
     ) async -> SourcedValue<URL>? {
         guard item.supportsExternalArtworkLookup else { return nil }
         let lookup = item.artworkLookupItem
@@ -126,7 +127,7 @@ public actor ArtworkRouter {
         for placement in placements where seen.insert(placement).inserted {
             guard !Task.isCancelled, settingsStore.load().artworkPolicyIdentity == policy else { return nil }
             if placement == .landscapeCard {
-                if let answer = await landscapeCardArtwork(for: item, language: Locale.current.identifier) {
+                if let answer = await landscapeCardArtwork(for: item, language: language) {
                     return answer
                 }
                 continue
@@ -146,7 +147,7 @@ public actor ArtworkRouter {
             let cachedPlacement: ArtworkPlacement = lookup.kind == .season && placement == .poster
                 ? .seasonPoster : placement
             let answer = await sourcedArtworkURL(
-                kind, for: MetadataQuery(subject),
+                kind, for: MetadataQuery(subject).forArtworkLanguage(language),
                 catalogCandidates: cachedSubject.metadataArtworkURLs(for: cachedPlacement)
             )
             guard !Task.isCancelled, settingsStore.load().artworkPolicyIdentity == policy else { return nil }
@@ -203,7 +204,7 @@ public actor ArtworkRouter {
     }
 
     public func portraitHeroArtworkURL(
-        for item: MediaItem, placement: ArtworkPlacement = .homeHero
+        for item: MediaItem, placement: ArtworkPlacement = .homeHero, language: String = Locale.current.identifier
     ) async -> URL? {
         guard item.supportsExternalArtworkLookup else { return nil }
         let policy = settingsStore.load().artworkPolicyIdentity
@@ -215,7 +216,7 @@ public actor ArtworkRouter {
         )
         guard !Task.isCancelled, settingsStore.load().artworkPolicyIdentity == policy else { return nil }
         if let artwork { return artwork.value }
-        return await artworkURL(for: item, placements: [.poster])
+        return await artworkURL(for: item, placements: [.poster], language: language)
     }
 
     public func landscapeCardArtworkURL(
@@ -446,12 +447,12 @@ public actor ArtworkRouter {
     /// external poster as a last resort.
     public func heroArtworkURL(
         for item: MediaItem,
-        placement: ArtworkPlacement
+        placement: ArtworkPlacement, language: String = Locale.current.identifier
     ) async -> URL? {
         let subject = Self.seriesArtworkItem(for: item)
         let candidates = await sourcedArtworkURLs(.hero, for: subject, limit: 4)
         if let hero = Self.heroCandidate(from: candidates, placement: placement) { return hero }
-        return await artworkURL(for: item, placements: [.poster])
+        return await artworkURL(for: item, placements: [.poster], language: language)
     }
 
     static func heroCandidate(
@@ -497,8 +498,14 @@ public actor ArtworkRouter {
         prefersPortraitHero: Bool = false,
         prefersLandscapeCard: Bool = false
     ) -> String {
-        let variant = prefersLandscapeCard ? "|landscape-card-v1:\(query.artworkLanguage)"
-            : prefersPortraitHero ? "|portrait-hero-v1" : ""
+        let variant: String
+        if prefersLandscapeCard { variant = "|landscape-card-v1:\(query.artworkLanguage)" }
+        else if prefersPortraitHero { variant = "|portrait-hero-v1" }
+        else if kind == .poster && source == .tvdb {
+            variant = "|poster-tvdb-language:\(TVDBLocale.languageIdentifier(query.artworkLocale))"
+        } else if kind == .poster && source == .tmdb {
+            variant = "|poster-language:\(query.artworkLanguage)"
+        } else { variant = "" }
         return "\(query.cacheKey(for: kind))\(variant)|provider:\(source.rawValue)"
     }
 

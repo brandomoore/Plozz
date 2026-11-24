@@ -14,6 +14,8 @@ public struct WatchlistUnionEntry: Identifiable, Hashable, Sendable {
     /// The viewer's own copy, as answered by the server that holds the list.
     /// See `NativeWatchlistEntry.ownedSource`.
     public let ownedSource: MediaSourceRef?
+    /// Never inferred from a Discover row, synced intent, or source handle alone.
+    public let ownedTitle: String?
     public let attributions: [MetadataAttribution]
     public let addedAt: Date?
 
@@ -23,6 +25,7 @@ public struct WatchlistUnionEntry: Identifiable, Hashable, Sendable {
         presentation: MediaAliasPresentation?,
         isExplicit: Bool,
         ownedSource: MediaSourceRef? = nil,
+        ownedTitle: String? = nil,
         artworkSourceAccountID: String? = nil,
         attributions: [MetadataAttribution] = [],
         addedAt: Date? = nil
@@ -33,6 +36,7 @@ public struct WatchlistUnionEntry: Identifiable, Hashable, Sendable {
         self.artworkSourceAccountID = artworkSourceAccountID
         self.isExplicit = isExplicit
         self.ownedSource = ownedSource
+        self.ownedTitle = ownedTitle
         self.attributions = attributions
         self.addedAt = addedAt
     }
@@ -157,6 +161,7 @@ public struct WatchlistUnion: Sendable, Equatable {
                 ),
                 isExplicit: true,
                 ownedSource: owned?.ownedSource,
+                ownedTitle: owned?.ownedPresentation?.title,
                 artworkSourceAccountID: owned?.ownedPresentation != nil
                     ? owned?.ownedSource?.accountID : nil,
                 attributions: attributionsByAlias[aliasID, default: []],
@@ -190,6 +195,7 @@ public struct WatchlistUnion: Sendable, Equatable {
                 ),
                 isExplicit: false,
                 ownedSource: owned?.ownedSource,
+                ownedTitle: owned?.ownedPresentation?.title,
                 artworkSourceAccountID: owned?.ownedPresentation != nil
                     ? owned?.ownedSource?.accountID
                     : entry.presentationAccountID
@@ -227,6 +233,7 @@ public struct WatchlistUnion: Sendable, Equatable {
         releaseDate: Date?
     ) -> MediaAliasPresentation? {
         var result = owned ?? fallback
+        if result?.title.isEmpty == true, let title = fallback?.title { result?.title = title }
         if result?.releaseDate == nil { result?.releaseDate = fallback?.releaseDate ?? releaseDate }
         return result
     }

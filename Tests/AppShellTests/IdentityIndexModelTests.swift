@@ -31,6 +31,26 @@ final class IdentityIndexModelTests: XCTestCase {
         XCTAssertTrue(model.identitySnapshotStore.current.isEmpty)
     }
 
+    func testBackgroundScanContextCoversHydrationButDoesNotLeakIntoInteractiveWork() async throws {
+        let gate = IdentityWarmGate()
+        await gate.release()
+        let account = resolved(
+            "silo", kind: .silo, movies: [movie("movie", account: "silo", tmdb: "100")], gate: gate
+        )
+        let model = makeWarmModel(namespace: uniqueNamespace(), accounts: { [account] }) {
+            XCTAssertFalse(IdentityEnrichment.isBackgroundScan)
+        }
+        model.warmIdentityIndex()
+        await model.waitForIdentityWarm()
+        let scannedScopes = await gate.scopes
+        XCTAssertEqual(scannedScopes, [true, true, true])
+        XCTAssertEqual(model.identitySnapshot.indexedAccountIDs, ["silo"])
+        _ = try await account.provider.item(id: "movie")
+        let allScopes = await gate.scopes
+        XCTAssertEqual(allScopes, [true, true, true, false])
+        XCTAssertFalse(IdentityEnrichment.isBackgroundScan)
+    }
+
     func testWarmWithNoActiveAccountsIsANoOp() {
         var activeAccountsCalls = 0
         let (model, publishCount) = makeModel(accounts: {
@@ -581,6 +601,9 @@ private actor IdentityWarmGate {
     private var released = false
     private var waiter: CheckedContinuation<Void, Never>?
     private var didEnter = false
+    private(set) var scopes: [Bool] = []
+
+    func recordScope() { scopes.append(IdentityEnrichment.isBackgroundScan) }
 
     /// Suspends the caller until `release()` (returns immediately if already released).
     func wait() async {
@@ -611,6 +634,7 @@ private final class FakeIndexProvider: MediaProvider, @unchecked Sendable {
     private let movies: [MediaItem]
     private let gate: IdentityWarmGate?
     private let librariesUnavailable: Bool
+    var catalogIdentityRequiresEnrichment: Bool { kind == .silo }
 
     init(
         kind: ProviderKind, session: UserSession, movies: [MediaItem],
@@ -624,12 +648,14 @@ private final class FakeIndexProvider: MediaProvider, @unchecked Sendable {
     }
 
     func libraries() async throws -> [MediaLibrary] {
+        await gate?.recordScope()
         if let gate { await gate.wait() }
         if librariesUnavailable { throw AppError.invalidResponse }
         return movies.isEmpty ? [] : [MediaLibrary(id: "lib", title: "Movies", kind: .movie)]
     }
 
     func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+        await gate?.recordScope()
         guard page.startIndex == 0 else {
             return MediaPage(items: [], startIndex: page.startIndex, totalCount: movies.count)
         }
@@ -637,6 +663,7 @@ private final class FakeIndexProvider: MediaProvider, @unchecked Sendable {
     }
 
     func item(id: String) async throws -> MediaItem {
+        await gate?.recordScope()
         guard let match = movies.first(where: { $0.id == id }) else { throw AppError.notFound }
         return match
     }

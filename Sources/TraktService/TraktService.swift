@@ -33,8 +33,12 @@ public enum TraktConnectionPhase: Equatable, Sendable {
 /// connection made in Settings is immediately usable by playback and vice-versa.
 @MainActor
 @Observable
-public final class TraktService {
+public final class TraktService: TrackerHistorySyncReading {
     public private(set) var phase: TraktConnectionPhase
+    public let historySyncTrackerID = "trakt"
+    public private(set) var historySyncNamespace: String?
+    @ObservationIgnored public var onHistorySyncDisconnect: (@MainActor () throws -> Void)?
+    @ObservationIgnored public var makeHistoryExport: (@MainActor () throws -> TrackerHistoryExportSession<TraktHistoryExportTarget>)?
 
     /// Lifetime (seconds) of the most recently issued device code, so the UI can
     /// render a countdown ring against the current `connecting` `expiresAt`.
@@ -50,21 +54,34 @@ public final class TraktService {
     @ObservationIgnored private let config: TraktConfig
     @ObservationIgnored private let auth: TraktAuthService
     @ObservationIgnored private let http: HTTPClient
+    @ObservationIgnored private let historyCooldown = TraktHistoryReadCooldown()
+    @ObservationIgnored private let historyCache: TraktHistoryCache
     @ObservationIgnored private let tokenStore: TraktTokenStoring
+    @ObservationIgnored private let activation: TrackerActivationStore
     @ObservationIgnored private let coordinator: TraktTokenCoordinator
     @ObservationIgnored private(set) var connectTask: Task<Void, Never>?
     @ObservationIgnored private let profileGeneration:
         TraktProfileGeneration
 
-    public convenience init(config: TraktConfig, http: HTTPClient = URLSessionHTTPClient(), tokenStore: TraktTokenStoring) {
-        self.init(config: config, http: http, tokenStore: tokenStore, coordinator: .shared)
+    public convenience init(
+        config: TraktConfig, http: HTTPClient = URLSessionHTTPClient(),
+        tokenStore: TraktTokenStoring, namespace: String? = nil
+    ) {
+        self.init(config: config, http: http, tokenStore: tokenStore, coordinator: .shared, namespace: namespace)
     }
 
-    init(config: TraktConfig, http: HTTPClient, tokenStore: TraktTokenStoring, coordinator: TraktTokenCoordinator) {
+    init(
+        config: TraktConfig, http: HTTPClient, tokenStore: TraktTokenStoring,
+        coordinator: TraktTokenCoordinator, namespace: String? = nil, historyCache: TraktHistoryCache = .init()
+    ) {
+        historySyncNamespace = namespace
+        self.historyCache = historyCache
         self.config = config
         self.auth = TraktAuthService(config: config, http: http)
         self.http = http
         self.tokenStore = tokenStore
+        let activation = TrackerActivationStore(historySyncTrackerID, namespace: namespace)
+        self.activation = activation
         self.coordinator = coordinator
         let profileGeneration = TraktProfileGeneration()
         self.profileGeneration = profileGeneration
@@ -73,7 +90,7 @@ public final class TraktService {
                 config: config,
                 http: http,
                 tokenStore: tokenStore,
-                profileGeneration: profileGeneration
+                profileGeneration: profileGeneration, activation: activation
             )
             self.watchlistDestination = TraktWatchlistDestination(
                 config: config,
@@ -92,9 +109,96 @@ public final class TraktService {
     /// Whether the feature is offered at all (client credentials present).
     public var isConfigured: Bool { config.isConfigured }
 
+    public var historyActivationID: String? { activation.observedAdmission(for: historySyncIdentity?.connectionID) }
+    public var trackerEnabled: Bool { historyActivationID != nil }
+    public func setTrackerEnabled(_ enabled: Bool) throws {
+        try activation.setEnabled(enabled, for: historySyncIdentity?.connectionID)
+    }
+
+    public var historyConnectionID: String? {
+        guard case .connected = phase, let tokens = tokenStore.load() else { return nil }
+        return "\(tokenStore.coordinationID)#\(profileGeneration.current)#\(tokens.stableAccountIdentity)"
+    }
+
+    public var historySyncIdentity: TrackerHistorySyncIdentity? {
+        guard case .connected = phase, let tokens = tokenStore.load() else { return nil }
+        return .init(trackerID: historySyncTrackerID, connectionID: tokens.stableAccountIdentity)
+    }
+
+    public func historySnapshot(expectedConnectionID: String) async throws -> TrackerHistorySnapshot {
+        let current: @MainActor @Sendable () throws -> Void = { [weak self] in
+            try Task.checkCancellation()
+            guard self?.historyConnectionID == expectedConnectionID else { throw TrackerHistoryError.scopeChanged }
+        }
+        try current()
+        try historyCooldown.requireReady()
+        guard let cacheScope = historyCacheScope else { throw TrackerHistoryError.scopeChanged }
+        let store = tokenStore.snapshot()
+        guard let access = try await coordinator.accessToken(store: store, auth: auth) else { throw AppError.unauthorized }
+        try current()
+        let snapshot = try await TraktClient(config: config, http: http, historyRead: .init(cooldown: historyCooldown)).historySnapshot(
+            accessToken: access, connectionID: expectedConnectionID, cache: historyCache, cacheScope: cacheScope,
+            validateScope: { try await current() }
+        )
+        try current()
+        return snapshot
+    }
+
+    private var historyCacheScope: String? {
+        guard let identity = tokenStore.load()?.stableAccountIdentity else { return nil }
+        return WatchlistReconciliationIdentity.credential(
+            "\(config.apiBaseURL.absoluteString)\u{0}\(tokenStore.coordinationID)\u{0}\(identity)"
+        )
+    }
+
+    public func makeHistoryExportSession(
+        source: TrackerServerHistorySource, store: DurableLocalStateStore
+    ) throws -> TrackerHistoryExportSession<TraktHistoryExportTarget> {
+        guard let connection = historyConnectionID, let identity = historySyncIdentity,
+              source.scope.profileID == (historySyncNamespace ?? ProfileStore.defaultProfileID) else {
+            throw TrackerHistoryError.scopeChanged
+        }
+        let current: @MainActor @Sendable () throws -> Void = { [weak self] in
+            try Task.checkCancellation()
+            try source.requireCurrent()
+            guard self?.historyConnectionID == connection else { throw TrackerHistoryError.scopeChanged }
+        }
+        let access: @MainActor @Sendable () async throws -> String = { [weak self] in
+            try current()
+            guard let self, let token = try await self.coordinator.accessToken(
+                store: self.tokenStore.snapshot(), auth: self.auth
+            ) else { throw AppError.unauthorized }
+            try current()
+            return token
+        }
+        let client = TraktClient(config: config, http: http)
+        let adapter = TraktHistoryExportAdapter(client: client)
+        let validate: @Sendable () async throws -> Void = { try await current() }
+        return .init(
+            trackerID: historySyncTrackerID, trackerName: "Trakt",
+            connectionID: identity.connectionID, snapshotConnectionID: connection,
+            source: source, store: store, preservesWatchDates: true,
+            isConnected: { [weak self] in self?.historyConnectionID == connection },
+            supports: { TraktHistoryExportAdapter.supports($0) },
+            readAll: { try await adapter.snapshot(token: access(), connectionID: connection, validate: validate) },
+            resolve: { try await adapter.resolve($0, token: access(), validate: validate) },
+            readTarget: { try await adapter.state($0, token: access(), validate: validate) },
+            write: { target, date, _, authorize in
+                try await client.exportHistory(
+                    target, date: date, accessToken: { try await access() },
+                    authorize: {
+                        try await validate()
+                        try await authorize()
+                    }, validate: validate
+                )
+            }
+        )
+    }
+
     public func playbackScrobbler() -> any TraktScrobbling {
         guard config.isConfigured else { return DisabledTraktScrobbler() }
-        return TraktScrobbler(config: config, http: http, tokenStore: tokenStore.snapshot())
+        return TraktScrobbler(config: config, http: http, tokenStore: tokenStore.snapshot(),
+                              profileGeneration: TraktProfileGeneration(), activation: activation.snapshot())
     }
 
     /// Switches the service (and its shared scrobbler) to a household profile's
@@ -102,8 +206,9 @@ public final class TraktService {
     /// the default profile uses `nil` (legacy un-namespaced storage). Cancels any
     /// in-flight connect, repoints the shared token store, then re-resolves status.
     public func setActiveProfile(namespace: String?) async {
+        historySyncNamespace = namespace
         let generation = profileGeneration.advance {
-            tokenStore.setNamespace(namespace)
+            activation.setNamespace(namespace) { tokenStore.setNamespace(namespace) }
         }
         connectTask?.cancel()
         connectTask = nil
@@ -259,12 +364,15 @@ public final class TraktService {
 
     /// Disconnects: revokes the token server-side (best-effort) and clears it.
     public func disconnect() async {
+        let cacheScope = historyCacheScope
         let generation = profileGeneration.advance()
         connectTask?.cancel()
         connectTask = nil
         let store = tokenStore.snapshot()
         do {
+            try onHistorySyncDisconnect?()
             let tokens = try await coordinator.disconnect(store: store)
+            if let cacheScope { await historyCache.remove(scope: cacheScope) }
             guard generation == profileGeneration.current else { return }
             phase = config.isConfigured ? .disconnected : .unavailable
             if let tokens {
@@ -285,9 +393,13 @@ public final class TraktService {
     ) async throws {
         try Task.checkCancellation()
         guard generation == profileGeneration.current else { throw CancellationError() }
+        var tokens = tokens
+        tokens.accountIdentity = UUID().uuidString
         phase = .savingConnection
+        try onHistorySyncDisconnect?()
         try await coordinator.save(tokens, store: store, context: context)
         guard generation == profileGeneration.current else { return }
+        activation.didConnect(tokens.stableAccountIdentity)
         phase = .connected(username: "Trakt")
         onConnectionAvailable?()
         do {
@@ -302,6 +414,11 @@ public final class TraktService {
     }
 
     private func show(_ error: Error) {
+        if (error as? TrackerHistorySyncError) == .revocationFailed {
+            PlozzLog.app.error("Trakt history permission revocation failed")
+            phase = .error("Sync is paused. Retry before closing the app.")
+            return
+        }
         if let error = error as? TraktSharedRefreshError {
             PlozzLog.app.error("Trakt shared connection needs recovery")
             phase = .syncError(
@@ -331,7 +448,8 @@ public enum TraktServiceFactory {
     ) -> TraktService {
         let store = tokenStore ?? defaultTokenStore()
         store.setNamespace(namespace)
-        return TraktService(config: config, http: http, tokenStore: store)
+        return TraktService(config: config, http: http, tokenStore: store, coordinator: .shared, namespace: namespace,
+                            historyCache: .init(directory: TraktHistoryCache.appDirectory))
     }
 
     public static func defaultTokenStore() -> TraktTokenStoring {

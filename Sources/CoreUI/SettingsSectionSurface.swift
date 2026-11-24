@@ -58,6 +58,9 @@ private struct SettingsRowSeparator: View {
                 .frame(height: 1 / displayScale)
                 .padding(.leading, max(MobileSettingsMetrics.rowInset, inset))
                 .frame(maxHeight: .infinity, alignment: .bottom)
+                // Keep the hairline inside the row at fractional layout boundaries.
+                .offset(y: (floor(geometry.frame(in: .global).maxY * displayScale) / displayScale)
+                    - geometry.frame(in: .global).maxY)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -297,6 +300,17 @@ public struct SettingsDisclosureLabel<Title: View, Value: View>: View {
 /// claim the cell's primary action, including taps on a sibling picker's label.
 public struct SettingsSectionGroup<Content: View, Footer: View>: View {
     @Environment(\.themePalette) private var palette
+    private var isFirstCard = true
+    private var isLastCard = true
+    #if os(iOS)
+    public func connectedCard(first: Bool, last: Bool) -> Self {
+        var group = self
+        group.isFirstCard = first
+        group.isLastCard = last
+        return group
+    }
+    #endif
+
     private let title: Text?
     private let content: Content
     private let footer: Footer
@@ -388,9 +402,18 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                 #endif
             }
 
+            let cardRadii = SettingsFormMetrics.rowCornerRadii(first: isFirstCard, last: isLastCard, outer: cornerRadius)
             VStack(spacing: 0) {
                 Group(subviews: content) { subviews in
                     ForEach(subviews) { subview in
+                        #if os(iOS)
+                        let first = subview.id == subviews.first?.id
+                        let last = subview.id == subviews.last?.id
+                        let radii = RectangleCornerRadii(
+                            topLeading: first ? cardRadii.topLeading : 0, bottomLeading: last ? cardRadii.bottomLeading : 0,
+                            bottomTrailing: last ? cardRadii.bottomTrailing : 0, topTrailing: first ? cardRadii.topTrailing : 0
+                        )
+                        #endif
                         subview
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, subview.containerValues.settingsContentOwnsInsets ? 0 : horizontalInset)
@@ -400,13 +423,9 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
                             #endif
                             .contentShape(Rectangle())
                             #if os(iOS)
-                            .modifier(SettingsSearchRowHighlight(
-                                isFirst: subview.id == subviews.first?.id,
-                                isLast: subview.id == subviews.last?.id,
-                                cornerRadius: cornerRadius
-                            ))
+                            .modifier(SettingsSearchRowHighlight(cornerRadii: radii))
                             .overlayPreferenceValue(SettingsRowTitleAnchorKey.self) { titles in
-                                if subview.id != subviews.last?.id {
+                                if !last {
                                     SettingsRowSeparator(titles: titles)
                                 }
                             }
@@ -439,7 +458,7 @@ public struct SettingsSectionGroup<Content: View, Footer: View>: View {
             // cell's primary action, stealing taps from sibling controls.
             .pickerStyle(.menu)
             #endif
-            .settingsGroupSurface(cornerRadius: cornerRadius)
+            .settingsGroupSurface(cornerRadii: cardRadii)
 
             footer
                 .font(SettingsRowMetrics.helperFont)

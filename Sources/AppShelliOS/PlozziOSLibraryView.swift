@@ -704,6 +704,7 @@ private struct PlozziOSLibraryItemCell: View {
                 PlozziOSPosterCard(
                     item: slot?.item,
                     style: style,
+                    spoilerSettings: appModel.settings.spoilers.settings,
                     reservesSubtitleSpace: true
                 )
             }

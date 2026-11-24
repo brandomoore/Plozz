@@ -6,6 +6,63 @@ import XCTest
 final class TMDbDiscoveryProviderTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_779_494_400) // 2026-05-23 UTC
 
+    func testExactLookupPreservesProxyLocaleIdentityAndUnprovenAvailability() async throws {
+        let fixture = TMDbTVDBDiscoveryFixture { request, _ in
+            XCTAssertEqual(request.url?.path, "/proxy/3/tv/42")
+            return .init(json: #"{"id":42,"name":" Older show ","first_air_date":"1990-01-01","poster_path":"/p.jpg"}"#)
+        }
+        let item = try await TMDbDiscoveryProvider(
+            access: .proxy(baseURL: URL(string: "https://metadata.example/proxy")!), http: fixture.http
+        ).title(tmdbID: 42, kind: .series, language: "fr_CA")
+        XCTAssertEqual(item.title, "Older show")
+        XCTAssertEqual(item.providerID(.tmdb), "42")
+        XCTAssertEqual(item.kind, .series)
+        XCTAssertEqual(item.availability, .unknown)
+        XCTAssertFalse(item.locallyValidatedPlayableSource)
+        XCTAssertNil(item.sourceAccountID)
+        let requests = await fixture.recorded()
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(TMDbTVDBDiscoveryFixture.query(requests[0]), ["language": "fr-CA"])
+        XCTAssertNil(requests[0].value(forHTTPHeaderField: "Authorization"))
+    }
+
+    func testExactLookupRejectsWrongIDsKindsAdultErrorsAndMissingTitles() async throws {
+        for json in [
+            #"{"id":41,"title":"Wrong ID"}"#,
+            #"{"id":42,"title":"Wrong kind","media_type":"tv"}"#,
+            #"{"id":42,"title":"Adult","adult":true}"#,
+            #"{"id":42,"title":"Failure","success":false}"#,
+            #"{"id":42,"title":"  "}"#
+        ] {
+            let fixture = TMDbTVDBDiscoveryFixture { _, _ in .init(json: json) }
+            do {
+                _ = try await TMDbDiscoveryProvider(access: .userToken("fixture"), http: fixture.http)
+                    .title(tmdbID: 42, kind: .movie, language: "en")
+                XCTFail("Unverified exact title accepted")
+            } catch { XCTAssertEqual(error as? MetadataDiscoveryHTTPError, .invalidResponse) }
+        }
+    }
+
+    func testExactLookupDisabledAndInvalidInputNeverDispatch() async throws {
+        let fixture = TMDbTVDBDiscoveryFixture { _, _ in
+            XCTFail("Unavailable lookup sent a request")
+            return .init(json: "{}")
+        }
+        for (access, id, kind) in [
+            (TMDbAccess.disabled, 42, MediaItemKind.movie),
+            (.userToken("fixture"), 0, .movie),
+            (.userToken("fixture"), 42, .episode)
+        ] {
+            do {
+                _ = try await TMDbDiscoveryProvider(access: access, http: fixture.http)
+                    .title(tmdbID: id, kind: kind, language: "en")
+                XCTFail("Unavailable lookup returned a title")
+            } catch { XCTAssertTrue(error is AppError) }
+        }
+        let requests = await fixture.recorded()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
     func testSeedUsageIsVisibleThroughDiscoveryContract() {
         let tmdb: any HeroDiscoveryProviding = TMDbDiscoveryProvider(access: .disabled)
         let tvdb: any HeroDiscoveryProviding = TVDBDiscoveryProvider(config: .init(apiKey: nil))

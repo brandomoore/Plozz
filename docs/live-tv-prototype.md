@@ -1400,6 +1400,8 @@ is no prior in-memory history to migrate on the first updated launch.
   of filter saves; legacy saved values alone do not count as a choice. Inactive,
   backgrounded, or unauthorized profiles cannot answer the prompt. iPhone and iPad
   retain tap-to-play and do not show this prompt.
+  The loading and populated guide share one view so loading the first channel
+  after unlock doesn't clear its focus and cancel an authorized preview.
   On Apple TV, Back from a guide row focuses Search without scrolling the list.
   Back from the controls goes to the
   surrounding app navigation. Holding Select on a channel/program also opens
@@ -2160,7 +2162,10 @@ The selected picture's lift remains the native tvOS focus effect.
 During idle/native label replacement, temporary live renderer hosts track the
 incoming labels' animated presentation geometry even before those labels reach
 full opacity. Motion coverage uses real decoders, native style replacement and
-display-link samples without forcing layout from the test.
+timestamped display-link samples without forcing layout from the test. The next
+transition starts after the unfocused pictures reach their expected width; native
+focus lift is not an endpoint for the whole grid. Sidebar motion tests likewise
+check the rendered guide edge before reversing direction.
 The close confirmation and playback errors share `playerPlatformAppearance`
 with transport controls, preserving native focused-label contrast without a
 dialog-specific button style.

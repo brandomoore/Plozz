@@ -19,7 +19,7 @@ struct DetailBackdropArtworkSource {
             references: policy.references(for: item, placement: .detailBackdrop),
             pinIdentity: "detail:\(item.stablePresentationID)",
             policy: policy,
-            fallback: MediaArtworkSource.heroFallback(for: item, placement: .detailBackdrop),
+            fallback: MediaArtworkSource.heroFallback(for: item, placement: .detailBackdrop, language: policy.artworkLanguage),
             lookupIdentity: MetadataQuery(item).seriesScoped.enrichmentCacheKey
         )
     }

@@ -4,6 +4,12 @@ Aether-primary playback coordination, engine-agnostic playback surface, resume
 reporting back to the server, caption style rules, trickplay scrubbing,
 and the diagnostics overlay.
 
+The optional tracker-playback callback carries actual engine-clock evidence at
+bounded checkpoints and final stop, independently of server progress reports.
+It retains one viewing identity across engine/request recovery, ignores metadata
+runtime as evidence, and honors ordinary-watch suppression. App composition
+captures profile, server viewer and opt-in tracker consent before playback.
+
 Original HDMV disc navigation shares the existing player through
 `VideoEngine.discMenu`; this module does not import the native runtime.
 Java (BD-J) menus are excluded from distribution builds and retained only as an
@@ -141,6 +147,8 @@ bounded language-match/accessibility flags without track titles or URLs.
     Plex trailers and special features additionally retain a device-local,
     profile/account/server-viewer-scoped resume fallback; ordinary movies and
     episodes remain server-managed. See ProviderPlex's extra resume contract.
+    Tracker playback samples honor the same original-item and resolved-extra
+    exclusions as scrobbling, without suppressing provider progress reports.
   - `PlayerView` + `CustomPlayerContainer` host the engine's vended
     bare video surface and overlay the shared transport chrome.
   - `PlayerCardMetrics` scales touch-player typography to a wide-tablet maximum
@@ -613,6 +621,17 @@ omits them. Its generated language/codec and numbered fallback labels are not
 treated as authored names. Real-world metadata regression cases cover release
 groups, translation credits, regional/script variants, colored SDH and commentary;
 names never change automatic selection or forced-subtitle disposition.
+`Full` is displayed only when authored. A regional subtitle name does not repeat
+the language or an already-displayed SDH/Forced flag. Compact `DDP5.1` audio
+names do not repeat a confirmed Dolby Digital+ layout or its `BTM` prefix in
+the picker, even alongside a named mix. The original track metadata is unchanged.
+For original-file Silo playback, an embedded subtitle's extraction URL and its
+demuxed stream share one row, keyed by the absolute stream index, not the
+inventory position or language. Standalone sidecars remain separate.
+After a quality change that renews sidecar URLs, both subtitle picks restore
+their named track rather than the first track in the same language.
+Silo's inventory track ID keeps the selection even when changing quality moves
+the same subtitle between a server sidecar and an embedded stream.
 Colliding subtitle labels first expose known format differences, such as SRT,
 ASS or WebVTT. Codec aliases normalize to the same format, and missing/unknown
 formats are not invented. Labels still identical after that gain a localized
@@ -1536,6 +1555,10 @@ sessions are not rewound. Paused/recovering heartbeat callbacks cannot report
 false playback at zero, and a stop retains the saved position even after load
 generation invalidation.
 
+After a committed seek, a software output that is playing or refilling is
+allowed to prime its queues without a pause/play kick. The resume check has a
+bounded lifetime, but its timeout is not a viewer pause.
+
 On iPhone/iPad, `PlayerSceneLifecycleReader` forwards UIKit lifecycle notifications
 from the player's own window scene, including when a full-screen UIKit host has
 retained an active SwiftUI environment. It detaches with the player and ignores
@@ -1629,7 +1652,7 @@ back to coded dimensions.
 Authored bitmap clearance maps the image, lower-region envelope, and protected
 artwork boundary through that same zoom/stretch geometry before moving a region.
 
-The profile's Default zoom is stored separately for iPhone, iPad and Apple TV.
+The profile's **Default player zoom** is stored separately for iPhone, iPad and Apple TV.
 It applies to movies, episodes, extras, trailers and Live TV; each platform starts
 with Normal. Older saved Auto-crop defaults and title choices reset to Normal once;
 other modes, Custom percentages and cutout-safe preferences remain intact.
@@ -1841,7 +1864,7 @@ Turning matching back on resumes the current device settings. New/default styles
 start with matching enabled, while persisted choices and legacy custom migration
 retain their existing behavior.
 `Reset to App Default` restores Plozz's own Atkinson/outline appearance and turns
-matching off; it is intentionally different from the new-profile default.
+matching off; it leaves the profile's ASS/SSA override unchanged.
 Enabling matching over a custom style requires confirmation in both editors;
 Cancel leaves the style untouched. Disabling matching and the first custom edit
 remain immediate.
@@ -1873,8 +1896,8 @@ data. Apple does not expose native padding, base point-size/layout rules, line
 spacing, or edge color/thickness; those controls remain explicitly Plozz values.
 The low-level per-field source policies are retained as compatibility data, not
 exposed as a long list of switches. The separate **Subtitle file formatting**
-page offers only supported controls: authored positions, colors, and bold/italic
-emphasis. The primary appearance page contains the viewer's own style controls.
+page controls file positions, colors, and bold/italic emphasis for text captions.
+Library subtitle settings also offer the profile-wide ASS/SSA override.
 
 `Font > System Fonts` puts all eight Apple subtitle families first, separated from the
 device's installed font families by a divider on TV and native sections on mobile.
@@ -1902,9 +1925,12 @@ rendering supports fewer effects than the overlay.
 ### Caption timing and control avoidance
 
 Plozzigen's primary embedded ASS/SSA tracks preserve their packet text, script
-header and embedded font attachments for libass. With source position, colour and
-emphasis enabled (and system-style matching off), the adapter composites authored layers, vector drawings, transforms and
+header and embedded font attachments for libass. By default, even with device style matching on,
+the adapter composites authored layers, vector drawings, transforms and
 karaoke into bitmap cues; it does not flatten animation fragments into dialogue.
+**Override ASS/SSA styling** in the profile's Settings → Subtitle file formatting
+uses the viewer's device or Plozz appearance instead. It is not a player control
+and does not change ordinary text captions or the saved system-matching choice.
 The main-thread cue bridge passes raw packet strings through without scanning or
 rebuilding their contents. Only newly admitted events are split on the rasterizer
 actor; replayed read-ahead snapshots must not reparse thousands of old packets
@@ -1926,7 +1952,7 @@ When a frame exceeds its budget, subtitle rendering yields more time to audio
 and video instead of running continuously. Authored cue starts and ends bypass
 that animation backoff so short-lived glyphs appear and expired artwork clears
 at the next available display tick; seeking still draws immediately.
-Recent render latency leads the sampling clock by at most 200 ms while playback
+On the immediate overlay path, recent render latency leads the sampling clock by at most 200 ms while playback
 is advancing, compensating for slow frames without pushing paused subtitles
 ahead of the video. Costly, heavily layered ASS animations can still drop
 subtitle frames on older hardware; the renderer reserves video/audio headroom
@@ -1935,10 +1961,86 @@ Animated ASS reads the software presentation timebase directly; native
 playback converts the item's continuous clock through Aether's presentation-axis
 map. Seek/wait states retain the engine's held picture time. The published status
 clock is too coarse for animation and must not throttle it to roughly five fps.
+On the native player, the fullscreen host can present authored ASS images on
+an `AVSynchronizedLayer` tied to the current player item. The renderer seats
+the current frame, then prepares up to 350 ms of upcoming artwork. Each image
+replacement or clear is scheduled on the item timeline, including the user's
+subtitle offset; the preparation window is not a subtitle timing adjustment.
+The native scheduler drains cue starts and ends inside that window before
+pacing intermediate animation samples. It skips expired backlog rather than
+letting dense, frame-by-frame typesetting fall further behind the picture.
+Each bitmap region keeps its layer across replacements. Its contents and geometry
+step together at item timestamps rather than fading layers in and out per frame.
+The same fullscreen controller owns this surface on Apple TV, iPhone and iPad.
+It uses the overlay's bitmap placement, control avoidance and master opacity.
+HDR with custom luminance stays on the ordinary overlay, as do secondary cues
+and live auxiliary players.
+
+Local tvOS builds can also compose the primary ASS directly into the decoded
+picture before it is enqueued. Run `tools/prepare-frame-ass-engine.sh` before
+generating/building; it accepts an optional local Git clone as its source.
+The tvOS app build rechecks the prepared checkout against the pinned revision
+and patch; a mismatch stops the build rather than packaging a different engine. Unprepared
+builds keep the remote dependency and existing rendering paths.
+
+On the ordinary ASS overlay, a rewind can leave later packets cached while the
+reader is still filling the opening lyrics. New overlapping packets behind the
+decode cursor reopen that part of the window without another seek. Reading
+the same packet again does not restart decoding.
+
+When resuming inside dense karaoke, the decoder can have several batches of
+lyrics already due. It starts the next batch without waiting for the half-second
+timer until it has caught up. Decoding stays serial and off the main thread;
+future lyrics keep their normal pacing and authored timestamps.
+
+Admission uses the same embedded tracks, registered sidecars and profile
+preferences as playback. An unselected server rendition does not veto an
+embedded ASS track; if the sidecar wins, it stays on the overlay.
+The current envelope is seekable SDR
+Matroska H.264 through 1080p30 with mono/stereo AAC, FLAC, Opus, Vorbis or MP3
+on all audio tracks. With exact 2× line-art upscaling, authored regions are
+composited onto the upscaler's output at the original frame timestamp. The
+upscaler and its quality policy are unchanged. If it disables itself, a session
+that still needs software output for ASS continues without reloading. Other upscale plans, external
+output, disc/live/rendition playback and spatial audio do not opt in.
+The fullscreen controller yields to the normal overlay for
+custom placement or opacity, secondary tracks, controls avoidance, zoom and
+nonzero timing offsets. Uncertified packet coverage is not a blank subtitle:
+the overlay remains responsible for that sample. Other platforms are unchanged.
+On an admitted cold resume in the first 90 seconds, the existing subtitle
+read-ahead reader starts from the origin to certify overlapping events and
+their clears. The adapter waits up to four seconds for coverage while completing
+the load. The engine can already be playing: registration alone does not mean
+that a presented frame owns the subtitle. This does not move the video playhead
+or advance subtitles.
+
+Far landings can also use a complete mkvmerge cue index for the embedded track
+chosen at admission, even before the player publishes its active track. If the
+track metadata extends beyond the first HTTP range, the reader fetches the
+missing bytes within the same transfer budget. It checks the track header,
+declared frame count, distinct block locations and cue durations; it reads the
+referenced block when a duration is omitted.
+Index reads use spare request slots only and skip serial or rate-limited
+origins. Once the file version is known, the reader may retry one range per
+index if the response headers time out. Both attempts count toward the same
+byte budget and deadline. A frame is eligible only when every indexed overlap
+is present in the packet store, including multiple layers with identical
+timestamps. An incomplete index or
+missing packet leaves the existing fallback intact.
+
+`FrameASSArtworkTests` can exercise ordinary route and track selection on local
+media by passing `PLOZZ_ASS_PLAYBACK_FILES` as a JSON array of paths accessible
+to the test process. It checks that playback advances while the submitted
+frames own the subtitle; it does not measure displayed subtitle timing.
+
 Rendering uses source time minus the subtitle offset. Paused frames redraw only for changed
 cue data; backward seeks rebuild the retained event set. Track changes, Off,
 native presentation and teardown fence late output. The existing overlay retains
 video-rect mapping, HDR brightness and control avoidance.
+
+For oversized Matroska ASS headers, non-rendering `Comment:` entries in the
+`[Events]` section are discarded before applying the 4 MiB renderer budget.
+Styles, dialogue and font sections still count toward that budget.
 
 `ASSSubtitleRendererTests` checks authored sign starts and ends at millisecond
 boundaries. A deterministic test feeds the real pacer, render-lead estimator
@@ -1975,7 +2077,10 @@ rules or pixel scanning. Ordinary PGS/DVD bitmap avoidance is unchanged.
 The pinned libass 0.17.5 source target enables ARM NEON acceleration and uses
 checksum-pinned font dependencies without adding another FFmpeg or MPV. Glyph
 masks blend directly into premultiplied RGBA, avoiding one CoreGraphics mask
-allocation and clip per layer. Raster output is capped at 1080p;
+allocation and clip per layer. On ARM64 the compositor blends eight mask pixels
+at a time and skips transparent groups without touching the destination. The
+scalar tail uses the same rounding; cue timestamps and pacing are unchanged.
+Raster output is capped at 1080p;
 render caches and retained events are bounded. Turning off source position or
 colour uses the ordinary styled-text fallback, which discards vector drawing
 commands rather than displaying coordinates. System-style matching also retains

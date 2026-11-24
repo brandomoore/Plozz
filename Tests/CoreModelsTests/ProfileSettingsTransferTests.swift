@@ -130,6 +130,53 @@ final class ProfileSettingsTransferTests: XCTestCase {
         XCTAssertNotEqual(ProfileSettingsTransfer.capture(namespace: nil, defaults: defaults), first)
     }
 
+    func testNativeCollectionsRetainTypesOrderAndLegacyCompatibility() throws {
+        let source = makeDefaults()
+        let receiver = makeDefaults()
+        let key = DetailPageSettingsStore.baseKey
+        let values: [String: Any] = [
+            "showsHeaderRatings": false, "maxHeaderRatings": 4,
+            "ratingSourceOrder": ["tmdb", "imdb"],
+            "futureField": [["z": "last", "a": "first"]],
+            "opaque": Data([0xFF, 0x00, 0x42])
+        ]
+        let legacy = try PropertyListSerialization.data(fromPropertyList: [values], format: .binary, options: 0)
+        ProfileSettingsTransfer.applyOne(baseKey: key, blob: legacy, namespace: "viewer", defaults: source)
+        let captured = ProfileSettingsTransfer.capture(namespace: "viewer", defaults: source)
+        let blob = try XCTUnwrap(captured[key])
+        var format = PropertyListSerialization.PropertyListFormat.binary
+        let decoded = try XCTUnwrap(PropertyListSerialization.propertyList(
+            from: blob, options: [], format: &format
+        ) as? [Any])
+        XCTAssertEqual(format, .xml)
+        XCTAssertTrue(NSArray(array: decoded).isEqual(to: [values]), "Existing array-wrapper readers remain compatible")
+        ProfileSettingsTransfer.applyOne(baseKey: key, blob: blob, namespace: "viewer", defaults: receiver)
+        XCTAssertEqual(ProfileSettingsTransfer.capture(namespace: "viewer", defaults: receiver), captured)
+        let actual = try XCTUnwrap(receiver.dictionary(forKey: SettingsKey.scoped(key, namespace: "viewer")))
+        XCTAssertTrue(NSDictionary(dictionary: actual).isEqual(to: values))
+        XCTAssertNil(receiver.object(forKey: key), "The default profile stays untouched")
+        var reordered = values
+        reordered["ratingSourceOrder"] = ["imdb", "tmdb"]
+        source.set(reordered, forKey: SettingsKey.scoped(key, namespace: "viewer"))
+        XCTAssertNotEqual(ProfileSettingsTransfer.capture(namespace: "viewer", defaults: source), captured)
+    }
+
+    func testNativeCollectionWithFractionalDateKeepsLosslessBinaryTransport() throws {
+        let source = makeDefaults()
+        let receiver = makeDefaults()
+        let key = DetailPageSettingsStore.baseKey
+        let value: [String: Any] = ["futureDate": Date(timeIntervalSinceReferenceDate: 123.456789)]
+        source.set(value, forKey: key)
+        let captured = ProfileSettingsTransfer.capture(namespace: nil, defaults: source)
+        let blob = try XCTUnwrap(captured[key])
+        var format = PropertyListSerialization.PropertyListFormat.xml
+        _ = try PropertyListSerialization.propertyList(from: blob, options: [], format: &format)
+        XCTAssertEqual(format, .binary)
+        ProfileSettingsTransfer.apply(captured, namespace: nil, defaults: receiver)
+        let actual = try XCTUnwrap(receiver.dictionary(forKey: key))
+        XCTAssertTrue(NSDictionary(dictionary: actual).isEqual(to: value))
+    }
+
     func testHeroCanonicalizationPreservesUnknownFieldsAndMalformedValues() throws {
         let key = "com.plozz.heroSettings"
         let defaults = makeDefaults()

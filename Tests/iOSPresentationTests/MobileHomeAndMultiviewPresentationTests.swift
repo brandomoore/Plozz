@@ -527,6 +527,88 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         }
     }
 
+    func testInlineEpisodeProtectionChangesTheRenderedStillAndCaption() async throws {
+        try await checkEpisodeProtection(inHero: false)
+    }
+
+    func testEpisodeInfoProtectionChangesTheRenderedStillAndSynopsis() async throws {
+        try await checkEpisodeProtection(inHero: true)
+    }
+
+    private func checkEpisodeProtection(inHero: Bool) async throws {
+        let app = PlozziOSAppModel()
+        let original = app.settings.spoilers.settings
+        defer { app.settings.spoilers.settings = original }
+        let size = CGSize(width: 320, height: 180)
+        let still = try await posterArtwork(size: size, striped: true)
+        var episode = MediaItem(id: "spoiler-fixture", title: "The Hidden Room", kind: .episode,
+                                episodeNumber: 4, posterURL: still)
+        episode.parentTitle = "Fixture Show"
+        episode.overview = "Someone finds the key"
+        episode.seriesPosterURL = try await posterArtwork(size: size)
+        var started = episode
+        started.playedPercentage = 0.5
+        var watched = episode
+        watched.isPlayed = true
+        let blur = SpoilerSettings(isEnabled: true, mode: .blur)
+        let placeholder = SpoilerSettings(isEnabled: true, mode: .placeholder)
+        try await withWindow { window, host in
+            host.safeAreaRegions = []
+            window.frame.size = CGSize(width: 390, height: 620)
+            for (item, settings, hidesText, hidesStill) in [
+                (episode, .default, false, false), (episode, blur, true, true),
+                (episode, placeholder, true, true), (started, placeholder, true, false),
+                (watched, blur, false, false), (episode, .default, false, false)
+            ] {
+                app.settings.spoilers.settings = settings
+                let presentation = HeroPresentation(item: item, artworkStyle: .compactPortrait, surface: .detail)
+                host.rootView = AnyView(
+                    Group {
+                        if inHero {
+                            PlozziOSDetailHeroForeground(
+                                item: item, rootItem: item, playableItem: item, sources: [],
+                                selectedSourceAccountID: nil, versions: [], selectedVersionID: nil,
+                                onSelectSource: { _ in }, onSelectVersion: { _ in },
+                                presentation: presentation, fallbackPresentation: presentation, style: .compactPortrait,
+                                actionHandler: app.mediaItemActionHandler, onPlay: { _, _ in }, presentsEpisodeStill: true
+                            )
+                        } else {
+                            PlozziOSInlineEpisodeEntry(episode: item, episodes: [item], onPlay: { _, _ in })
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .background(Color.black)
+                    .environment(app)
+                    .environment(\.plozzCardCaptionSettings, .init(preference: .show))
+                    .environment(\.plozzCardStyle, .borderless)
+                    .environment(\.horizontalSizeClass, .compact)
+                )
+                try await settle(window)
+                let image = snapshot(window, name: "episode-protected-\(settings.isEnabled)-\(settings.mode)")
+                let labels = try text(image).map(\.candidate.string).joined(separator: " ")
+                XCTAssertEqual(labels.contains("The Hidden Room"), !hidesText, labels)
+                XCTAssertEqual(labels.contains("finds the key"), !hidesText, labels)
+                if hidesText { XCTAssertTrue(labels.contains("Episode 4"), labels) }
+                let pixels = try rgbaPixels(image)
+                let width = try XCTUnwrap(image.cgImage).width
+                let start = Int(80 * image.scale) * width
+                let band = (100..<200).map { (start + Int(CGFloat($0) * image.scale)) * 4 }
+                let green = band.map { Int(pixels[$0 + 1]) }
+                let contrast = try XCTUnwrap(green.max()) - XCTUnwrap(green.min())
+                if hidesStill {
+                    XCTAssertLessThan(contrast, 30, "The stripes of the real episode still must not be legible")
+                    if settings.mode == .blur {
+                        XCTAssertGreaterThan(try XCTUnwrap(green.min()), 60, "Blurred still, not an empty slot")
+                    }
+                } else {
+                    XCTAssertGreaterThan(contrast, 100, "The unprotected control must show the real still")
+                }
+                let seriesColor = band.filter { Int(pixels[$0]) - Int(pixels[$0 + 1]) > 80 }
+                XCTAssertEqual(seriesColor.count > band.count / 2, hidesStill && settings.mode == .placeholder)
+            }
+        }
+    }
+
     func testDetailEpisodeLabelsHonorPresetsAndOverrides() async throws {
         let app = PlozziOSAppModel()
         let artwork = try await posterArtwork()
@@ -1678,11 +1760,17 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         return bytes
     }
 
-    private func posterArtwork(size: CGSize = CGSize(width: 300, height: 450)) async throws -> URL {
+    private func posterArtwork(size: CGSize = CGSize(width: 300, height: 450), striped: Bool = false) async throws -> URL {
         let url = try XCTUnwrap(URL(string: "https://example.invalid/mobile-poster-\(UUID()).png"))
         let image = UIGraphicsImageRenderer(size: size).image { context in
             UIColor(red: 0.8, green: 0.12, blue: 0.48, alpha: 1).setFill()
             context.fill(CGRect(origin: .zero, size: size))
+            if striped {
+                for x in stride(from: 0, to: Int(size.width), by: 8) {
+                    (x.isMultiple(of: 16) ? UIColor.white : UIColor.black).setFill()
+                    context.fill(CGRect(x: CGFloat(x), y: 0, width: 8, height: size.height))
+                }
+            }
         }
         let data = try XCTUnwrap(image.pngData())
         let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)

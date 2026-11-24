@@ -57,6 +57,10 @@ public enum WatchlistPresentationResolver {
                 // refuses to act without a strong external id, so this widens
                 // what gets ASKED, never what gets matched.
                 var candidate = item
+                if candidate.locallyValidatedPlayableSource, candidate.watchlistAliasID == nil,
+                   candidate.metadataProvenance[.title] == nil {
+                    candidate.metadataProvenance[.title] = .init(source: .server)
+                }
                 if candidate.artworkSourceAccountIDsByURL.isEmpty,
                    let accountID = entry.artworkSourceAccountID {
                     candidate = candidate.taggingArtworkSource(accountID)
@@ -73,18 +77,21 @@ public enum WatchlistPresentationResolver {
                 if let owned = entry.ownedSource,
                    !candidate.locallyValidatedPlayableSource {
                     var resolved = candidate.selectingSource(owned)
-                    resolved = applyingOwnedPresentation(
-                        entry.presentation,
-                        artworkSourceAccountID:
-                            entry.artworkSourceAccountID,
-                        to: resolved
-                    )
+                    resolved = applyingOwnedPresentation(entry, to: resolved)
                     resolved.availability = nil
                     resolved.watchlistAliasID = aliasID
                     return WatchlistPresentationEntry(
                         aliasID: aliasID,
                         item: attributing(resolved, entry: entry)
                     )
+                }
+                // Home feeds its last publication back into this resolver. A
+                // source-only match proved playback, not the Discover caption.
+                if candidate.watchlistAliasID != nil, candidate.metadataProvenance[.title]?.source != .server,
+                   let owned = entry.ownedSource,
+                   (candidate.sourceAccountID == owned.accountID && candidate.id == owned.itemID)
+                    || (candidate.selectedSourceAccountID == nil && candidate.sources.contains { $0.id == owned.id }) {
+                    applyOwnedTitle(entry, to: &candidate)
                 }
                 // Falls back to the MARKED candidate, not the original. A Plex
                 // watchlist entry is a Discover row carrying no availability at
@@ -142,12 +149,7 @@ public enum WatchlistPresentationResolver {
             // answer first, the index only as a fallback.
             var item = entry.ownedSource.map {
                 var owned = placeholder.selectingSource($0)
-                owned = applyingOwnedPresentation(
-                    entry.presentation,
-                    artworkSourceAccountID:
-                        entry.artworkSourceAccountID,
-                    to: owned
-                )
+                owned = applyingOwnedPresentation(entry, to: owned)
                 owned.availability = nil
                 return owned
             } ?? resolved ?? placeholder
@@ -167,7 +169,7 @@ public enum WatchlistPresentationResolver {
         return item
     }
 
-    /// Carries the owned library's artwork onto the item at the same moment its
+    /// Carries the owned library's title and artwork onto the item at the same moment its
     /// source makes the availability badge disappear.
     ///
     /// `selectingSource` deliberately changes playback identity only:
@@ -177,12 +179,12 @@ public enum WatchlistPresentationResolver {
     /// why leaving Home and returning changed the artwork after the "+" was
     /// already gone.
     private static func applyingOwnedPresentation(
-        _ presentation: MediaAliasPresentation?,
-        artworkSourceAccountID: String?,
+        _ entry: WatchlistUnionEntry,
         to item: MediaItem
     ) -> MediaItem {
-        guard let presentation else { return item }
+        guard let presentation = entry.presentation else { return item }
         var item = item
+        applyOwnedTitle(entry, to: &item)
         if let releaseDate = presentation.releaseDate { item.releaseDate = releaseDate }
         var adoptedArtwork: [URL] = []
         if let artwork = presentation.artworkURL.flatMap(URL.init(string:)) {
@@ -194,13 +196,19 @@ public enum WatchlistPresentationResolver {
             item.heroBackdropURL = backdrop
             adoptedArtwork.append(backdrop)
         }
-        if let accountID = artworkSourceAccountID {
+        if let accountID = entry.artworkSourceAccountID {
             item.recordArtworkSource(
                 accountID: accountID,
                 for: adoptedArtwork
             )
         }
         return item
+    }
+
+    private static func applyOwnedTitle(_ entry: WatchlistUnionEntry, to item: inout MediaItem) {
+        guard let title = entry.ownedTitle, !title.isEmpty else { return }
+        item.title = title
+        item.metadataProvenance[.title] = .init(source: .server)
     }
 
     public static func indexCurrentItems(
@@ -217,6 +225,10 @@ public enum WatchlistPresentationResolver {
                   ) else { continue }
             if result[aliasID]?.locallyValidatedPlayableSource == true,
                !item.locallyValidatedPlayableSource {
+                continue
+            }
+            if result[aliasID]?.locallyValidatedPlayableSource == true,
+               result[aliasID]?.watchlistAliasID == nil, item.watchlistAliasID != nil {
                 continue
             }
             result[aliasID] = item

@@ -407,7 +407,34 @@ public actor TVDBClient {
         } else {
             id = await resolve(title: title, year: year, isMovie: isMovie)?.tvdbID
         }
-        guard let id, let token = await ensureToken() else { return nil }
+        guard let id, let record = await artworkRecord(id: id, isMovie: isMovie) else { return nil }
+        let artworks = record.artworks ?? []
+        return prefersPortrait ? Self.bestPortraitHero(artworks) : Self.bestBackdrop(artworks)
+    }
+
+    func posterURL(
+        title: String,  // l10n:content — media title used as a TheTVDB lookup key
+        year: Int?, isMovie: Bool, tvdbID: String?, language: String
+    ) async -> URL? {
+        guard config.isConfigured else { return nil }
+        let match = tvdbID?.nonEmpty == nil ? await resolve(title: title, year: year, isMovie: isMovie) : nil
+        guard let id = tvdbID?.nonEmpty ?? match?.tvdbID,
+              let record = await artworkRecord(id: id, isMovie: isMovie) else { return match?.posterURL }
+        return Self.preferredPoster(record.artworks ?? [], isMovie: isMovie, language: language)
+            ?? record.image?.nonEmpty.flatMap(Self.imageURL) ?? match?.posterURL
+    }
+
+    static func preferredPoster(_ artworks: [Artwork], isMovie: Bool, language: String) -> URL? {
+        let code = TVDBLocale.languageIdentifier(language)
+        // TVDB distinguishes series/movie posters from season posters and character art.
+        let posters = artworks.filter { $0.type == (isMovie ? 14 : 2) && $0.image?.isEmpty == false }
+        let localized = posters.filter { $0.language == code }
+        let preferred = localized.isEmpty ? posters.filter(\.isLanguageNeutral) : localized
+        return preferred.max { $0.pixelArea < $1.pixelArea }?.image.flatMap(Self.imageURL)
+    }
+
+    private func artworkRecord(id: String, isMovie: Bool) async -> ExtendedResponse.DataField? {
+        guard let token = await ensureToken() else { return nil }
         let type = isMovie ? "movies" : "series"
         guard let url = URL(string: "\(config.apiBaseURL.absoluteString)/\(type)/\(id)/extended") else { return nil }
         let (response, reachable) = await MetadataHTTP.getWithStatus(
@@ -417,8 +444,7 @@ public actor TVDBClient {
             if !reachable { self.token = nil }   // likely-expired token; re-login next time
             return nil
         }
-        let artworks = response.data?.artworks ?? []
-        return prefersPortrait ? Self.bestPortraitHero(artworks) : Self.bestBackdrop(artworks)
+        return response.data
     }
 
     static func bestPortraitHero(_ artworks: [Artwork]) -> URL? {
@@ -810,7 +836,7 @@ public actor TVDBClient {
 
     private struct ExtendedResponse: Decodable {
         let data: DataField?
-        struct DataField: Decodable { let artworks: [Artwork]? }
+        struct DataField: Decodable { let artworks: [Artwork]?; let image: String? }
     }
 
     /// TheTVDB v4 `/series|movies/{id}/extended` payload — the rich record we read

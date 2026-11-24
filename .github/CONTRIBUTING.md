@@ -24,6 +24,9 @@ every design will be the right fit. For bigger redesigns, sharing an idea or
 mockup early can help avoid spending time on an approach I might take in a
 different direction.
 
+For settings changes, see [Settings copy and placement](../docs/swiftui-guidelines.md#settings-copy-and-placement)
+for examples of plain rows, group footers, and explanations that belong with a choice.
+
 Hero and tab-navigation continuity rules are part of the UX contract: read the
 [SwiftUI guidelines](../docs/swiftui-guidelines.md#hero-continuity) before
 changing hero artwork, wordmark reveals, action rows, or tab root requests.
@@ -90,8 +93,9 @@ TestFlight), unless a maintainer requests one; feature requests can precede code
 
 Reference existing issues in the fixing commit itself with `Refs #123`
 (`Refs owner/repo#123` across repositories), not just in the PR.
-For app changes, never use closing keywords (`Fixes`, `Closes`, `Resolves`):
-reports stay open until affected platforms reach external TestFlight.
+For app changes, never use closing keywords (`Fixes`, `Closes`, `Resolves`).
+The watcher closes a declared complete fix when it reaches `main` and tells
+reporters it is coming in the next TestFlight. Closure does not mean delivery.
 When the whole report is implemented, add one trailer per issue:
 
 ```text
@@ -105,9 +109,15 @@ TestFlight-Issue: 177 [tvOS]
 Platforms: `tvOS`, `iOS`, or `tvOS,iOS` (`iOS` includes iPad). Partial fixes use
 only `Refs`; reopened issues need a new declaration. Never use
 `TestFlight-Fix: #...`: GitHub treats it as an immediate closing reference.
+Branch pushes, pull requests to `main`, and the local main-landing hook check
+incoming declarations without API access. Run the same check locally with
+`python3 tools/testflight-resolutions.py --lint origin/main HEAD`. An existing
+quarantine does not block unrelated changes. If two branches declare the same
+issue independently, integrate both and declare the complete fix on that history.
 
 The [delivery watcher](../docs/discord-bridge.md#delivery-gated-issue-resolution)
-verifies release availability before closing GitHub and linked Discord reports.
+posts the build number on the closed GitHub issue and archives linked Discord
+reports only after verifying external availability on every affected platform.
 Non-app issue closure remains maintainer-managed.
 
 ### Preserving contribution credit

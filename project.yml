@@ -64,6 +64,10 @@ targets:
   Plozz:
     type: application
     platform: tvOS
+    preBuildScripts:
+      - name: Verify prepared subtitle engine
+        script: '"$SRCROOT/tools/prepare-frame-ass-engine.sh" --verify-only'
+        basedOnDependencyAnalysis: false
     postBuildScripts:
       - name: Embed disc runtime
         script: python3 "$SRCROOT/tools/embed-disc-runtime.py"
@@ -492,6 +496,7 @@ targets:
         basedOnDependencyAnalysis: false
     sources:
       - path: Tests/FocusHost
+      - path: Tests/TrackingPresentationSupport/TrackerHistoryImportFixture.swift
       - path: Tests/HomePresentationSupport/UpcomingCaptureFixture.swift
       - path: Tests/HomePresentationSupport/DetailSelectionFixture.swift
       - path: Tests/HomePresentationSupport/ContentRefreshReturnFixture.swift
@@ -535,6 +540,7 @@ targets:
         basedOnDependencyAnalysis: false
     sources:
       - path: Tests/iOSPresentationHost
+      - path: Tests/TrackingPresentationSupport/TrackerHistoryImportFixture.swift
       - path: Tests/HomePresentationSupport/UpcomingCaptureFixture.swift
       - path: Tests/HomePresentationSupport/DetailSelectionFixture.swift
       - path: Tests/HomePresentationSupport/ContentRefreshReturnFixture.swift
@@ -600,6 +606,7 @@ targets:
     platform: iOS
     sources:
       - path: Tests/iOSPresentationTests
+      - path: Tests/FocusIntegrationTests/PublicMetaDBCatalogHostedTests.swift
       - path: Tests/AppShellTests/WatchlistCloudApplyTests.swift
       - path: Tests/FocusIntegrationTests/ContentRefreshSurfaceHostedTests.swift
       - path: Tests/PlaybackPresentationSupport/PlayerSongLayoutPreviewTests.swift
@@ -665,6 +672,7 @@ targets:
     platform: iOS
     sources:
       - path: Tests/iOSInteractionTests
+      - path: Tests/TrackingPresentationSupport/TrackerHistoryImportInteractionTests.swift
       - path: Tests/HomePresentationSupport/DetailSelectionInteractionTests.swift
       - path: Tests/HomePresentationSupport/ContentRefreshReturnInteractionTests.swift
       - path: Tests/PlaybackPresentationSupport/PlaybackFailureInteractionTests.swift
@@ -682,11 +690,62 @@ targets:
     dependencies:
       - target: PlozziOSPresentationHost
 
+  PlozzTrackerConnectionTests:
+    type: bundle.ui-testing
+    platform: tvOS
+    sources:
+      - path: Tests/TrackerAcceptanceUITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.TrackerConnectionTests
+        GENERATE_INFOPLIST_FILE: YES
+
+  PlozziOSTrackerConnectionTests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: Tests/TrackerAcceptanceUITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.iOSTrackerConnectionTests
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+
+  PlozzTrackerStateTests:
+    type: bundle.unit-test
+    platform: tvOS
+    sources:
+      - path: Tests/TrackerAcceptanceHostedTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.TrackerStateTests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Plozz.app/Plozz"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+    dependencies:
+      - target: Plozz
+
+  PlozziOSTrackerStateTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/TrackerAcceptanceHostedTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.thatcube.Plozz.TrackerStateTests
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Plozz.app/Plozz"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+    dependencies:
+      - target: PlozziOS
+
   PlozzHomeRemoteTests:
     type: bundle.ui-testing
     platform: tvOS
     sources:
       - path: Tests/HomeRemoteTests
+      - path: Tests/TrackingPresentationSupport/TrackerHistoryImportInteractionTests.swift
       - path: Tests/HomePresentationSupport/DetailSelectionInteractionTests.swift
       - path: Tests/HomePresentationSupport/ContentRefreshReturnInteractionTests.swift
       - path: Tests/FeatureLiveTVRemoteTests/LiveTVMultiviewRemoteTests.swift
@@ -744,6 +803,48 @@ targets:
         link: false
 
 schemes:
+  PlozzTrackerConnectionTests:
+    build:
+      targets:
+        PlozzTrackerConnectionTests: [test]
+    test:
+      config: Debug
+      captureScreenshotsAutomatically: false
+      preferredScreenCaptureFormat: screenshots
+      targets:
+        - PlozzTrackerConnectionTests
+
+  PlozziOSTrackerConnectionTests:
+    build:
+      targets:
+        PlozziOSTrackerConnectionTests: [test]
+    test:
+      config: Debug
+      captureScreenshotsAutomatically: false
+      preferredScreenCaptureFormat: screenshots
+      targets:
+        - PlozziOSTrackerConnectionTests
+
+  PlozzTrackerStateTests:
+    build:
+      targets:
+        Plozz: all
+        PlozzTrackerStateTests: [test]
+    test:
+      config: Debug
+      targets:
+        - PlozzTrackerStateTests
+
+  PlozziOSTrackerStateTests:
+    build:
+      targets:
+        PlozziOS: all
+        PlozziOSTrackerStateTests: [test]
+    test:
+      config: Debug
+      targets:
+        - PlozziOSTrackerStateTests
+
   PlozziOSInteractionTests:
     build:
       targets:

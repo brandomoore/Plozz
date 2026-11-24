@@ -74,6 +74,7 @@
     "NightShiftScheduleControl",
     "PlaybackAdvancedSettingsView",
     "PlaybackDetailView",
+    "PlayerTabSettingsView",
     "PlexLinkedUserDetailView",
     "PlozziOSAdvancedStreamingSettings",
     "PlozziOSAllScreensSettingsView",
@@ -308,7 +309,7 @@
       "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
       "controls": {
         "Sources/FeatureSettings/PlaybackReadAheadControl.swift|LivePlaybackBufferControl|body|SettingsMenuRow|\"Live TV buffer\"": 1,
-        "Sources/FeatureSettings/PlaybackReadAheadControl.swift|LivePlaybackBufferControl|body|Picker|\"Live TV buffer\"": 2
+        "Sources/FeatureSettings/PlaybackReadAheadControl.swift|LivePlaybackBufferControl|picker|Picker|\"Live TV buffer\"": 1
       }
     },
     "PlaybackReadAheadControl": {
@@ -316,7 +317,7 @@
       "reason": "Reusable preference input; coverage belongs to each configured call site. Its internal control contract is checked separately.",
       "controls": {
         "Sources/FeatureSettings/PlaybackReadAheadControl.swift|PlaybackReadAheadControl|body|SettingsMenuRow|\"Video buffer\"": 1,
-        "Sources/FeatureSettings/PlaybackReadAheadControl.swift|PlaybackReadAheadControl|body|Picker|\"Video buffer\"": 2
+        "Sources/FeatureSettings/PlaybackReadAheadControl.swift|PlaybackReadAheadControl|picker|Picker|\"Video buffer\"": 1
       }
     },
     "DescribedSegmentedPicker": {
@@ -346,7 +347,7 @@
       "controls": {
         "Sources/AppShelliOS/PlozziOSStreamingQuality.swift|StreamingQualityPicker|body|Menu|SettingsMenuLabel(title, value: selection.title)": 1,
         "Sources/AppShelliOS/PlozziOSStreamingQuality.swift|StreamingQualityPicker|body|Picker|Text(title)": 1,
-        "Sources/AppShelliOS/PlozziOSStreamingQuality.swift|StreamingQualityPicker|body|Button|\"Custom\u2026\"": 1
+        "Sources/AppShelliOS/PlozziOSStreamingQuality.swift|StreamingQualityPicker|body|Button|\"Custom…\"": 1
       }
     },
     "ContinueWatchingNextUpControl": {
@@ -492,7 +493,7 @@
       "reason": "Contextual release-note reading and acknowledgment; not a root Settings editor.",
       "controls": {
         "Sources/FeatureSettings/ReleaseNotesViews.swift|ReleaseNotesStartupView|body|Button|\"Done\"": 2,
-        "Sources/FeatureSettings/ReleaseNotesViews.swift|ReleaseNotesStartupView|body|Button|\"Don\u2019t Show Again\"": 4,
+        "Sources/FeatureSettings/ReleaseNotesViews.swift|ReleaseNotesStartupView|body|Button|\"Don’t Show Again\"": 4,
         "Sources/FeatureSettings/ReleaseNotesViews.swift|ReleaseNotesStartupView|body|Button|\"Cancel\"": 2
       }
     },
@@ -625,7 +626,7 @@
       "reason": "Explicit troubleshooting and recovery operations, not preference editing.",
       "controls": {
         "Sources/FeatureSettings/SettingsView.swift|SyncTroubleshootingView|body|Button|<dynamic>": 2,
-        "Sources/FeatureSettings/SettingsView.swift|SyncTroubleshootingView|body|Button|SettingsRowLabel( icon: \"arrow.clockwise\", title: \"Reset Sync\", secondary: { Text(\"Replace iCloud data with this Apple TV\u2019s copy.\") .font(.footnote) .settingsRowSecondary() } )": 1,
+        "Sources/FeatureSettings/SettingsView.swift|SyncTroubleshootingView|body|Button|SettingsRowLabel( icon: \"arrow.clockwise\", title: \"Reset Sync\", secondary: { Text(\"Replace iCloud data with this Apple TV’s copy.\") .font(.footnote) .settingsRowSecondary() } )": 1,
         "Sources/FeatureSettings/SettingsView.swift|SyncTroubleshootingView|body|Button|\"Reset\"": 1,
         "Sources/FeatureSettings/SettingsView.swift|SyncTroubleshootingView|body|Button|\"Cancel\"": 1
       }
@@ -643,7 +644,7 @@
       "controls": {
         "Sources/FeatureSettings/SyncEraseDataView.swift|SyncEraseDataView|body|Button|\"Cancel\"": 1,
         "Sources/FeatureSettings/SyncEraseDataView.swift|SyncEraseDataView|body|Button|\"Erase Data\"": 1,
-        "Sources/FeatureSettings/SyncEraseDataView.swift|SyncEraseDataView|reviewContent|Button|\"Erase Sync Data\u2026\"": 1,
+        "Sources/FeatureSettings/SyncEraseDataView.swift|SyncEraseDataView|reviewContent|Button|\"Erase Sync Data…\"": 1,
         "Sources/FeatureSettings/SyncEraseDataView.swift|SyncEraseDataView|reviewContent|Button|\"Cancel\"": 1
       }
     },
@@ -879,6 +880,410 @@
         "Sources/AppShelliOS/PlozziOSParentalPINSettingsView.swift|PlozziOSParentalPINSettingsView|body|Button|Text(KidsProfileCopy.parentalPINRemove)": 1,
         "Sources/AppShelliOS/PlozziOSParentalPINSettingsView.swift|PlozziOSParentalPINSettingsView|body|Button|\"Cancel\"": 1
       }
+    },
+    "LastFmListeningHistoryView": {
+      "kind": "presentation",
+      "reason": "Pages through or refreshes the connected Last.fm user's recent listening history.",
+      "controls": {
+        "Sources/FeatureSettings/LastFmListeningHistoryView.swift|LastFmListeningHistoryView|body|Button|\"Previous page\"": 1,
+        "Sources/FeatureSettings/LastFmListeningHistoryView.swift|LastFmListeningHistoryView|body|Button|\"Next page\"": 1,
+        "Sources/FeatureSettings/LastFmListeningHistoryView.swift|LastFmListeningHistoryView|body|Button|\"Refresh\"": 1
+      }
+    },
+    "PublicMetaDBAddToListView": {
+      "kind": "presentation",
+      "reason": "Chooses a remote list and confirms adding one item to it.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBListManagementView.swift|PublicMetaDBAddToListView|body|Button|LabeledContent { Text(list.isPublic ? \"Public\" : \"Private\").settingsRowSecondary() } label: { Text(verbatim: list.name) }": 1,
+        "Sources/FeatureSettings/PublicMetaDBListManagementView.swift|PublicMetaDBAddToListView|body|Button|\"Add to list\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBListManagementView.swift|PublicMetaDBAddToListView|body|Button|\"Cancel\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBListManagementView.swift|PublicMetaDBAddToListView|body|Button|\"OK\"": 1
+      }
+    },
+    "PublicMetaDBAnimeChunkFields": {
+      "kind": "presentation",
+      "reason": "Season, episode and range fields describe one proposed mapping chunk, not playback settings.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBAnimeMappingsView.swift|PublicMetaDBAnimeChunkFields|body|TextField|\"0 for specials\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBAnimeMappingsView.swift|PublicMetaDBAnimeChunkFields|body|TextField|\"Optional\"": 3
+      }
+    },
+    "PublicMetaDBAnimeDeleteView": {
+      "kind": "presentation",
+      "reason": "Reviews and deletes the signed-in contributor's mapping for a specified logical season.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBAnimeMappingsView.swift|PublicMetaDBAnimeDeleteView|body|TextField|\"Logical anime season (1 or greater)\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBAnimeMappingsView.swift|PublicMetaDBAnimeDeleteView|body|Button|\"Review season\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBAnimeMappingsView.swift|PublicMetaDBAnimeDeleteView|body|Button|\"Delete my mapping\"": 2,
+        "Sources/FeatureSettings/PublicMetaDBAnimeMappingsView.swift|PublicMetaDBAnimeDeleteView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "PublicMetaDBAnimeEditor": {
+      "kind": "presentation",
+      "reason": "Edits a proposed logical-season mapping and its chunks for one title.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBAnimeMappingsView.swift|PublicMetaDBAnimeEditor|body|TextField|\"Logical anime season (1 or greater)\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBAnimeMappingsView.swift|PublicMetaDBAnimeEditor|body|TextField|\"Season name (optional)\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBAnimeMappingsView.swift|PublicMetaDBAnimeEditor|body|Button|\"Remove this chunk\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBAnimeMappingsView.swift|PublicMetaDBAnimeEditor|body|Button|\"Add a chunk\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBAnimeMappingsView.swift|PublicMetaDBAnimeEditor|body|Button|\"Review replacement\"": 1
+      }
+    },
+    "PublicMetaDBAnimeMappingsView": {
+      "kind": "presentation",
+      "reason": "Opens one remote mapping chunk for the current anime title.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBAnimeMappingsView.swift|PublicMetaDBAnimeMappingsView|body|NavigationLink|SettingsDisclosureLabel { PublicMetaDBAnimeChunkLabel(chunk: record.value, anchorID: tmdbID) }": 1
+      }
+    },
+    "PublicMetaDBAnimeReviewView": {
+      "kind": "presentation",
+      "reason": "Confirms or cancels publication of a reviewed season mapping.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBAnimeMappingsView.swift|PublicMetaDBAnimeReviewView|body|Button|\"Replace my mapping\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBAnimeMappingsView.swift|PublicMetaDBAnimeReviewView|body|Button|\"Publish replacement\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBAnimeMappingsView.swift|PublicMetaDBAnimeReviewView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "PublicMetaDBBulkHistoryView": {
+      "kind": "presentation",
+      "reason": "Pages through the current account's plays and confirms deletion of a selected batch.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBBulkHistoryView.swift|PublicMetaDBBulkHistoryView|body|Button|\"Previous page\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBBulkHistoryView.swift|PublicMetaDBBulkHistoryView|body|Button|\"Next page\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBBulkHistoryView.swift|PublicMetaDBBulkHistoryView|body|Button|\"Review deletion\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBBulkHistoryView.swift|PublicMetaDBBulkHistoryView|body|Button|\"Refresh history\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBBulkHistoryView.swift|PublicMetaDBBulkHistoryView|body|Button|\"Delete \\(draft.records.count) plays\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBBulkHistoryView.swift|PublicMetaDBBulkHistoryView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "PublicMetaDBContentPresentation": {
+      "kind": "presentation",
+      "reason": "Closes the presented title details.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBContentView.swift|PublicMetaDBContentPresentation|body|Button|\"Close\"": 1
+      }
+    },
+    "PublicMetaDBContentRatingsView": {
+      "kind": "presentation",
+      "reason": "Opens one submitted rating for the selected title.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBContributionView.swift|PublicMetaDBContentRatingsView|body|NavigationLink|SettingsDisclosureLabel { VStack(alignment: .leading) { Text(verbatim: record.value.label) if let contributor = record.contributor { Text(verbatim: contributor).font(SettingsRowMetrics.descriptionFont).settingsRowSecondary() } } } value: { Text(verbatim: \"\\(record.value.score.formatted()) / 100\") }": 1
+      }
+    },
+    "PublicMetaDBContentView": {
+      "kind": "presentation",
+      "reason": "Opens one remote content record; the subject depends on the selected title.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBContentView.swift|PublicMetaDBContentView|body|NavigationLink|VStack(alignment: .leading) { PublicMetaDBContentLabel(content: record.value.content, allowsFocus: false) PublicMetaDBWatchDateLabel(date: record.value.watchedAt) }": 1
+      }
+    },
+    "PublicMetaDBContributionRecordView": {
+      "kind": "presentation",
+      "reason": "Reviews and confirms deletion of the current account's contribution.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBContributionView.swift|PublicMetaDBContributionRecordView|body|Button|\"Delete contribution\"": 2,
+        "Sources/FeatureSettings/PublicMetaDBContributionView.swift|PublicMetaDBContributionRecordView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "PublicMetaDBCreateListView": {
+      "kind": "presentation",
+      "reason": "Name, type and visibility belong to the remote list being created, not to the app or profile.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBListManagementView.swift|PublicMetaDBCreateListView|body|TextField|\"List name\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBListManagementView.swift|PublicMetaDBCreateListView|body|TextField|\"Description (optional)\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBListManagementView.swift|PublicMetaDBCreateListView|body|Picker|\"List type\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBListManagementView.swift|PublicMetaDBCreateListView|body|Toggle|\"Public list\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBListManagementView.swift|PublicMetaDBCreateListView|body|Button|\"Create list\"": 2,
+        "Sources/FeatureSettings/PublicMetaDBListManagementView.swift|PublicMetaDBCreateListView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "PublicMetaDBDetailLink": {
+      "kind": "presentation",
+      "reason": "Navigates within the current PublicMetaDB title's details.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBContentView.swift|PublicMetaDBDetailLink|body|NavigationLink|<dynamic>": 1
+      }
+    },
+    "PublicMetaDBEpisodeRatingsDeletionView": {
+      "kind": "presentation",
+      "reason": "Selects and confirms deletion of individual episode ratings for one season.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBSeasonRatingsView.swift|PublicMetaDBEpisodeRatingsDeletionView|body|Toggle|<dynamic>": 1,
+        "Sources/FeatureSettings/PublicMetaDBSeasonRatingsView.swift|PublicMetaDBEpisodeRatingsDeletionView|body|Button|\"Delete selected ratings\"": 2,
+        "Sources/FeatureSettings/PublicMetaDBSeasonRatingsView.swift|PublicMetaDBEpisodeRatingsDeletionView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "PublicMetaDBEpisodeRatingsEditor": {
+      "kind": "presentation",
+      "reason": "Drafts, reviews and publishes episode scores for a season; these are contribution fields, not display settings.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBSeasonRatingsView.swift|PublicMetaDBEpisodeRatingsEditor|body|TextField|\"Overall\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBSeasonRatingsView.swift|PublicMetaDBEpisodeRatingsEditor|body|TextField|\"Episode\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBSeasonRatingsView.swift|PublicMetaDBEpisodeRatingsEditor|body|Picker|\"Score out of 100\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBSeasonRatingsView.swift|PublicMetaDBEpisodeRatingsEditor|body|Button|\"Remove row\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBSeasonRatingsView.swift|PublicMetaDBEpisodeRatingsEditor|body|Button|\"Add an episode\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBSeasonRatingsView.swift|PublicMetaDBEpisodeRatingsEditor|body|Button|\"Review ratings\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBSeasonRatingsView.swift|PublicMetaDBEpisodeRatingsEditor|body|Button|\"Publish ratings\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBSeasonRatingsView.swift|PublicMetaDBEpisodeRatingsEditor|body|Button|\"Cancel\"": 1
+      }
+    },
+    "PublicMetaDBHistoryDateView": {
+      "kind": "presentation",
+      "reason": "Edits or clears the date on one play record and confirms the change.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBHistoryManagementView.swift|PublicMetaDBHistoryDateView|body|Toggle|\"Watch date unknown\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBHistoryManagementView.swift|PublicMetaDBHistoryDateView|body|TextField|\"Date and time (ISO 8601)\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBHistoryManagementView.swift|PublicMetaDBHistoryDateView|body|DatePicker|\"Watch date\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBHistoryManagementView.swift|PublicMetaDBHistoryDateView|body|Button|\"Review change\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBHistoryManagementView.swift|PublicMetaDBHistoryDateView|body|Button|\"Save play\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBHistoryManagementView.swift|PublicMetaDBHistoryDateView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "PublicMetaDBHistoryExportContent": {
+      "kind": "presentation",
+      "reason": "Chooses a one-time export mode and selected titles, previews them, and confirms the account mutation. No persistent sync preference.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBHistoryExportView.swift|PublicMetaDBHistoryExportContent|body|SettingsMenuRow|\"History to export\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBHistoryExportView.swift|PublicMetaDBHistoryExportContent|body|Picker|\"History to export\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBHistoryExportView.swift|PublicMetaDBHistoryExportContent|body|Button|\"Preview export\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBHistoryExportView.swift|PublicMetaDBHistoryExportContent|body|Button|\"Review \\(selected.count) selected\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBHistoryExportView.swift|PublicMetaDBHistoryExportContent|body|Toggle|\"Export this title\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBHistoryExportView.swift|PublicMetaDBHistoryExportContent|body|Button|\"Export selected titles\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBHistoryExportView.swift|PublicMetaDBHistoryExportContent|body|Button|\"Cancel\"": 1
+      }
+    },
+    "PublicMetaDBHistoryRecordView": {
+      "kind": "presentation",
+      "reason": "Confirms an operation on a selected play, resume point or dropped title.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBHistoryManagementView.swift|PublicMetaDBHistoryRecordView|body|Button|Text(action.label)": 2,
+        "Sources/FeatureSettings/PublicMetaDBHistoryManagementView.swift|PublicMetaDBHistoryRecordView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "PublicMetaDBHistorySelectionRows": {
+      "kind": "presentation",
+      "reason": "Selects an individual play for the pending deletion, not a history preference.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBBulkHistoryView.swift|PublicMetaDBHistorySelectionRows|body|Toggle|<dynamic>": 1
+      }
+    },
+    "PublicMetaDBKeyEntryView": {
+      "kind": "presentation",
+      "reason": "Manual secret entry, pairing retry and submission are explicit steps of this profile's authorization flow.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBSettingsContent.swift|PublicMetaDBKeyEntryView|body|Button|\"Enter API key manually\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBSettingsContent.swift|PublicMetaDBKeyEntryView|websiteEntry|Button|\"Try again\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBSettingsContent.swift|PublicMetaDBKeyEntryView|keyField|SecureField|\"API key\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBSettingsContent.swift|PublicMetaDBKeyEntryView|actions|Button|\"Connect\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBSettingsContent.swift|PublicMetaDBKeyEntryView|cancelButton|Button|\"Cancel\"": 1
+      }
+    },
+    "PublicMetaDBListItemActionsView": {
+      "kind": "presentation",
+      "reason": "Confirms removing an individual item from a remote list.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBListManagementView.swift|PublicMetaDBListItemActionsView|body|Button|\"Remove from list\"": 2,
+        "Sources/FeatureSettings/PublicMetaDBListManagementView.swift|PublicMetaDBListItemActionsView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "PublicMetaDBMappingEditor": {
+      "kind": "presentation",
+      "reason": "Prepares review of a proposed identifier mapping for one title.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBMappingView.swift|PublicMetaDBMappingEditor|body|Button|\"Review mapping\"": 1
+      }
+    },
+    "PublicMetaDBMappingFields": {
+      "kind": "presentation",
+      "reason": "The database and external ID identify one lookup or contribution; neither is a default provider.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBMappingView.swift|PublicMetaDBMappingFields|body|Picker|\"Database\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBMappingView.swift|PublicMetaDBMappingFields|body|TextField|\"ID\"": 1
+      }
+    },
+    "PublicMetaDBMappingLookupView": {
+      "kind": "presentation",
+      "reason": "Looks up the specified external ID and opens that result.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBMappingView.swift|PublicMetaDBMappingLookupView|body|Button|\"Look up ID\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBMappingView.swift|PublicMetaDBMappingLookupView|body|NavigationLink|SettingsDisclosureLabel { PublicMetaDBContentLabel(content: content, allowsFocus: false) }": 1
+      }
+    },
+    "PublicMetaDBMappingReviewView": {
+      "kind": "presentation",
+      "reason": "Reviews and confirms publication of one mapping.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBMappingView.swift|PublicMetaDBMappingReviewView|body|Button|\"Publish mapping\"": 2,
+        "Sources/FeatureSettings/PublicMetaDBMappingView.swift|PublicMetaDBMappingReviewView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "PublicMetaDBMappingsView": {
+      "kind": "presentation",
+      "reason": "Opens a selected identifier mapping for this content record.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBMappingView.swift|PublicMetaDBMappingsView|body|NavigationLink|SettingsDisclosureLabel { PublicMetaDBMappingLabel(record: record, showsDatabase: false) }": 1
+      }
+    },
+    "PublicMetaDBOpenCatalogTitle": {
+      "kind": "presentation",
+      "reason": "Opens a matched catalog title or show rather than changing a catalog preference.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBContentView.swift|PublicMetaDBOpenCatalogTitle|body|Button|content.season == nil ? \"Open title in Plozz\" : \"Open show in Plozz\"": 1
+      }
+    },
+    "PublicMetaDBOpenListView": {
+      "kind": "presentation",
+      "reason": "Accepts a list URL for a single lookup; it is not a stored destination.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBListManagementView.swift|PublicMetaDBOpenListView|body|TextField|\"PublicMetaDB list URL\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBListManagementView.swift|PublicMetaDBOpenListView|body|Button|\"Open list\"": 1
+      }
+    },
+    "PublicMetaDBOwnedListView": {
+      "kind": "presentation",
+      "reason": "Browses items in the authenticated user's list or confirms deleting that list.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBListManagementView.swift|PublicMetaDBOwnedListView|body|NavigationLink|PublicMetaDBContentLabel(content: record.value, allowsFocus: false)": 1,
+        "Sources/FeatureSettings/PublicMetaDBListManagementView.swift|PublicMetaDBOwnedListView|body|Button|\"Delete list\"": 2,
+        "Sources/FeatureSettings/PublicMetaDBListManagementView.swift|PublicMetaDBOwnedListView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "PublicMetaDBPagedRecords": {
+      "kind": "presentation",
+      "reason": "Pagination and refresh operate on the authenticated query, not saved settings.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBAccountView.swift|PublicMetaDBPagedRecords|body|Button|\"Previous page\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBAccountView.swift|PublicMetaDBPagedRecords|body|Button|\"Next page\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBAccountView.swift|PublicMetaDBPagedRecords|body|Button|\"Refresh\"": 1
+      }
+    },
+    "PublicMetaDBPickItemsView": {
+      "kind": "presentation",
+      "reason": "Navigates to a title in the selected remote pick.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBAccountView.swift|PublicMetaDBPickItemsView|body|NavigationLink|VStack(alignment: .leading) { Text(verbatim: item.title) if let year = item.year { Text(verbatim: year).foregroundStyle(.secondary) } }": 1
+      }
+    },
+    "PublicMetaDBPicksView": {
+      "kind": "presentation",
+      "reason": "Opens or refreshes remote picks for the current connection.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBAccountView.swift|PublicMetaDBPicksView|body|NavigationLink|VStack(alignment: .leading) { Text(verbatim: pick.name) if let description = pick.description { Text(verbatim: description).foregroundStyle(.secondary) } }": 1,
+        "Sources/FeatureSettings/PublicMetaDBAccountView.swift|PublicMetaDBPicksView|body|Button|\"Refresh\"": 1
+      }
+    },
+    "PublicMetaDBRatingRecordView": {
+      "kind": "presentation",
+      "reason": "Reviews and confirms deletion of the current account's title rating.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBContributionView.swift|PublicMetaDBRatingRecordView|body|Button|\"Delete rating\"": 2,
+        "Sources/FeatureSettings/PublicMetaDBContributionView.swift|PublicMetaDBRatingRecordView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "PublicMetaDBReadContent": {
+      "kind": "presentation",
+      "reason": "Refreshes fetched content for a single connected-account query.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBContributionView.swift|PublicMetaDBReadContent|body|Button|\"Refresh\"": 1
+      }
+    },
+    "PublicMetaDBSeasonRatingsView": {
+      "kind": "presentation",
+      "reason": "Loads one season's ratings and opens a selected episode rating.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBSeasonRatingsView.swift|PublicMetaDBSeasonRatingsView|body|TextField|\"Season\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBSeasonRatingsView.swift|PublicMetaDBSeasonRatingsView|body|Button|\"Load season\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBSeasonRatingsView.swift|PublicMetaDBSeasonRatingsView|body|NavigationLink|SettingsDisclosureLabel { VStack(alignment: .leading) { Text(\"Episode \\(episode.episode)\") ForEach(episode.aggregates.keys.sorted(), id: \\.self) { key in if let score = episode.aggregates[key] { Text(\"\\(score.label): \\(score.average.formatted()) / 100 (\\(score.count) ratings)\") .font(SettingsRowMetrics.descriptionFont).settingsRowSecondary() } } } }": 1
+      }
+    },
+    "PublicMetaDBSubmitRatingView": {
+      "kind": "presentation",
+      "reason": "Drafts and confirms a score for a specific title, not a rating display preference.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBContributionView.swift|PublicMetaDBSubmitRatingView|body|TextField|\"Overall\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBContributionView.swift|PublicMetaDBSubmitRatingView|body|Picker|\"Score out of 100\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBContributionView.swift|PublicMetaDBSubmitRatingView|body|Button|\"Submit rating\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBContributionView.swift|PublicMetaDBSubmitRatingView|body|Button|\"Publish rating\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBContributionView.swift|PublicMetaDBSubmitRatingView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "PublicMetaDBVoteView": {
+      "kind": "presentation",
+      "reason": "Changes the signed-in account's vote on an individual contribution.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBContributionView.swift|PublicMetaDBVoteView|body|Button|voteLabel(vote)": 1,
+        "Sources/FeatureSettings/PublicMetaDBContributionView.swift|PublicMetaDBVoteView|body|Button|\"Remove my vote\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBContributionView.swift|PublicMetaDBVoteView|body|Button|\"Confirm vote\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBContributionView.swift|PublicMetaDBVoteView|body|Button|\"Cancel\"": 1
+      }
+    },
+    "PublicMetaDBWatchlistPicker": {
+      "kind": "presentation",
+      "reason": "Lists are fetched for this connection only. Choosing a list and approving its visibility and sync effects are explicit steps after Watchlist destination.",
+      "controls": {
+        "Sources/FeatureSettings/PublicMetaDBWatchlistSettingsView.swift|PublicMetaDBWatchlistPicker|body|Button|VStack(alignment: .leading) { Text(verbatim: list.name) Text(list.isPublic ? \"Public\" : \"Private\").foregroundStyle(.secondary) }": 1,
+        "Sources/FeatureSettings/PublicMetaDBWatchlistSettingsView.swift|PublicMetaDBWatchlistPicker|body|Button|\"Use this list\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBWatchlistSettingsView.swift|PublicMetaDBWatchlistPicker|body|Button|\"Cancel\"": 1,
+        "Sources/FeatureSettings/PublicMetaDBWatchlistSettingsView.swift|PublicMetaDBWatchlistPicker|body|Button|\"OK\"": 1
+      }
+    },
+    "TrackerHistoryComparisonContent": {
+      "kind": "presentation",
+      "reason": "Repeats a comparison or confirms its selected changes for the current server user and tracker.",
+      "controls": {
+        "Sources/FeatureSettings/TrackerHistoryImportView.swift|TrackerHistoryComparisonContent|body|Button|\"Review \\(selected.count) selected\"": 1,
+        "Sources/FeatureSettings/TrackerHistoryImportView.swift|TrackerHistoryComparisonContent|body|Button|\"Compare again\"": 1,
+        "Sources/FeatureSettings/TrackerHistoryImportView.swift|TrackerHistoryComparisonContent|body|Button|\"Apply selected changes\"": 1,
+        "Sources/FeatureSettings/TrackerHistoryImportView.swift|TrackerHistoryComparisonContent|body|Button|\"Cancel\"": 1
+      }
+    },
+    "TrackerHistoryComparisonRow": {
+      "kind": "presentation",
+      "reason": "Selects a single difference in the current comparison.",
+      "controls": {
+        "Sources/FeatureSettings/TrackerHistoryImportView.swift|TrackerHistoryComparisonRow|body|Toggle|<dynamic>": 1
+      }
+    },
+    "TrackerHistoryExportContent": {
+      "kind": "presentation",
+      "reason": "Previews, reviews and confirms a one-time export of selected server history to one tracker account.",
+      "controls": {
+        "Sources/FeatureSettings/TrackerHistoryExportView.swift|TrackerHistoryExportContent|body|Button|\"Preview export\"": 1,
+        "Sources/FeatureSettings/TrackerHistoryExportView.swift|TrackerHistoryExportContent|body|Button|\"Review \\(selected.count) selected\"": 1,
+        "Sources/FeatureSettings/TrackerHistoryExportView.swift|TrackerHistoryExportContent|body|Button|\"Export selected titles\"": 1,
+        "Sources/FeatureSettings/TrackerHistoryExportView.swift|TrackerHistoryExportContent|body|Button|\"Cancel\"": 1
+      }
+    },
+    "TrackerHistoryExportRow": {
+      "kind": "presentation",
+      "reason": "Selects one title in the pending export; no persistent preference.",
+      "controls": {
+        "Sources/FeatureSettings/TrackerHistoryExportView.swift|TrackerHistoryExportRow|body|Toggle|\"Export this title\"": 1
+      }
+    },
+    "TrackerHistoryExportSourceRows": {
+      "kind": "presentation",
+      "reason": "Server user and library select the source of a single export; search may not choose either.",
+      "controls": {
+        "Sources/FeatureSettings/TrackerHistoryReviewResults.swift|TrackerHistoryExportSourceRows|body|SettingsMenuRow|\"Server user\"": 1,
+        "Sources/FeatureSettings/TrackerHistoryReviewResults.swift|TrackerHistoryExportSourceRows|body|Picker|\"Server user\"": 1,
+        "Sources/FeatureSettings/TrackerHistoryReviewResults.swift|TrackerHistoryExportSourceRows|body|SettingsMenuRow|\"Library\"": 1,
+        "Sources/FeatureSettings/TrackerHistoryReviewResults.swift|TrackerHistoryExportSourceRows|body|Picker|\"Library\"": 1
+      }
+    },
+    "TrackerHistoryReviewResults": {
+      "kind": "presentation",
+      "reason": "Filters, title search and pagination apply only to the current review snapshot; user titles never enter Settings search.",
+      "controls": {
+        "Sources/FeatureSettings/TrackerHistoryReviewResults.swift|TrackerHistoryReviewResults|body|SettingsMenuRow|\"Show\"": 1,
+        "Sources/FeatureSettings/TrackerHistoryReviewResults.swift|TrackerHistoryReviewResults|body|Picker|\"Show\"": 1,
+        "Sources/FeatureSettings/TrackerHistoryReviewResults.swift|TrackerHistoryReviewResults|body|TextField|\"Title\"": 1,
+        "Sources/FeatureSettings/TrackerHistoryReviewResults.swift|TrackerHistoryReviewResults|body|SettingsMenuRow|\"Page\"": 1,
+        "Sources/FeatureSettings/TrackerHistoryReviewResults.swift|TrackerHistoryReviewResults|body|Picker|\"Page\"": 1,
+        "Sources/FeatureSettings/TrackerHistoryReviewResults.swift|TrackerHistoryReviewResults|body|Button|\"Previous page\"": 1,
+        "Sources/FeatureSettings/TrackerHistoryReviewResults.swift|TrackerHistoryReviewResults|body|Button|\"Next page\"": 1
+      }
     }
   },
   "derived_anchors": {
@@ -895,7 +1300,7 @@
       "reason": "sensitive_connection_field: Setup flow.",
       "covered_by": []
     },
-    "Sources/AppShelliOS/AddServerView.swift|AddServerView|connectionContent|Button|Group { if isValidating { ProgressView(\"Checking server\u2026\") } else { Text(\"Connect\") } } .plozzPageActionLabel()": {
+    "Sources/AppShelliOS/AddServerView.swift|AddServerView|connectionContent|Button|Group { if isValidating { ProgressView(\"Checking server…\") } else { Text(\"Connect\") } } .plozzPageActionLabel()": {
       "count": 1,
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "covered_by": []
@@ -970,7 +1375,7 @@
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "covered_by": []
     },
-    "Sources/AppShelliOS/PlozziOSDiagnosticsSettingsView.swift|PlozziOSDiagnosticsSettingsView|body|TextField|<dynamic>": {
+    "Sources/FeatureSettings/SendDiagnosticsCard.swift|MobileDiagnosticsSubmissionSection|body|TextField|<dynamic>": {
       "count": 1,
       "reason": "Optional diagnostic submission text, not a saved preference.",
       "covered_by": []
@@ -1227,12 +1632,12 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "covered_by": []
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSArtworkSettingsView|body|Button|HStack { Text(\"Metadata Providers (TMDB, TheTVDB\u2026)\") Spacer() Image(systemName: \"chevron.forward\") .font(.footnote) .foregroundStyle(.secondary) }": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSArtworkSettingsView|body|Button|HStack { Text(\"Metadata Providers (TMDB, TheTVDB…)\") Spacer() Image(systemName: \"chevron.forward\") .font(.footnote) .foregroundStyle(.secondary) }": {
       "count": 1,
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "covered_by": []
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSArtworkSettingsView|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Metadata Providers (TMDB, TheTVDB\u2026)\") }": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSArtworkSettingsView|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Metadata Providers (TMDB, TheTVDB…)\") }": {
       "count": 1,
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "covered_by": []
@@ -1265,32 +1670,30 @@
       "reason": "preview_action: Does not configure schedule.",
       "covered_by": []
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Toggle|\"Volume and brightness gestures\"": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|sectionView|Toggle|\"Volume and brightness gestures\"": {
       "count": 1,
-      "reason": "Reviewed setting; behavior is covered by its owning component tests.",
-      "covered_by": []
+      "reason": "The described row owns the gesture anchor.",
+      "covered_by": ["volume-brightness"]
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Toggle|\"Identify songs\"": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|sectionView|Toggle|\"Identify songs\"": {
       "count": 1,
-      "reason": "Reviewed setting; behavior is covered by its owning component tests.",
-      "covered_by": []
+      "reason": "The described row owns the song identification anchor.",
+      "covered_by": ["identify-songs"]
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Toggle|\"P7 FEL \u2192 P8.1 conversion\"": {
-      "count": 1,
-      "reason": "Reviewed setting; behavior is covered by its owning component tests.",
-      "covered_by": []
-    },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Picker|\"Disc playback\"": {
-      "count": 1,
-      "reason": "The containing stack owns the disc-playback anchor, keeping its compatibility notice with the picker.",
-      "covered_by": [
-        "disc-playback"
-      ]
-    },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|body|Button|SettingsDisclosureLabel { Text(\"Advanced\") }": {
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|sectionView|Button|SettingsDisclosureLabel { Text(\"Advanced\") }": {
       "count": 1,
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "covered_by": []
+    },
+    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSPlaybackSettingsView|sectionView|Button|SettingsDisclosureLabel { Text(\"Player tabs\") }": {
+      "count": 1,
+      "reason": "Navigation to independently searchable tab visibility switches.",
+      "covered_by": ["player-tab-chapters", "player-tab-cast", "player-tab-episodes", "player-tab-playlist", "continue-watching-in-player"]
+    },
+    "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|playerTabsLink|SettingsPageLink|SettingsDisclosureLabel { Text(\"Player tabs\") }": {
+      "count": 1,
+      "reason": "Navigation to independently searchable tab visibility switches.",
+      "covered_by": ["player-tab-chapters", "player-tab-cast", "player-tab-episodes", "player-tab-playlist", "continue-watching-in-player"]
     },
     "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSProfilesView|body|Button|HStack { PlozziOSProfileAvatar( profile: profile, size: 34 ) Text(profile.name) Spacer() // Glance the access state so the list answers // \"who's locked?\" without opening each one. if profile.isKids { Image(systemName: \"figure.and.child.holdinghands\") .plozzForeground(.secondary) } if profile.isLocked { Image(systemName: \"lock.fill\") .plozzForeground(.secondary) } if isEditingProfiles { Image(systemName: \"chevron.right\") .font(.caption.weight(.semibold)) .plozzForeground(.tertiary) } } .frame(maxWidth: .infinity, alignment: .leading) .contentShape(Rectangle())": {
       "count": 1,
@@ -1487,11 +1890,6 @@
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "covered_by": []
     },
-    "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSubtitleSettingsView|body|Toggle|\"Use a separate style for Live TV\"": {
-      "count": 1,
-      "reason": "Reviewed setting; behavior is covered by its owning component tests.",
-      "covered_by": []
-    },
     "Sources/AppShelliOS/PlozziOSSettingsView.swift|PlozziOSSubtitleSettingsView|body|Button|SettingsDisclosureLabel { Text(\"Customize Live TV subtitles\") }": {
       "count": 1,
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
@@ -1601,11 +1999,6 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "covered_by": []
     },
-    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|AniListSettingsContent|body|Button|\"Disconnect\"": {
-      "count": 1,
-      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input.",
-      "covered_by": []
-    },
     "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|AniListSettingsContent|connectButton|Button|\"Connect AniList\"": {
       "count": 1,
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
@@ -1631,47 +2024,7 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "covered_by": []
     },
-    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|MALSettingsContent|body|Button|\"Open MyAnimeList\"": {
-      "count": 1,
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
-      "covered_by": []
-    },
-    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|MALSettingsContent|body|TextField|\"Authorization code\"": {
-      "count": 1,
-      "reason": "credential: OAuth exchange.",
-      "covered_by": []
-    },
-    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|MALSettingsContent|body|Button|\"Redeem Code\"": {
-      "count": 1,
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
-      "covered_by": []
-    },
-    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|MALSettingsContent|body|Button|\"Cancel\"": {
-      "count": 1,
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
-      "covered_by": []
-    },
-    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|MALSettingsContent|body|Button|\"Disconnect\"": {
-      "count": 1,
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
-      "covered_by": []
-    },
     "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|MALSettingsContent|connectButton|Button|\"Connect MyAnimeList\"": {
-      "count": 1,
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
-      "covered_by": []
-    },
-    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|SimklSettingsContent|body|Button|\"Open Simkl\"": {
-      "count": 1,
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
-      "covered_by": []
-    },
-    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|SimklSettingsContent|body|Button|\"Cancel\"": {
-      "count": 1,
-      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
-      "covered_by": []
-    },
-    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|SimklSettingsContent|body|Button|\"Disconnect\"": {
       "count": 1,
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "covered_by": []
@@ -2485,7 +2838,7 @@
         "episode-count-style"
       ]
     },
-    "Sources/FeatureSettings/CardAppearanceControls.swift|CardCaptionSettingsLink|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Customize labels\") } .settingsFormRowLayout()": {
+    "Sources/FeatureSettings/CardAppearanceControls.swift|CardCaptionSettingsLink|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Customize labels\") }": {
       "count": 1,
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "covered_by": []
@@ -3246,7 +3599,7 @@
       "reason": "Reviewed setting; behavior is covered by its owning component tests.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/PreferenceDetailViews.swift|PlaybackDetailView|audioRows|Toggle|\"P7 FEL \u2192 P8.1 conversion\"": {
+    "Sources/FeatureSettings/VideoUpscalingControl.swift|DolbyVisionFELConversionControl|body|Toggle|\"P7 FEL \u2192 P8.1 conversion\"": {
       "count": 1,
       "reason": "Reviewed setting; behavior is covered by its owning component tests.",
       "covered_by": []
@@ -3633,7 +3986,7 @@
       "reason": "Reviewed setting; behavior is covered by its owning component tests.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsControl|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Customize\") } .settingsFormRowLayout()": {
+    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsControl|body|SettingsPageLink|SettingsDisclosureLabel { Text(\"Customize\") }": {
       "count": 1,
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "covered_by": []
@@ -3648,7 +4001,7 @@
       "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
       "covered_by": []
     },
-    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsView|rows|SettingsPageLink|SettingsDisclosureLabel { Text(kind.settingsTitle) } .settingsFormRowLayout()": {
+    "Sources/FeatureSettings/SkipMarkerSettingsControl.swift|SkipMarkerSettingsView|rows|SettingsPageLink|SettingsDisclosureLabel { Text(kind.settingsTitle) }": {
       "count": 1,
       "reason": "Navigation to an existing editor; its controls are independently discovered.",
       "covered_by": []
@@ -3666,6 +4019,141 @@
     "Sources/FeatureSettings/VideoUpscalingControl.swift|VideoUpscalingControl|picker|Picker|\"Video upscaling\"": {
       "count": 1,
       "reason": "Reviewed setting; behavior is covered by its owning component tests.",
+      "covered_by": []
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|AniListSettingsContent|body|Button|\"Disconnect\"": {
+      "count": 1,
+      "reason": "Explicit navigation, confirmation, reset, connection or diagnostic action; not a preference input.",
+      "covered_by": []
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|MALSettingsContent|body|Button|\"Cancel\"": {
+      "count": 1,
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "covered_by": []
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|MALSettingsContent|body|Button|\"Disconnect\"": {
+      "count": 1,
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "covered_by": []
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|MALSettingsContent|body|Button|\"Open MyAnimeList\"": {
+      "count": 1,
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "covered_by": []
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|MALSettingsContent|body|Button|\"Redeem Code\"": {
+      "count": 1,
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "covered_by": []
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|MALSettingsContent|body|TextField|\"Authorization code\"": {
+      "count": 1,
+      "reason": "credential: OAuth exchange.",
+      "covered_by": []
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|SimklSettingsContent|body|Button|\"Cancel\"": {
+      "count": 1,
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "covered_by": []
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|SimklSettingsContent|body|Button|\"Disconnect\"": {
+      "count": 1,
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "covered_by": []
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|SimklSettingsContent|body|Button|\"Open Simkl\"": {
+      "count": 1,
+      "reason": "Reviewed navigation, connection, credential, confirmation, recovery or content-management action; not a preference value.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/PublicMetaDBSettingsContent.swift|PublicMetaDBSettingsContent|body|Button|\"Cancel\"": {
+      "count": 2,
+      "reason": "Connection removal, key replacement and their dialogs require explicit interaction with the current profile's saved connection.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/PublicMetaDBSettingsContent.swift|PublicMetaDBSettingsContent|body|Button|\"Disconnect\"": {
+      "count": 2,
+      "reason": "Connection removal, key replacement and their dialogs require explicit interaction with the current profile's saved connection.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/PublicMetaDBSettingsContent.swift|PublicMetaDBSettingsContent|body|Button|\"OK\"": {
+      "count": 1,
+      "reason": "Connection removal, key replacement and their dialogs require explicit interaction with the current profile's saved connection.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/PublicMetaDBSettingsContent.swift|PublicMetaDBSettingsContent|body|Button|\"Replace API key\"": {
+      "count": 1,
+      "reason": "Connection removal, key replacement and their dialogs require explicit interaction with the current profile's saved connection.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/PublicMetaDBWatchlistSettingsView.swift|PublicMetaDBWatchlistSettingsView|body|Button|\"Stop syncing\"": {
+      "count": 1,
+      "reason": "Deferred watchlist controls have no v1 destination or search entry.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/PublicMetaDBWatchlistSettingsView.swift|PublicMetaDBWatchlistSettingsView|body|NavigationLink|HStack { Text(\"PublicMetaDB list\") Spacer() if let selection = service.watchlistSelection { Text(verbatim: selection.listName).settingsRowSecondary() } else { Text(\"None\").settingsRowSecondary() } }": {
+      "count": 1,
+      "reason": "Deferred watchlist controls have no v1 destination or search entry.",
+      "covered_by": []
+    },
+    "Sources/AppShelliOS/PlozziOSTrackerSettingsView.swift|PlozziOSTrackerSettingsView|body|Button|SettingsDisclosureLabel { Text(verbatim: account.name) }": {
+      "count": 1,
+      "reason": "Opens one named tracker account. Search routes to that account directly.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerHistorySyncNavigationRow|body|SettingsPageLink|SettingsDisclosureLabel { TrackerTwoWaySyncLabel() }": {
+      "count": 1,
+      "reason": "Ongoing sync is a destination for one connected tracker with eligible shares or an existing grant. Global search has no account selection.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|body|Button|\"Remove previous permission\"": {
+      "count": 1,
+      "reason": "Revokes a stale device-local permission for the selected connection.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|controls|Button|\"Sync now\"": {
+      "count": 1,
+      "reason": "Runs the selected tracker grant now; not a scheduling preference.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|controls|Toggle|<dynamic>": {
+      "count": 1,
+      "reason": "Enrollment or revocation is bound to this device, profile, tracker connection and eligible media shares; there is no global sync switch.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerSyncLibraryChooser|body|Button|\"Cancel\"": {
+      "count": 2,
+      "reason": "Dismisses the current connection's library chooser without enrolling.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerSyncLibraryChooser|body|Button|if selected == eligible { Text(\"Deselect all\") } else { Text(\"Select all\") }": {
+      "count": 1,
+      "reason": "Changes the draft selection inside the library chooser only.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerSyncLibraryChooser|body|Button|HStack { label Spacer() SettingsCheckmark(isChecked: checked) }": {
+      "count": 1,
+      "reason": "Chooses an eligible library in a profile- and account-specific enrollment.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerSyncLibraryChooser|startButton|Button|\"Start sync\"": {
+      "count": 1,
+      "reason": "Confirms only the libraries reviewed for this connection.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerLastSyncRows|body|Button|disclosure": {
+      "count": 1,
+      "reason": "Shows the last completed check for this tracker connection and library selection. Not a preference.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|activeLibraries|Button|librarySummary": {
+      "count": 1,
+      "reason": "Expands the active connection's eligible library selection.",
+      "covered_by": []
+    },
+    "Sources/FeatureSettings/TrackerHistorySyncSettingsView.swift|TrackerTwoWaySyncRows|activeLibraries|Toggle|<dynamic>": {
+      "count": 1,
+      "reason": "Selects one eligible media share in this connection's grant; a share or user name cannot be a global result.",
       "covered_by": []
     }
   }

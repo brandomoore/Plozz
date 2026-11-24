@@ -41,6 +41,11 @@ final class WatchProgressReporter {
     private let checkpointInterval: TimeInterval
     private let scrobblesLibraryItem: Bool
     private let onCheckpoint: @Sendable (_ position: TimeInterval, _ watchedPercent: Double) -> Void
+    private let onTrackerPlayback: @Sendable (TrackerPlaybackSample) -> Void
+    private let trackerSessionID = UUID()
+    private var trackerStartedAt: Date?
+    private var trackerDuration: TimeInterval?
+    private var measuredFileDuration: (revision: String, seconds: TimeInterval)?
 
     private var checkpointTask: Task<Void, Never>?
     private var lastCheckpointPosition: TimeInterval = 0
@@ -75,7 +80,8 @@ final class WatchProgressReporter {
         scrobbler: any TraktScrobbling,
         checkpointInterval: TimeInterval,
         scrobblesLibraryItem: Bool = true,
-        onCheckpoint: @escaping @Sendable (_ position: TimeInterval, _ watchedPercent: Double) -> Void
+        onCheckpoint: @escaping @Sendable (_ position: TimeInterval, _ watchedPercent: Double) -> Void,
+        onTrackerPlayback: @escaping @Sendable (TrackerPlaybackSample) -> Void = { _ in }
     ) {
         self.host = host
         self.provider = provider
@@ -84,12 +90,14 @@ final class WatchProgressReporter {
         self.checkpointInterval = checkpointInterval
         self.scrobblesLibraryItem = scrobblesLibraryItem
         self.onCheckpoint = onCheckpoint
+        self.onTrackerPlayback = onTrackerPlayback
     }
 
     // MARK: - Reporting
 
     func beginSession() {
         discardPendingProgress()
+        measuredFileDuration = nil
         hasEnqueuedPlaybackStart = false
         pendingPlaybackStateReport = nil
         isEndingSession = false
@@ -135,7 +143,12 @@ final class WatchProgressReporter {
         }
         guard let host, let request = host.reporterRequest,
               !request.suppressOrdinaryWatchReporting else { return nil }
+        if event == .start, trackerStartedAt == nil { trackerStartedAt = Date() }
+        captureTrackerDuration()
         let position = positionOverride ?? host.reporterEngineCurrentTime
+        if event == .stop, scrobble {
+            emitTrackerSample(item: request.item, position: position, isFinal: true)
+        }
         let knownDuration = WatchProgressMath.knownDuration(
             engineDuration: durationOverride ?? 0,
             controlsDuration: knownPlaybackDuration() ?? 0,
@@ -146,7 +159,8 @@ final class WatchProgressReporter {
             playSessionID: request.playSessionID,
             positionSeconds: position,
             isPaused: isPaused,
-            durationSeconds: knownDuration
+            durationSeconds: measuredFileDuration?.seconds ?? knownDuration,
+            measuredFileRevision: measuredFileDuration?.revision
         )
         let percent = WatchProgressMath.watchedPercent(
             position: position, engineDuration: knownDuration ?? 0, itemRuntime: nil
@@ -310,6 +324,37 @@ final class WatchProgressReporter {
         guard position > 1, abs(position - lastCheckpointPosition) >= 1 else { return }
         lastCheckpointPosition = position
         onCheckpoint(position, watchedPercent(at: position))
+        emitTrackerSample(item: request.item, position: position, isFinal: false)
+    }
+
+    private func captureTrackerDuration() {
+        let request = host?.reporterRequest
+        let revision: String?
+        if case .networkFile = request?.playbackSource {
+            revision = request?.sourceMetadata?.sourceRevision
+        } else {
+            revision = nil
+        }
+        if revision != measuredFileDuration?.revision { measuredFileDuration = nil }
+        if let duration = host?.reporterEngineDuration, duration.isFinite, duration > 0 {
+            trackerDuration = duration
+            if let revision { measuredFileDuration = (revision, duration) }
+        }
+    }
+
+    private func emitTrackerSample(item: MediaItem, position: TimeInterval, isFinal: Bool) {
+        captureTrackerDuration()
+        guard scrobblesLibraryItem, !item.isExtra, !item.isTrailer, !item.isYouTubeTrailer,
+              item.kind == .movie || item.kind == .episode,
+              let trackerStartedAt, let trackerDuration, position > 1 else { return }
+        do {
+            onTrackerPlayback(try TrackerPlaybackSample(
+                sessionID: trackerSessionID, startedAt: trackerStartedAt, item: item,
+                position: position, duration: trackerDuration, isFinal: isFinal
+            ))
+        } catch {
+            PlozzLog.playback.error("Invalid player-clock evidence could not be queued for tracker reporting")
+        }
     }
 
     /// Forces an immediate convergence checkpoint regardless of the timer — used

@@ -40,6 +40,8 @@ public actor LocalMediaWatchStore {
         /// with no live player) — the bar is simply omitted until the next play
         /// re-learns it. Missing in legacy JSON decodes to `nil` automatically.
         public var duration: TimeInterval?
+        /// Legacy and metadata-only durations have no file revision and remain display-only.
+        public var measuredFileRevision: String?
         /// When the viewer took this title off Continue Watching, if they have.
         ///
         /// Kept **alongside** the position rather than replacing it. A share's
@@ -66,13 +68,15 @@ public actor LocalMediaWatchStore {
             played: Bool,
             updatedAt: Date,
             duration: TimeInterval? = nil,
-            dismissedAt: Date? = nil
+            dismissedAt: Date? = nil,
+            measuredFileRevision: String? = nil
         ) {
             self.position = position
             self.played = played
             self.updatedAt = updatedAt
             self.duration = duration
             self.dismissedAt = dismissedAt
+            self.measuredFileRevision = measuredFileRevision
         }
     }
 
@@ -191,7 +195,10 @@ public actor LocalMediaWatchStore {
     /// in-progress (un-plays a previously-finished item that's being re-watched);
     /// a position of `0` clears the resume point without changing played state.
     /// Ignored when an existing record is *newer* than `capturedAt` (stale drain).
-    public func setResume(_ seconds: TimeInterval, itemID: String, capturedAt: Date, duration: TimeInterval? = nil) {
+    public func setResume(
+        _ seconds: TimeInterval, itemID: String, capturedAt: Date, duration: TimeInterval? = nil,
+        measuredFileRevision: String? = nil
+    ) {
         Self.persistenceLock.withLock {
             var all = loaded()
             if let existing = all[itemID], capturedAt < existing.updatedAt { return }
@@ -200,16 +207,17 @@ public actor LocalMediaWatchStore {
             // Keep a previously-learned duration when this write doesn't carry one (a
             // resume drained from the outbox has no live player), so the progress bar
             // survives resume ticks that lack duration.
-            let resolvedDuration = (duration.map { $0 > 0 ? $0 : nil } ?? nil) ?? all[itemID]?.duration
+            let newDuration = duration.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
             all[itemID] = Record(
                 position: position,
                 played: played,
                 updatedAt: capturedAt,
-                duration: resolvedDuration,
+                duration: newDuration ?? all[itemID]?.duration,
                 // Carried, not cleared: `isDismissedFromContinueWatching` compares it
                 // against `updatedAt`, so this write un-hides the title by being newer
                 // — while an out-of-order drain of an OLDER play cannot.
-                dismissedAt: all[itemID]?.dismissedAt
+                dismissedAt: all[itemID]?.dismissedAt,
+                measuredFileRevision: newDuration == nil ? all[itemID]?.measuredFileRevision : measuredFileRevision
             )
             persist(all)
         }
@@ -233,12 +241,27 @@ public actor LocalMediaWatchStore {
 
     /// Mark an item played / unplayed. Either way the resume point is cleared
     /// (a finished item resumes from the start; an explicitly-unwatched one too).
+    /// Keep the measured duration for later resume compatibility checks.
     /// Ignored when an existing record is *newer* than `capturedAt`.
     public func setPlayed(_ played: Bool, itemID: String, capturedAt: Date) {
+        setPlayed(played, itemIDs: [itemID], capturedAt: capturedAt)
+    }
+
+    /// Apply a container action in one persistence operation, retaining the
+    /// timestamp guard and learned duration independently for every episode file.
+    public func setPlayed(_ played: Bool, itemIDs: [String], capturedAt: Date) {
         Self.persistenceLock.withLock {
             var all = loaded()
-            if let existing = all[itemID], capturedAt < existing.updatedAt { return }
-            all[itemID] = Record(position: 0, played: played, updatedAt: capturedAt)
+            var changed = false
+            for itemID in itemIDs {
+                if let existing = all[itemID], capturedAt < existing.updatedAt { continue }
+                all[itemID] = Record(
+                    position: 0, played: played, updatedAt: capturedAt, duration: all[itemID]?.duration,
+                    measuredFileRevision: all[itemID]?.measuredFileRevision
+                )
+                changed = true
+            }
+            guard changed else { return }
             persist(all)
         }
     }

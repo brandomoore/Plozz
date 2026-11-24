@@ -45,11 +45,11 @@ struct InfoPanelView: View {
             : [.detailBackdrop, .poster]
     }
 
-    static func artworkLookup(for item: MediaItem, router: ArtworkRouter = .shared) async -> URL? {
+    static func artworkLookup(for item: MediaItem, router: ArtworkRouter = .shared, language: String = Locale.current.identifier) async -> URL? {
         let placements = artworkPlacements(for: item)
         return await ArtworkSession.artworkResolveLimiter.run {
             guard !Task.isCancelled else { return nil }
-            return await router.artworkURL(for: item, placements: placements)
+            return await router.artworkURL(for: item, placements: placements, language: language)
         }
     }
 
@@ -506,7 +506,7 @@ private struct PlayerInfoArtwork: View {
         let references = item.map { InfoPanelView.artworkReferences(for: $0, policy: policy) }
             ?? urls.map(ArtworkReference.remote)
         let fallback: (@Sendable () async -> URL?)? = item.map { item in
-            { await InfoPanelView.artworkLookup(for: item) }
+            { await InfoPanelView.artworkLookup(for: item, language: policy.artworkLanguage) }
         }
         Color.clear
             .frame(width: height * 16.0 / 9.0, height: height)

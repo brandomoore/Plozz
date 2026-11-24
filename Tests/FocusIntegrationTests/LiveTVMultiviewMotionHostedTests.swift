@@ -689,14 +689,25 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         for editing in [true, false, true] {
             sampler.start()
             model.editing = editing
-            try await Task.sleep(for: .milliseconds(600))
+            let target: CGFloat = editing ? 744 : 960
+            let deadline = ContinuousClock.now + .seconds(2)
+            while ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(16))
+                if sampler.frames.count >= 2, sampler.frames.suffix(2).allSatisfy({ frame in
+                    frame.dropFirst().allSatisfy { abs($0 - target) <= 1 }
+                }) { break }
+            }
             sampler.stop()
-            let attachment = XCTAttachment(data: try JSONSerialization.data(withJSONObject: sampler.frames),
+            let trace: [String: Any] = ["widths": sampler.frames, "sampleTimes": sampler.sampleTimes]
+            let attachment = XCTAttachment(data: try JSONSerialization.data(withJSONObject: trace),
                                            uniformTypeIdentifier: "public.json")
             attachment.name = "real-renderer-motion-\(editing)"
             attachment.lifetime = .keepAlways
             add(attachment)
             XCTAssertGreaterThan(sampler.frames.count, 10)
+            for width in try XCTUnwrap(sampler.frames.last).dropFirst() {
+                XCTAssertEqual(width, target, accuracy: 1, "The layout must finish before reversing.")
+            }
             for frame in sampler.frames {
                 let unfocused = frame.dropFirst()
                 XCTAssertLessThan(try XCTUnwrap(unfocused.max()) - XCTUnwrap(unfocused.min()), 1,
@@ -711,8 +722,10 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
                 XCTAssertGreaterThan(widths.filter { $0 > low + 2 && $0 < high - 2 }.count, 5,
                                      "Every live picture must visibly animate, including unfocused cards.")
                 let steps = zip(widths, widths.dropFirst()).map { abs($1 - $0) }
-                XCTAssertLessThan(try XCTUnwrap(steps.max()), (high - low) * 0.3,
-                                  "A label replacement must not jump to its new size.")
+                let largest = try XCTUnwrap(steps.indices.max { steps[$0] < steps[$1] })
+                let elapsed = sampler.sampleTimes[largest + 1] - sampler.sampleTimes[largest]
+                XCTAssertLessThan(steps[largest], (high - low) * 0.3,
+                                  "Picture \(index) moved \(steps[largest]) points between samples \(elapsed)s apart.")
                 XCTAssertTrue(model.engines[index].output.window === window)
             }
         }
@@ -722,6 +735,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         let views: [UIView]
         let window: UIWindow
         var frames: [[CGFloat]] = []
+        var sampleTimes: [CFTimeInterval] = []
         private var displayLink: CADisplayLink?
 
         init(views: [UIView], window: UIWindow) {
@@ -731,6 +745,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
 
         func start() {
             frames = []
+            sampleTimes = []
             sample()
             let link = CADisplayLink(target: self, selector: #selector(sample))
             displayLink = link
@@ -743,6 +758,7 @@ final class LiveTVMultiviewMotionHostedTests: XCTestCase {
         }
 
         @objc private func sample() {
+            sampleTimes.append(CACurrentMediaTime())
             frames.append(views.map {
                 guard $0.window === window else { return 0 }
                 let layer = $0.layer.presentation() ?? $0.layer

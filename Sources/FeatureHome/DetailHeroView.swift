@@ -2037,7 +2037,7 @@ struct DetailHeroView: View, Equatable {
     /// when pinned) and its TMDb id when that id refers to the show itself; for an
     /// episode/season backdrop it queries by series title. Inert without a token.
     private var tmdbBackdropFallback: (@Sendable () async -> URL?)? {
-        MediaArtworkSource.heroFallback(for: backdrop, placement: .detailBackdrop)
+        MediaArtworkSource.heroFallback(for: backdrop, placement: .detailBackdrop, language: artworkPolicy.artworkLanguage)
     }
 
     /// Last-resort title art for the hero: look the show/movie up on TMDb and use

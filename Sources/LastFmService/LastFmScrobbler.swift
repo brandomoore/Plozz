@@ -31,14 +31,22 @@ public struct DisabledLastFmScrobbler: LastFmScrobbling {
 public actor LastFmScrobbler: LastFmScrobbling {
     private let client: LastFmClient
     private let tokenStore: LastFmTokenStoring
+    private let activation: TrackerActivationStore
 
     public init(config: LastFmConfig, http: HTTPClient, tokenStore: LastFmTokenStoring) {
+        self.init(config: config, http: http, tokenStore: tokenStore, activation: .init("lastfm"))
+    }
+
+    init(config: LastFmConfig, http: HTTPClient, tokenStore: LastFmTokenStoring, activation: TrackerActivationStore) {
         self.client = LastFmClient(config: config, http: http)
         self.tokenStore = tokenStore
+        self.activation = activation
     }
 
     public func handle(track: MusicTrack, event: PlaybackEvent, position: TimeInterval, duration: TimeInterval) async {
-        guard let sessionKey = tokenStore.load()?.sessionKey else { return }
+        guard event != .pause, event != .progress,
+              let grant = activation.capture(tokenStore.load, identity: \.stableAccountIdentity) else { return }
+        let sessionKey = grant.tokens.sessionKey
         guard let params = LastFmTrackParams(track, durationSeconds: duration) else { return }
 
         switch event {

@@ -8,6 +8,32 @@ import XCTest
 
 @MainActor
 final class DownloadArtworkPresentationTests: XCTestCase {
+    func testDownloadPosterLookupFollowsLiveAppLanguage() async throws {
+        let domain = "download-artwork-language-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let language = AppLanguageSettingsModel(store: AppLanguageSettingsStore(defaults: defaults))
+        let item = MediaItem(id: "localized-download", title: "Movie", kind: .movie)
+        let cache = MetadataDiskCache(directory: nil)
+        let settings = DownloadArtworkProviderSettings()
+        settings.save(.init(orderMode: .custom, enabledOrder: ["tvdb"]))
+        let router = ArtworkRouter(cache: cache, enrichmentBaseline: .init(order: [.tvdb], priority: .init(rules: [])),
+                                   settingsStore: settings)
+        for tag in ["zh-Hant", "zh-Hans"] {
+            await cache.store(URL(string: "https://art.example/\(tag).jpg")!, for: ArtworkRouter.providerCacheKey(
+                query: MetadataQuery(item).forArtworkLanguage(tag), kind: .poster, source: .tvdb
+            ))
+        }
+        for tag in ["zh-Hant", "zh-Hans"] {
+            language.language = .explicit(tag)
+            let policy = PlozziOSDownloadArtwork.policy(settings: .default, appLanguage: language)
+                .forArea(.downloads).forPlacement(.poster)
+            let poster = await PlozziOSDownloadArtwork.lookup(for: item, router: router, role: .poster,
+                                                             language: policy.artworkLanguage)
+            XCTAssertEqual(poster?.lastPathComponent, "\(tag).jpg")
+        }
+    }
+
     func testDownloadRepairLoaderHonorsItsScopeAndCurrentProviderOrder() async throws {
         let library = URL(string: "https://library.example.test/\(UUID()).png")!
         let tmdb = URL(string: "https://metadata.example.test/\(UUID()).png")!

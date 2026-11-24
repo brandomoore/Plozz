@@ -177,3 +177,316 @@ Encrypted or byte-range playlists are not silently accepted by the audio-byte
 probe. If a server returns one, the audio evidence fails explicitly until that
 format is supported. Never replace that failure with a successful HTTP status or
 a source metadata assertion.
+
+## PublicMetaDB tracking acceptance: independent preflight
+
+`tools/tracker-acceptance-preflight.py` is the read-only baseline component of
+tracking acceptance, **not an app-driven round-trip test**. It does not launch
+Plozz, play media, approve an import, change watch history, or clean up records.
+Its output always contains `acceptanceVerified: false`. The app-driven playback,
+confirmation/cancellation, coexistence and relaunch scenarios must still run
+before tracking acceptance can be claimed.
+
+Unlike the generated playback fixture above, tracking requires genuine
+catalog-identified titles lawfully available on dedicated test server users.
+Never associate generated media with a public TMDB title just to pass tracking.
+Use a private mode-600 configuration outside the repository, with each token
+already stored in the explicitly named Keychain item:
+
+```json
+{
+  "schemaVersion": 1,
+  "publicMetaDB": {
+    "tokenKeychainService": "PlozzTrackingTests",
+    "tokenKeychainAccount": "publicmetadb",
+    "ownedTestListID": "REPLACE_WITH_DEDICATED_OWNED_LIST_ID"
+  },
+  "servers": {
+    "jellyfin": {
+      "baseURL": "https://YOUR_TEST_SERVER",
+      "serverID": "REPLACE_WITH_SERVER_ID",
+      "userID": "REPLACE_WITH_DEDICATED_USER_ID",
+      "tokenKeychainService": "PlozzTrackingTests",
+      "tokenKeychainAccount": "jellyfin"
+    }
+  },
+  "titles": [
+    {
+      "caseID": "movie",
+      "provider": "jellyfin",
+      "itemID": "REPLACE_WITH_REAL_ITEM_ID",
+      "content": { "tmdb_id": 550, "media_type": "movie" }
+    }
+  ]
+}
+```
+
+The catalog ID above is only a format example: replace it with the actual
+allowlisted title's ID. One to ten exact movie/episode cases are supported.
+For an episode, use the **series** TMDB ID, `media_type: "tv"`, integer `season`
+and `episode`, plus the case's `seriesItemID` and `episodeOrder: "tmdb"`.
+Only set that ordering declaration after confirming the server's coordinates
+match TMDB; the reader cannot establish edition/order equivalence from a title.
+Combined Jellyfin/Emby episode ranges are refused.
+
+Readers currently cover Jellyfin, Emby and Plex; selecting another backend fails
+explicitly rather than silently narrowing coverage. Each configured provider
+must have at least one case. Plex `userID` is the numeric ID returned by the
+dedicated user's `https://plex.tv/api/v2/user`, encoded as a string. The same
+dedicated user token must authorize that identity read and the server read;
+the preflight never switches Plex Home identities, refreshes tokens or uses an
+administrator token as a substitute. Missing API access is a failed preflight.
+
+PublicMetaDB does not document an account-profile endpoint. The reader verifies
+the key by finding the exact dedicated test list in the complete owned-list
+response, then records only a SHA-256 credential fingerprint for later scope
+comparison. It does not infer ownership from a display name or contributor.
+Provisioning that list and credential remains a separate authorized action.
+
+```sh
+python3 tools/tracker-acceptance-preflight.py \
+  --config /absolute/private/tracking-tests.json \
+  --output /absolute/private/run/baseline.json
+python3 -m unittest tools.tests.test_tracker_acceptance_preflight
+```
+
+The output directory must already exist, be owned by the current user and mode
+700. Output is a new mode-600 file and is never overwritten. The reader uses
+GET only, refuses redirects, does not retry failures or 429s, disables response
+caching, and bounds page counts, bytes, request count and the entire invocation
+to 120 seconds. Requests identify the read-only test client with an explicit
+`Plozz-Tracker-Acceptance` user agent; they do not impersonate a browser.
+No key is written to disk or passed on argv.
+
+Independent reads verify exact server/user/catalog identities before recording
+only allowlisted watched/resume state. Missing, changing, duplicate, unfiltered
+or truncated tracker pages fail. Explicitly unknown watch dates remain unknown;
+absent Plex state fields remain absent rather than becoming an invented reset.
+Baselines are observations over an interval, not atomic snapshots or permission
+to overwrite concurrent activity. They contain private viewing state and are
+not public reports. This command performs no mutations; later live scenarios
+still require explicit account/title mutation approval and exact run-owned
+cleanup evidence.
+
+### Share-local watch-state readback
+
+File shares have no server-side watch-history API. Their authoritative state is
+the profile/account-scoped `localMediaWatch` envelope in the application's
+non-secret durable Keychain service, not a legacy JSON cache.
+`PlozziOSTrackerStateTests` provides an opt-in, read-only observer hosted by the
+normal iOS application, using its existing Keychain access. It never writes
+history, changes access groups, or queries credential records.
+
+Run only on an explicitly owned simulator and authorized test profile/source.
+The test requires `PLOZZ_LIVE_WATCH_STATE_READ=1`,
+`PLOZZ_LIVE_WATCH_STATE_SIMULATOR` matching `SIMULATOR_UDID`,
+`PLOZZ_LIVE_WATCH_STATE_PROFILE`, and `PLOZZ_LIVE_WATCH_STATE_SOURCE`.
+Pass these through the test runner, not normal playback launches. The selected
+test is `LiveShareWatchStateReadbackTests/testReadExactAuthorizedShareWatchEnvelope`.
+It validates the exact envelope address and schema before attaching the bounded
+records as `live-share-watch-state`. Denied reads fail; only an actual
+`errSecItemNotFound` is recorded as absent. Keep these private viewing-state
+attachments out of public reports.
+
+This observer is separate from native interaction acceptance: perform mutations
+through production UI with no test launch arguments or environment, then read
+back the same persisted scope. Require a positive read after a known native
+write before interpreting an earlier absence as confirmed. Retain source/build
+provenance for both runs; an observer pass alone does not prove playback, tracker
+delivery, or profile isolation.
+
+For native profile isolation, create and finish a dedicated secondary profile
+through the normal profile editor and setup. The live history driver accepts
+`PLOZZ_TRACKER_PROFILE_NAME` for that profile and
+`PLOZZ_TRACKER_PROFILE_TARGET` for an explicit switch. Set
+`PLOZZ_TRACKER_HISTORY_USER` to the expected current Plozz profile, not the
+share's server username. Cold launches select only that exact unlocked profile
+through the normal picker; duplicate or locked identities fail closed.
+
+The source-selection and disconnected-tracker scenarios are read-only checks.
+Pair them with separate envelope reads for both profiles before playback,
+after a distinct real resume write, and after switching and relaunching.
+Require the original envelope to remain byte-identical, the new profile to
+retain its own resume, and unselected remote histories to remain unchanged.
+Preserve failed setup attempts separately; resuming an existing profile must
+not create another one or count as proof that an earlier setup failure is fixed.
+
+### Independent before/after comparison
+
+Capture separate baselines immediately before and after an authorized test
+action, then compare them without making any network request:
+
+```sh
+python3 tools/compare-tracker-baselines.py \
+  --before /absolute/private/run/before.json \
+  --after /absolute/private/run/after.json \
+  --output /absolute/private/run/comparison.json
+python3 -m unittest tools.tests.test_tracker_acceptance_preflight tools.tests.test_compare_tracker_baselines
+```
+
+The comparator requires identical configuration, tracker/server credential
+fingerprints, exact provider/server/user/catalog identities and complete case
+coverage. Older baselines without server credential fingerprints must be
+recaptured. Observation intervals must be ordered, non-overlapping and each
+within the reader's 120-second limit. Missing fields, duplicate cases/records
+and unsupported evidence fail rather than compare as empty state.
+
+By default, both server and tracker state must be unchanged. Use
+`--require-unchanged server` when an authorized tracker-side change is expected
+but the server must remain unchanged before import approval. The report still
+records both outcomes. Exit status is **0** for the requested unchanged state,
+**2** for changed state, or **1** for invalid/unavailable evidence.
+
+Inputs must be private, owned files; output must be a new file in a private,
+owned directory. The output records both input hashes but does not copy tokens
+or viewing-state payloads. Absent Plex fields, unknown watch dates, individual
+record IDs, counts and resume positions retain their actual meanings.
+
+**Equal snapshots prove only equal observed endpoint state**, not absence of
+intervening writes, rollback, concurrent activity or intermediate states. Local
+hashes bind input files; they do not authenticate their origin. This tool neither
+drives Plozz nor verifies playback, consent UI, app/account identity, coexistence
+or process recovery. Its result always retains `acceptanceVerified: false`.
+The actual production-app driver and authenticated acceptance remain separate
+requirements; this comparison does not turn fixture tests into live evidence.
+
+### Production-app live connection check
+
+The tracker connection schemes use **unbound** XCTest drivers for the installed
+production app, not FocusHost or PresentationHost. Build only the runner with:
+
+```sh
+bash tools/run-tracker-connection-tests.sh --build-only tvOS
+bash tools/run-tracker-connection-tests.sh --build-only iOS
+```
+
+Use an explicitly selected, already-booted owned simulator with the approved
+production app running in English and a dedicated test profile/account. Do not
+run connection-changing scenarios against a household profile. Setup,
+authentication and input use production controls, not seeded profiles, injected
+credentials or fixture hosts. TV navigation can open Settings from Live TV.
+On iOS/iPadOS, open **Settings > Trackers > PublicMetaDB** with **Connect PublicMetaDB** available.
+`negative` and `direct` use the native secure field in `PublicMetaDBLiveHistoryTests`.
+Neither uses a browser, pairing code, or relay revocation.
+
+```sh
+bash tools/run-tracker-connection-tests.sh --run tvOS \
+  OWNED_SIMULATOR_UUID EXPECTED_APP_EXECUTABLE_SHA256 negative
+python3 -m unittest tools.tests.test_tracker_connection_evidence
+```
+
+The optional final argument selects exactly one scenario:
+
+| Scenario | Required state and coverage |
+| --- | --- |
+| `negative` (default) | No saved key. Cancel, reopen and reject a deliberately invalid key. TV also verifies the live relay challenge, native focus, revocation and fresh code. Mobile verifies direct entry without browser controls. |
+| `direct` (iOS/iPadOS only) | No saved key. Paste through the native secure field, submit Connect, verify Connected and the dedicated account's expected Lists row. A negative check is not authentication evidence. |
+| `setup` (TV only) | Isolated first-run app. Imports the public `iptv-org` San Marino playlist through normal controls and completes profile, optional Seerr and appearance setup. This is setup evidence, not connection acceptance. |
+| `browser` (TV only) | No saved key. Decodes the actual production QR, writes a unique private handoff file, waits for real browser authentication, verifies Connected and revoked pairing, and reads the dedicated account's empty Lists page. |
+| `persistence` (TV only) | Saved test connection. Terminates/relaunches the installed app normally, verifies the saved connection, reads Lists and dismisses the account sheet through Done. |
+| `disconnect` (TV only) | Saved test connection. Cancels replacement confirmation and entry, rejects an invalid replacement and cancels it, verifies restored account access, cancels then confirms Disconnect, and checks removal after normal relaunch. |
+| `manual` (TV only) | Saved test connection and an authorized one-shot loopback input source. Confirms replacement, enters the real key with ordinary TV remote keyboard events, submits Connect and verifies authenticated Lists. |
+
+`browser` requires `PLOZZ_TRACKER_CONNECTION_HANDOFF` to name a new absolute
+`browser-request.json` path in a private existing directory. The file contains
+only the decoded public QR URL/code. A separately owned browser driver (or the
+tester) must submit the legitimate test key through that deployed page within
+the native wait. Keep browser credentials in a secret-safe source, verify the
+encrypted submission and consumed-code rejection independently, and close the
+owned browser/profile on success, failure or cancellation.
+
+`manual` requires `PLOZZ_TRACKER_MANUAL_INPUT_URL`: an owned, short-lived,
+single-use HTTP endpoint on `127.0.0.1` returning `{"key":"..."}` from a private
+credential store. Use an unpredictable path, private configuration, no request
+or response logging, and a bounded server lifetime. This input goes only to the
+test runner's keyboard navigator, never to an app service or app Keychain API.
+Do **not** use XCTest `typeText` for real credentials: it logs a prefix even for
+secure fields. The navigator uses observed key geometry and remote events with
+no credential text in query/action arguments. Its current native-layout coverage
+is the 1080p tvOS 26.2 keyboard; unexpected geometry fails rather than guessing.
+Manual input has a twenty-minute deadline; other scenarios have five minutes.
+
+`direct` uses the same one-shot loopback response, but XCTest receives **only a
+file path**, never the key or one-shot URL in its environment. Set
+`PLOZZ_TRACKER_MANUAL_INPUT_URL_FILE` to an absolute, simulator-readable file
+(mode `0600` in a private directory outside the evidence bundle, non-secret
+filename) containing just the endpoint URL, **not** the key. Set
+`PLOZZ_TRACKER_TEST_LIST_NAME` to the dedicated account's expected test-list name.
+Use an isolated simulator with host clipboard sharing off. The driver uses
+native Paste with a local-only, 30-second-expiring clipboard item and restores
+the previous clipboard. It never reads the field value or attaches UI state for
+a real-key attempt, even on failure. If the private source, Paste action, or
+authenticated read is unavailable, the test fails; there is no typing, browser,
+or fixture fallback. Close the source and remove the private locator afterward.
+The history driver's manual replacement and new-share-profile tests use the same
+file and Paste path. Run them only with automatic capture and diagnostics off.
+
+Obtain the expected executable hash from the approved build's retained
+evidence, not by accepting whatever happens to be installed. The runner verifies
+the installed canonical app against it, rejects application-bound test manifests,
+and checks that its own source has not changed since compilation. It never builds
+or installs Plozz or boots/shuts down simulators. Explicit persistence/disconnect
+scenarios relaunch Plozz with no custom arguments/environment. XCTest installs
+only its isolated runner. Xcode's generated runner
+paths and standard environment metadata are checked exactly; custom application
+launch arguments and environment overrides are rejected.
+
+Unexpected UI,
+missing prerequisites, quota/network failures and incomplete cleanup are failures,
+not skips or passes. Automatic screenshots/recording are disabled. Setup may
+attach its credential-free UI tree; the browser scenario intentionally attaches
+the public QR and final Connected screen, never a populated credential field.
+Private results are retained under
+`.build/tracker-connection.*/`, including source snapshots (also for untracked
+driver files), the generated runner manifest and installed executable identity.
+
+Each verdict requires the exact selected method, one completed case, and zero
+failures/skips. A setup or negative pass cannot stand in for a successful direct,
+browser or manual connection. Compare complete independent account fingerprints around
+connection-only scenarios when checking that lists, watched plays and resume
+records remain unchanged. These scenarios do not establish playback, imports,
+exports, cross-server coexistence, physical-device behavior or other trackers'
+acceptance. Compiling a driver is not a live pass.
+
+### Isolated tracker import interactions
+
+`TrackerHistoryImportInteractionTests` runs in `PlozzHomeFixtureTests` on tvOS
+and `PlozziOSInteractionTests` on iOS/iPadOS. Both hosts select
+`--tracker-history-import-fixture`, which presents the real
+`TrackerHistoryImportView`, comparison session, outbox and
+`AppShellWatchMutationApplier`. Only the tracker snapshot and `MediaProvider`
+endpoints are synthetic; no credentials, network requests or personal history
+are involved. Test counters observe provider state and every injected tracker
+delivery path rather than treating a confirmation label as proof of a write.
+
+The shared interaction suite covers cancellation and cleared selection on page
+reentry, independent Jellyfin/Plex target selection, zero tracker mirrors,
+connection revocation and changed tracker evidence during approval, concurrent
+server progress, and lost write replies verified by readback without repetition.
+The `--history-ongoing-sync` fixture adds Cedar Loft and Mariner Archive alongside
+Jellyfin and Plex. Turning on the master switch selects both shares and every
+supported category without backfilling history. The tests narrow the grant, check
+that a new play reaches only the remaining share, and turn sync off by removing
+the last share or category. With `--history-servers-only`,
+the comparison still offers reviewed imports but no ongoing-sync option.
+`TrackerHistoryImportTests` covers rejected mixed selections, persisted server
+and mixed grants, restart, uncertain-target holds, storage failures and exact
+batch/snapshot limits using isolated in-memory secure storage.
+The watched-only/manual fixture variation verifies that unsupported resume
+controls are absent, the manual-check explanation is present, and a new play
+still requires **Sync now**.
+TV actions use the native remote focus system; mobile actions use taps and
+scrolling. Select the class within its corresponding UI-test target when running
+the existing build-for-testing/test-without-building workflow.
+
+These are fixture-backed UI integration checks, not authenticated API, real
+server-plugin coexistence, playback, or process-relaunch acceptance. The live
+account and exact-title authorization requirements above remain unchanged.
+
+The opt-in `PublicMetaDBLiveHistoryTests` driver does not turn sync on: the off
+page hides the full set of destinations, so a comparison row cannot prove that
+the master switch would enroll only the authorized share. The `testVerifyOngoing…`
+selectors inspect an existing grant on the dedicated single-share profile.
+Before tapping **Sync now**, the driver verifies the share ID and requires
+`PLOZZ_TRACKER_ONGOING_CATEGORIES` to match the enabled options exactly
+(`watched`, `resume`, or `watched,resume`).

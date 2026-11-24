@@ -2,7 +2,7 @@ import CoreModels
 import CoreUI
 import SwiftUI
 
-public struct PlayerTabSettingsControls: View {
+public struct PlayerTabSettingsView: View {
     @Bindable private var model: PlaybackSettingsModel
 
     public init(model: PlaybackSettingsModel) {
@@ -11,13 +11,17 @@ public struct PlayerTabSettingsControls: View {
 
     public var body: some View {
         #if os(tvOS)
-        SettingsControlRows { controls }
+        SettingsFormLayout(title: Text("Player tabs"), rows: [
+            SettingsSplitRow(id: "player-tabs", title: "Player tabs") {
+                SettingsControlRows { controls }
+            }.labeledControl()
+        ], showsBack: true)
         #else
-        SettingsSectionGroup("Player tabs") { controls }
-            .settingsSearchGroup([
-                "player-tab-chapters", "player-tab-cast", "player-tab-episodes",
-                "player-tab-playlist", "continue-watching-in-player"
-            ])
+        SettingsPageList {
+            SettingsSectionGroup { controls }
+                .settingsSearchGroup(SettingsSearchCatalog.targets(on: .playerTabs))
+        }
+        .navigationTitle("Player tabs")
         #endif
     }
 

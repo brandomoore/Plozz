@@ -109,7 +109,8 @@ final class MediaTransportNFSTests: XCTestCase {
                 name: "clip.mkv",
                 kind: .file,
                 size: 42,
-                modifiedAt: Date(timeIntervalSince1970: 100)
+                modifiedAt: Date(timeIntervalSince1970: 100),
+                changeToken: "server-revision"
             ),
         ]
         let adapter = NFSMediaTransportAdapter(backendFactory: { backend })
@@ -121,6 +122,11 @@ final class MediaTransportNFSTests: XCTestCase {
         let entries = try await session.fileSystem.list(relativePath: "")
         XCTAssertEqual(entries.map(\.relativePath), ["Movies", "clip.mkv"])
         XCTAssertEqual(entries[1].size, 42)
+        backend.statEntry = backend.listEntries[1]
+        let stat = try await session.fileSystem.stat(relativePath: "clip.mkv")
+        XCTAssertEqual(entries[1].changeToken, "server-revision")
+        XCTAssertEqual(stat.changeToken, entries[1].changeToken)
+        XCTAssertNil(stat.strongETag)
     }
 
     func testListNestsChildPaths() async throws {

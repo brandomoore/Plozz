@@ -1,5 +1,6 @@
 #if canImport(SwiftUI)
 import SwiftUI
+import AVFoundation
 import CoreGraphics
 import CoreModels
 import CoreNetworking
@@ -33,6 +34,7 @@ public final class LiveSubtitleModel {
     /// a phantom empty lane — and shift the primary line — on a later
     /// single-subtitle playback.
     public private(set) var hasSecondaryTrack: Bool = false
+    var primaryInVideoFrame = false
     /// The resolved appearance the overlay renders with.
     public var style: SubtitleStyle = .default
     /// Whether the current video frame is HDR, so the overlay can clamp luminance.
@@ -79,6 +81,12 @@ public final class LiveSubtitleModel {
     /// events can be drawn here without promising seek-safe timing offsets.
     public var rendersPrimary: Bool {
         primaryTimeline != nil || isLiveFeed
+    }
+
+    // HDR white-point multiplication is a color operation, not opacity. Leave
+    // those frames on the existing overlay rather than dimming their alpha.
+    var permitsScheduledASSArtwork: Bool {
+        isLiveFeed && (!isHDR || style.hdrLuminanceScale == 1)
     }
     public var supportsPrimaryTimingOffset: Bool {
         primaryTimeline != nil || (isLiveFeed && liveFeedPermitsTimingOffsets)
@@ -228,20 +236,178 @@ public final class LiveSubtitleModel {
 struct LiveSubtitleOverlay: View {
     let model: LiveSubtitleModel
     let controls: PlayerControlsModel
+    var scheduledArtwork: ScheduledASSArtworkView? = nil
 
     var body: some View {
+        let style = SystemCaptionStyle.shared.resolved(model.style)
         SubtitleOverlayView(
-            primary: model.primary,
+            primary: model.primaryInVideoFrame ? [] : model.primary,
             secondary: model.secondary,
             secondaryActive: model.hasSecondaryTrack,
-            style: SystemCaptionStyle.shared.resolved(model.style),
+            style: style,
             isHDR: model.isHDR,
             videoRect: model.videoRect,
             activePictureRect: model.activePictureRect,
             sourceVideoAspectRatio: model.sourceVideoAspectRatio,
             controlsFrames: controls.subtitleLayout.frames
         )
+        .background {
+            if let scheduledArtwork {
+                GeometryReader { geo in
+                    ScheduledASSArtworkSurface(view: scheduledArtwork, layout: .init(
+                        style: style, videoRect: model.videoRect, activePictureRect: model.activePictureRect,
+                        sourceAspectRatio: model.sourceVideoAspectRatio.map { CGFloat($0) },
+                        controls: SubtitleOverlayGeometry.localControls(
+                            controls.subtitleLayout.frames, style: style, origin: geo.frame(in: .global).origin
+                        )
+                    ))
+                }
+
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        }
         .ignoresSafeArea()
+    }
+}
+
+extension SubtitleStyle {
+    var permitsFrameSubtitle: Bool {
+        !overridesASSStyling && positionReference == .screen && opacity == 1
+    }
+}
+
+private struct ScheduledASSArtworkSurface: UIViewRepresentable {
+    let view: ScheduledASSArtworkView
+    let layout: SubtitleOverlayGeometry.BitmapLayout
+
+    func makeUIView(context: Context) -> ScheduledASSArtworkView {
+        view.isOpaque = false
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ uiView: ScheduledASSArtworkView, context: Context) {
+        uiView.bitmapLayout = layout
+    }
+}
+
+/// Keep each bitmap region on a stable layer. Replacing layers per video frame
+/// can pulse their opacity on Apple TV even when the authored pixels are opaque.
+final class ScheduledASSArtworkView: UIView, ScheduledASSArtworkSink {
+    private struct Frame {
+        let start: Double
+        let images: [SubtitleImage]
+        var rects: [CGRect]
+    }
+    private var timeline: AVSynchronizedLayer?
+    private var frames: [Frame] = []
+    private var slots: [CALayer] = []
+    // One active frame, a short preroll, and a little history for the compositor.
+    // Bound retention even if the native item clock is stopped or invalid.
+    private static let maximumFrames = 64
+
+    var bitmapLayout: SubtitleOverlayGeometry.BitmapLayout? {
+        didSet {
+            guard oldValue != bitmapLayout else { return }
+            alpha = CGFloat(bitmapLayout?.style.opacity ?? 1)
+            setNeedsLayout()
+        }
+    }
+
+    func display(_ cues: [CoreModels.SubtitleCue], at itemTime: Double, item: AVPlayerItem) {
+        guard itemTime.isFinite else { reset(); return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        if timeline?.playerItem !== item {
+            reset()
+            let timeline = AVSynchronizedLayer(playerItem: item)
+            timeline.frame = bounds
+            layer.addSublayer(timeline)
+            self.timeline = timeline
+        }
+        let start = max(AVCoreAnimationBeginTimeAtZero, itemTime)
+        // A correction at an already queued deadline supersedes that tail.
+        while let last = frames.last, last.start >= start {
+            frames.removeLast()
+        }
+        pruneElapsedFrames()
+        if frames.count == Self.maximumFrames {
+            // Coalesce the furthest prefetched change, not the visible frame.
+            frames.removeLast()
+        }
+        let images = cues.compactMap { cue -> SubtitleImage? in
+            guard case .image(let image) = cue.body else { return nil }
+            return image
+        }
+        frames.append(Frame(start: start, images: images, rects: bitmapLayout?.frames(for: images, in: bounds) ?? []))
+        rebuildSlots()
+    }
+
+    private func rebuildSlots() {
+        guard let first = frames.first, let last = frames.last else { return }
+        let duration = last.start - first.start + 1
+        let times = frames.map { NSNumber(value: ($0.start - first.start) / duration) }
+        let count = frames.map(\.images.count).max() ?? 0
+        while slots.count < count {
+            let slot = CALayer()
+            slot.anchorPoint = .zero
+            timeline?.addSublayer(slot)
+            slots.append(slot)
+        }
+        for (index, slot) in slots.enumerated() {
+            guard let placeholder = frames.first(where: { $0.images.indices.contains(index) })?.images[index].cgImage else {
+                slot.removeAllAnimations()
+                continue
+            }
+            let rects = frames.map { $0.rects.indices.contains(index) ? $0.rects[index] : .zero }
+            func schedule(_ key: String, _ values: [Any]) {
+                guard let held = values.last else { return }
+                let animation = CAKeyframeAnimation(keyPath: key)
+                animation.values = values + [held]
+                animation.keyTimes = times + [1]
+                animation.calculationMode = .discrete
+                animation.beginTime = first.start
+                animation.duration = duration
+                animation.fillMode = .forwards
+                animation.isRemovedOnCompletion = false
+                slot.add(animation, forKey: key)
+            }
+            // A missing region has empty bounds. Keep every contents keyframe a
+            // CGImage; null entries can invalidate the whole image animation.
+            schedule("contents", frames.map { $0.images.indices.contains(index) ? $0.images[index].cgImage : placeholder })
+            schedule("bounds", rects.map { NSValue(cgRect: CGRect(origin: .zero, size: $0.size)) })
+            schedule("position", rects.map { NSValue(cgPoint: $0.origin) })
+        }
+    }
+
+    func pruneElapsedFrames() {
+        guard frames.count > 1, let now = timeline?.playerItem?.currentTime().seconds, now.isFinite else { return }
+        while frames.count > 1, frames[1].start < now - 0.5 {
+            frames.removeFirst()
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard let timeline else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        timeline.frame = bounds
+        for i in frames.indices {
+            frames[i].rects = bitmapLayout?.frames(for: frames[i].images, in: bounds) ?? []
+        }
+        rebuildSlots()
+        CATransaction.commit()
+    }
+
+    func reset() {
+        timeline?.removeFromSuperlayer()
+        timeline?.playerItem = nil
+        timeline = nil
+        frames.removeAll()
+        slots.removeAll()
     }
 }
 #endif

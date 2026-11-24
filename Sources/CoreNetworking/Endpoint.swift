@@ -16,6 +16,7 @@ public struct Endpoint: Sendable {
     public enum RedirectPolicy: Hashable, Sendable {
         case follow
         case sameOrigin
+        case doNotFollow
     }
 
     public var method: HTTPMethod
@@ -32,6 +33,10 @@ public struct Endpoint: Sendable {
     public var allowsRequestCoalescing: Bool
     /// Preserve proof that a one-time mutation never reached HTTP transmission.
     public var reportsUndeliveredRequests: Bool = false
+    /// Personal tracker routes can contain viewing identities even after token redaction.
+    public var redactsURLForLogging: Bool = false
+    /// Stop receiving before an untrusted response exceeds this byte budget.
+    public var maximumResponseBytes: Int?
     /// Manual scheme discovery must distinguish rejected trust from an offline port.
     public var reportsServerTrustFailures: Bool = false
 

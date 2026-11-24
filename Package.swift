@@ -2,6 +2,14 @@
 import PackageDescription
 import Foundation
 
+// Until the pre-enqueue API has a fetchable upstream revision, a local build
+// can consume a separately prepared checkout without changing either lockfile.
+let frameEnginePath = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    .appendingPathComponent(".build/normal-ass/AetherEngine").path
+let localASSEngine = FileManager.default.fileExists(atPath: frameEnginePath + "/.plozz-frame-ass")
+    ? frameEnginePath : nil
+let assEngineSettings: [SwiftSetting] = localASSEngine == nil ? [] : [.define("PLOZZ_FRAME_ASS", .when(platforms: [.tvOS]))]
+
 // Experimental Java menus are local-only. Native compilation also rejects
 // this opt-in in Release, including a cached experimental package graph.
 let experimentalDiscJava = ProcessInfo.processInfo.environment["PLOZZ_EXPERIMENTAL_BDJ"] == "1"
@@ -50,6 +58,7 @@ let package = Package(
         .library(name: "TraktService", targets: ["TraktService"]),
         .library(name: "CoreTrackerAuth", targets: ["CoreTrackerAuth"]),
         .library(name: "WetrakrService", targets: ["WetrakrService"]),
+        .library(name: "PublicMetaDBService", targets: ["PublicMetaDBService"]),
         .library(name: "SeerService", targets: ["SeerService"]),
         .library(name: "SimklService", targets: ["SimklService"]),        .library(name: "AniListService", targets: ["AniListService"]),
         .library(name: "MALService", targets: ["MALService"]),
@@ -261,9 +270,11 @@ let package = Package(
         // Native media-selection IPC uses bounded off-main readers during media-service stalls.
         // Selective P7 conversion requires positive MEL/FEL evidence; unknown P7 keeps HDR10.
         // Buffered direct-rendering PCM supports audio-only sync correction without seeking.
-        .package(
+        // 7.72.1 adds threaded VC-1/WMV3 decoding through FFmpegBuild 3.18.0,
+        // retaining Plozz's playback contracts across upstream refactors.
+        localASSEngine.map { .package(path: $0, traits: ["DolbyVisionFelCurves"]) } ?? .package(
             url: "https://github.com/brandomoore/AetherEngine",
-            revision: "d98f93de1bc05635279ab5ce7831910327452e3f",
+            revision: "5d8bd5bddf09c7bfe4155dc62bb04ece62b63c03",
             traits: ["DolbyVisionFelCurves"]
         ),
         // NOTE: FFmpegBuild (FFmpeg n8.1.x media libraries) and LibDovi (Dolby Vision
@@ -416,6 +427,10 @@ let package = Package(
             dependencies: ["CoreModels", "CoreNetworking", "CoreSecureStore", "CoreTrackerAuth"]
         ),
         .target(
+            name: "PublicMetaDBService",
+            dependencies: ["CoreModels", "CoreNetworking", "CoreSecureStore"]
+        ),
+        .target(
             name: "SeerService",
             dependencies: ["CoreModels", "CoreNetworking"]
         ),
@@ -510,7 +525,7 @@ let package = Package(
         ),
         .target(
             name: "FeatureSettings",
-            dependencies: ["CoreModels", "CoreUI", "CoreNetworking", "CrashReporting", "FeatureProfiles", "TraktService", "WetrakrService", "SeerService", "SimklService", "AniListService", "MALService", "LastFmService"]
+            dependencies: ["CoreModels", "CoreUI", "CoreNetworking", "CrashReporting", "FeatureProfiles", "TraktService", "WetrakrService", "PublicMetaDBService", "SeerService", "SimklService", "AniListService", "MALService", "LastFmService"]
         ),
         .target(
             name: "FeatureProfiles",
@@ -837,7 +852,8 @@ let package = Package(
                 .product(name: "AetherEngine", package: "AetherEngine"),
                 "Libass",
                 .target(name: "DiscNavigation", condition: .when(platforms: [.iOS, .tvOS])),
-            ]
+            ],
+            swiftSettings: assEngineSettings
         ),
 
         .target(
@@ -869,6 +885,8 @@ let package = Package(
                 "ProviderShare",
                 "CoreSecureStore",
                 "TraktService",
+                "RatingsService",
+                "PublicMetaDBService",
                 "SeerService",
                 "FeatureSyncCloud"
             ]
@@ -924,6 +942,7 @@ let package = Package(
                 "SeerService",
                 "SimklService",
                 "WetrakrService",
+                "PublicMetaDBService",
                 "AniListService",
                 "MALService",
                 "LastFmService",
@@ -980,6 +999,7 @@ let package = Package(
                 "TraktService",
                 "SimklService",
                 "WetrakrService",
+                "PublicMetaDBService",
                 "AniListService",
                 "MALService",
                 "FeatureSyncSetup",
@@ -1099,12 +1119,12 @@ let package = Package(
             dependencies: ["WetrakrService", "CoreTrackerAuth", "CoreModels", "CoreNetworking", "TestSupportNetworking"]
         ),
         .testTarget(
-            name: "SimklServiceTests",
-            dependencies: ["SimklService", "CoreModels", "CoreNetworking", "TestSupportNetworking"]
+            name: "PublicMetaDBServiceTests",
+            dependencies: ["PublicMetaDBService", "CoreModels", "CoreNetworking", "CoreSecureStore", "FeatureWatchlistCore", "TestSupportNetworking"]
         ),
         .testTarget(
-            name: "LastFmServiceTests",
-            dependencies: ["LastFmService", "TestSupportNetworking"]
+            name: "SimklServiceTests",
+            dependencies: ["SimklService", "CoreModels", "CoreNetworking", "TestSupportNetworking"]
         ),
         .testTarget(
             name: "AniListServiceTests",
@@ -1113,6 +1133,10 @@ let package = Package(
         .testTarget(
             name: "MALServiceTests",
             dependencies: ["MALService", "CoreModels", "CoreNetworking", "TestSupportNetworking"]
+        ),
+        .testTarget(
+            name: "LastFmServiceTests",
+            dependencies: ["LastFmService", "CoreModels", "CoreNetworking", "TestSupportNetworking"]
         ),
         .testTarget(
             name: "SeerServiceTests",
@@ -1172,7 +1196,7 @@ let package = Package(
         ),
         .testTarget(
             name: "FeatureSettingsTests",
-            dependencies: ["FeatureSettings", "CoreModels"]
+            dependencies: ["FeatureSettings", "CoreModels", "PublicMetaDBService", "TestSupportNetworking"]
         ),
         .testTarget(
             name: "MediaTransportCoreTests",
@@ -1259,7 +1283,8 @@ let package = Package(
                 "TestSupportPerformance",
                 .product(name: "AetherEngine", package: "AetherEngine"),
             ],
-            resources: [.copy("Fixtures")]
+            resources: [.copy("Fixtures")],
+            swiftSettings: assEngineSettings
         ),
     ],
     // Pin Swift 5 language mode: bumping tools-version to 6.0 (required for the

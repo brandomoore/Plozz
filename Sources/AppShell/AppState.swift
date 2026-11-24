@@ -32,6 +32,7 @@ import TraktService
 import SeerService
 import SimklService
 import WetrakrService
+import PublicMetaDBService
 import LastFmService
 import AniListService
 import MALService
@@ -276,6 +277,7 @@ public final class AppState {
     /// Simkl sync: device-code OAuth + history scrobble. Mirrors Trakt's pattern.
     public let simklService: SimklService
     public let wetrakrService: WetrakrService
+    public let publicMetaDBService: PublicMetaDBService
 
     /// Seerr (Overseerr / Jellyseerr) discovery: backs the Home hero's featured
     /// seam (`trending`) and the Settings connect flow. Inert until the user
@@ -542,12 +544,19 @@ public final class AppState {
                     event: .stop
                 )
             },
+            trackerPlaybackAdmissions: {
+                TrackerPlaybackAdmissions.capture(trakt: boundTraktScrobbler, simkl: boundSimklScrobbler,
+                    wetrakr: boundWetrakrScrobbler, anilist: boundAniListScrobbler, mal: boundMALScrobbler)
+            },
             wetrakrAccountIdentity: { boundWetrakrScrobbler.accountIdentity },
             applyWetrakr: { intent, capturedAt, key, identity in
                 try await boundWetrakrScrobbler.recordWatch(
                     item: intent.makeScrobbleItem(), capturedAt: capturedAt,
                     idempotencyKey: key, expectedAccountIdentity: identity
                 )
+            },
+            applyTrackerPlayback: { [publicMetaDBService] delivery in
+                try await publicMetaDBService.reportPlayback(delivery)
             },
             allAccountIDs: { [weak self] in
                 // The set the identity index actually warms and that Home/Search
@@ -624,6 +633,65 @@ public final class AppState {
         Task { await reconciler.drain() }
     }
 
+    func makeWetrakrHistoryImport() -> TrackerHistoryImportSession {
+        makeTrackerHistoryImport(wetrakrService)
+    }
+
+    func makeSimklHistoryImport() -> TrackerHistoryImportSession {
+        makeTrackerHistoryImport(simklService)
+    }
+
+    func makeTraktHistoryImport() -> TrackerHistoryImportSession {
+        makeTrackerHistoryImport(traktService)
+    }
+
+    func makePublicMetaDBHistoryImport() -> TrackerHistoryImportSession {
+        makeTrackerHistoryImport(publicMetaDBService)
+    }
+
+    func makeAniListHistoryImport() -> TrackerHistoryImportSession {
+        makeTrackerHistoryImport(anilistService)
+    }
+
+    func makeMALHistoryImport() -> TrackerHistoryImportSession {
+        makeTrackerHistoryImport(malService)
+    }
+
+    private func makeTrackerHistoryImport(_ tracker: any TrackerHistoryReading) -> TrackerHistoryImportSession {
+        return accountsProviders.makeTrackerHistoryImportSession(
+            tracker: tracker, reconciler: watchReconciler, syncStore: durableLocalStateStore,
+            index: { [identityIndex] in identityIndex.identitySnapshotStore.current },
+            isPlexIdentityResolved: { [weak self] in self?.plexHomeUsers.hasResolvedWatchMutationIdentity(forAccountID: $0) ?? false },
+            isAuthorized: { [weak self] in
+                guard let self else { return false }
+                return self.isActiveProfileAuthorized
+            }
+        )
+    }
+
+    func synchronizeTrackerHistoryOnForeground() async {
+        guard accountsProviders.trackerHistorySyncIsForeground,
+              trackersAreScopedToActiveProfile, isActiveProfileAuthorized else { return }
+        let scope = accountsProviders.watchMutationServerScope
+        for tracker in historySyncReaders {
+            guard !Task.isCancelled, accountsProviders.trackerHistorySyncIsForeground,
+                  trackersAreScopedToActiveProfile, isActiveProfileAuthorized,
+                  accountsProviders.watchMutationServerScope == scope else { return }
+            guard tracker.historySyncIdentity?.allowsForegroundChecks == true else { continue }
+            let session = makeTrackerHistoryImport(tracker)
+            defer { session.cancel() }
+            guard let grant = session.ongoingSync?.grant,
+                  Set(grant.scope.accounts.map(\.accountID)).isSubset(
+                    of: identityIndex.identitySnapshotStore.current.indexedAccountIDs
+                  ) else { continue }
+            await session.ongoingSync?.synchronize(manual: false)
+        }
+    }
+
+    private var historySyncReaders: [any TrackerHistorySyncReading] {
+        [publicMetaDBService, traktService, wetrakrService, simklService, anilistService, malService]
+    }
+
     func setWatchRetryActive(_ active: Bool) {
         watchRetryIsActive = active
         if active { retryWatchOutboxIfAllowed() }
@@ -686,6 +754,7 @@ public final class AppState {
         let serverAuthorization = accountsProviders.liveTVAuthorizationID
         let serverScope = accountsProviders.watchMutationServerScope
         let initialSnapshot = identityIndex.identitySnapshotStore.current
+        let trackerConnectionID = publicMetaDBService.playbackConnectionID
         let isCurrent: @MainActor @Sendable () -> Bool = { [weak self] in
             guard let self else { return false }
             return self.profilesModel.activeProfileID == profileID
@@ -726,6 +795,15 @@ public final class AppState {
                     ? self?.identityIndex.identitySnapshotStore.current ?? initialSnapshot
                     : initialSnapshot
                 return snapshot.sourceRefs(for: item)
+            },
+            trackerPlayback: { sample in
+                guard let trackerConnectionID else { return }
+                Task {
+                    if await reconciler.enqueueTrackerPlayback(TrackerPlaybackDelivery(
+                        sample: sample, trackerID: "publicmetadb",
+                        connectionID: trackerConnectionID, serverScope: serverScope
+                    )) { await reconciler.drain() }
+                }
             },
             endWithoutProgress: { accountID, itemID in
                 Task {
@@ -803,6 +881,7 @@ public final class AppState {
         onPublish: { [weak self] in
             self?.drainWatchOutbox()
             self?.universalWatchlistIdentityDidUpdate()
+            Task { await self?.synchronizeTrackerHistoryOnForeground() }
         },
         isWarmingAllowed: { [weak self] in
             self?.profilesModel.activeProfile.needsSetup == false
@@ -1214,7 +1293,6 @@ public final class AppState {
             onCredentialSuperseded: { token in await tmdbKeyMediaShare.invalidateTMDBCredential(forToken: token) }
         )
         self.systemBridge = systemBridge ?? Self.makeDefaultSystemBridge()
-        self.ratingsProvider = ratingsProvider ?? RatingsServiceFactory.make()
 
         // Cross-device Sync & Setup facade. Captures locals (not self) so it can be
         // initialized here in phase 1, before any self-capturing closures.
@@ -1321,6 +1399,8 @@ public final class AppState {
         // Seed other trackers with the same profile namespace.
         self.simklService = simklService ?? SimklServiceFactory.make(namespace: ns)
         self.wetrakrService = wetrakrService ?? WetrakrServiceFactory.make(namespace: ns)
+        self.publicMetaDBService = PublicMetaDBService(namespace: ns)
+        self.ratingsProvider = ratingsProvider ?? RatingsServiceFactory.make()
         // Seerr uses ONE shared household connection (user-independent Keychain);
         // profiles differ only by which Seerr user they request as (per request).
         self.seerService = resolvedSeerService
@@ -1611,6 +1691,9 @@ public final class AppState {
 
         // Bring up CloudKit config auto-sync (no-op unless the Sync & Setup flag is
         // on) and start observing local config changes to publish them.
+        for tracker in historySyncReaders {
+            accountsProviders.bindTrackerHistorySync(tracker, store: durableLocalStateStore)
+        }
         self.traktService.onConnectionAvailable = { [weak self] in
             Task { await self?.resumeUniversalWatchlistAuthentication() }
         }
@@ -1619,6 +1702,20 @@ public final class AppState {
                 guard let self, let destination = self.wetrakrService.watchlistDestination else { return }
                 await self.trackerWatchlistConnectionChanged(destination: destination)
             }
+        }
+        self.publicMetaDBService.resolveEpisodeIdentity = { [weak self] content in
+            guard let self else { throw CancellationError() }
+            let scope = self.accountsProviders.liveTVAuthorizationID
+            let metadata = self.metadataProviderSettingsModel.settings
+            return try await PublicMetaDBCatalogResolver.episodeIdentity(
+                content, metadataSettings: metadata,
+                isCurrent: { [weak self] in
+                    guard let self else { return false }
+                    return self.isActiveProfileAuthorized && !self.profilesModel.activeProfile.isKids
+                        && self.accountsProviders.liveTVAuthorizationID == scope
+                        && self.metadataProviderSettingsModel.settings == metadata
+                }
+            )
         }
         prepareMediaAliasLedger()
         startCloudSyncIfEnabled()
@@ -2866,11 +2963,14 @@ public final class AppState {
             identityIndex.reset()
         }
         guard generation == trackerProfileGeneration else { return }
+        publicMetaDBService.selectProfile(namespace: ns)
         await traktService.setActiveProfile(namespace: ns)
         guard generation == trackerProfileGeneration else { return }
         await simklService.setActiveProfile(namespace: ns)
         guard generation == trackerProfileGeneration else { return }
         await wetrakrService.setActiveProfile(namespace: ns)
+        guard generation == trackerProfileGeneration else { return }
+        await publicMetaDBService.refreshStatus()
         guard generation == trackerProfileGeneration else { return }
         await seerService.setActiveProfile(namespace: ns)
         guard generation == trackerProfileGeneration else { return }
@@ -2882,6 +2982,7 @@ public final class AppState {
         guard generation == trackerProfileGeneration else { return }
         trackerScopedNamespace = .some(ns)
         trackerScopedIdentityGeneration = identityGeneration
+        Task { await self.synchronizeTrackerHistoryOnForeground() }
         // Refill what the reset emptied, now that the trackers are actually
         // scoped to this viewer. Last, not inline with the reset: an index warmed
         // before the re-scope finished would be built for whoever was watching a

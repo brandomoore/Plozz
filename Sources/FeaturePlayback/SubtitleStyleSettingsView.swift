@@ -35,7 +35,7 @@ public struct SubtitleStyleSettingsView: View {
         GeometryReader { geometry in
             let context = SubtitleStyleEditingContext(
                 controls: controls, style: $style, secondaryPreview: secondaryPreview,
-                offersDualSubtitles: !isLiveTV
+                offersDualSubtitles: !isLiveTV, showsASSOverride: !isLiveTV
             )
             #if os(tvOS)
             VStack(alignment: .leading, spacing: SettingsFormMetrics.sectionSpacing) {
@@ -250,7 +250,8 @@ private struct TelevisionSubtitleStyleEditor: View {
                 openScreen: { screen = $0 },
                 secondaryPreview: context.secondaryPreview,
                 offersDualSubtitles: context.offersDualSubtitles,
-                separatesSettingsRows: true
+                separatesSettingsRows: true,
+                showsASSOverride: context.showsASSOverride
             )
         }
     }

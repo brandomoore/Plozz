@@ -10,6 +10,7 @@ struct NFSBackendEntry: Sendable, Equatable {
     let kind: RemoteFileEntryKind
     let size: Int64?
     let modifiedAt: Date?
+    var changeToken: String? = nil
 }
 
 /// The seam between the `MediaTransportCore` adapter and the pure-Swift
@@ -68,7 +69,8 @@ actor NFSClientBackend: NFSTransportBackend {
                 name: entry.name,
                 kind: kind,
                 size: kind == .directory ? nil : Int64(clamping: attributes.size),
-                modifiedAt: attributes.modifiedAt
+                modifiedAt: attributes.modifiedAt,
+                changeToken: attributes.changeToken
             )
         }
     }
@@ -83,7 +85,8 @@ actor NFSClientBackend: NFSTransportBackend {
             name: Self.lastComponent(of: relativePath),
             kind: kind,
             size: kind == .directory ? nil : Int64(clamping: attributes.size),
-            modifiedAt: attributes.modifiedAt
+            modifiedAt: attributes.modifiedAt,
+            changeToken: attributes.changeToken
         )
     }
 

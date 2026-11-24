@@ -130,6 +130,7 @@ final class AppearanceConsistencyHostedTests: XCTestCase {
         defer { fixture.close() }
         let library = try await servedLogo(color: .blue)
         let online = try await servedLogo(color: .red)
+        let locale = Locale(identifier: "fr_CA")
         defer {
             for url in [library, online] {
                 ArtworkSession.shared.configuration.urlCache?.removeCachedResponse(for: URLRequest(url: url))
@@ -139,12 +140,12 @@ final class AppearanceConsistencyHostedTests: XCTestCase {
             let item = MediaItem(id: UUID().uuidString, title: "Prefetched title", kind: .series)
             let fallback = HeroLogoFallback(for: item) { online }
             let policy = ArtworkPresentationPolicy(
-                area: .continueWatching, settings: .init(preference: preference)
-            )
+                area: .continueWatching, settings: .init(preference: preference), logoLanguage: locale.identifier
+            ).forPlacement(.logo)
             let key = HeroLogoMemo.key(
-                for: [.remote(library)], fallback: fallback,
+                for: [.remote(library)], fallback: fallback.localized(to: policy.logoLanguage),
                 prefersOnlineArtwork: policy.prefersOnlineArtwork,
-                providerPolicyIdentity: policy.forPlacement(.logo).identity
+                providerPolicyIdentity: policy.identity
             )
             XCTAssertNil(HeroLogoMemo.value(for: key))
             await HeroLogoPreloader.prepare(references: [.remote(library)], fallback: fallback, policy: policy)
@@ -162,6 +163,7 @@ final class AppearanceConsistencyHostedTests: XCTestCase {
                 ) { Color.green }
                 .environment(\.plozzArtworkArea, .continueWatching)
                 .environment(\.plozzArtworkSettings, policy.settings)
+                .environment(\.locale, locale)
                 .frame(width: 300, height: 120)
                 .background(.black)
             )
@@ -178,14 +180,15 @@ final class AppearanceConsistencyHostedTests: XCTestCase {
         defer { lookup.finish(nil) }
         let item = MediaItem(id: UUID().uuidString, title: "Cancelled prefetch", kind: .series)
         let fallback = HeroLogoFallback(for: item) { await lookup.resolve() }
-        let policy = ArtworkPresentationPolicy(area: .continueWatching)
+        let policy = ArtworkPresentationPolicy(area: .continueWatching).forPlacement(.logo)
         let task = Task { await HeroLogoPreloader.prepare(references: [], fallback: fallback, policy: policy) }
         try await waitUntil { lookup.calls == 1 }
         task.cancel()
         lookup.finish(nil)
         await task.value
         let key = HeroLogoMemo.key(
-            for: [], fallback: fallback, prefersOnlineArtwork: true, providerPolicyIdentity: policy.identity
+            for: [], fallback: fallback.localized(to: policy.logoLanguage),
+            prefersOnlineArtwork: policy.prefersOnlineArtwork, providerPolicyIdentity: policy.identity
         )
         XCTAssertNil(HeroLogoMemo.value(for: key))
     }

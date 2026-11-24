@@ -25,11 +25,12 @@ enum PlozziOSHeroArtworkFallback {
         for item: MediaItem,
         style: HeroArtworkStyle,
         surfaceRole: HeroTrailerSurfaceRole,
+        language: String = Locale.current.identifier,
         router: ArtworkRouter = .shared
     ) async -> URL? {
         await MediaArtworkSource.heroFallback(
             for: item, placement: surfaceRole == .home ? .homeHero : .detailBackdrop,
-            prefersPortrait: style == .compactPortrait, router: router
+            prefersPortrait: style == .compactPortrait, language: language, router: router
         )?()
     }
 
@@ -73,7 +74,7 @@ struct PlozziOSDetailArtworkRevisit: Equatable {
                 references: presentation.artworkReferences(settings: policy.settings, in: .details),
                 policy: policy.forPlacement(presentation.artworkPlacement), prefersLandscape: style == .landscape,
                 maxAspectRatio: 3, asyncFallbackURL: {
-                    await PlozziOSHeroArtworkFallback.resolve(for: item, style: style, surfaceRole: .detail)
+                    await PlozziOSHeroArtworkFallback.resolve(for: item, style: style, surfaceRole: .detail, language: language)
                 }
             )
             await HeroLogoPreloader.prepare(
@@ -702,6 +703,7 @@ struct PlozziOSSeriesLoadingHero: View {
 }
 
 struct PlozziOSHeroStage<Foreground: View>: View {
+    @Environment(\.locale) private var locale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.plozziOSHeroContainerHeight) private var containerHeight
     @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
@@ -777,9 +779,9 @@ struct PlozziOSHeroStage<Foreground: View>: View {
         let pullOffset = max(pullDistance - (pullScale - 1) * height / 2, 0)
             + (pullDistance > 0 ? 2 : 0)
         let artworkItem = item
-        let onlineArtworkFallback: @Sendable () async -> URL? = { [style, surfaceRole] in
+        let onlineArtworkFallback: @Sendable () async -> URL? = { [style, surfaceRole, language = locale.identifier] in
             await PlozziOSHeroArtworkFallback.resolve(
-                for: artworkItem, style: style, surfaceRole: surfaceRole
+                for: artworkItem, style: style, surfaceRole: surfaceRole, language: language
             )
         }
         let background = Group {
@@ -957,25 +959,13 @@ struct PlozziOSHeroStage<Foreground: View>: View {
               !Task.isCancelled, !trailerController.isPlaybackSuppressed else {
             return
         }
-        trailerController.prepare(
+        guard trailerController.prepare(
             itemID: item.id,
-            resolvedURL: source.url,
+            source: source,
             muted: surfaceMuteDefault
-        )
+        ) else { return }
         trailerController.claimSurface(surfaceRole, itemID: item.id)
-        while !trailerController.isReady {
-            do {
-                try await Task.sleep(for: .milliseconds(50))
-            } catch {
-                return
-            }
-            guard !Task.isCancelled,
-                  !trailerController.isPlaybackSuppressed,
-                  isActive,
-                  trailerController.isShowing(item.id) else {
-                return
-            }
-        }
+        guard (try? await trailerController.waitUntilReady(itemID: item.id)) == true else { return }
         await startPreparedAfterLeadIn()
     }
 
@@ -1735,9 +1725,9 @@ struct PlozziOSHomeWipeBackdrop: View {
             surface: .home
         )
         let artworkItem = item
-        let onlineArtworkFallback: @Sendable () async -> URL? = { [style] in
+        let onlineArtworkFallback: @Sendable () async -> URL? = { [style, language = artworkPolicy.artworkLanguage] in
             await PlozziOSHeroArtworkFallback.resolve(
-                for: artworkItem, style: style, surfaceRole: .home
+                for: artworkItem, style: style, surfaceRole: .home, language: language
             )
         }
         PlozziOSReflectedHeroStage(height: height, ignoresGlobalCover: style == .compactPortrait) { usableWidth in
@@ -1793,6 +1783,7 @@ struct PlozziOSHomeWipeBackdrop: View {
 }
 
 struct PlozziOSHomeStaticBackdrop: View {
+    @Environment(\.locale) private var locale
     @Environment(HeroTrailerController.self) private var trailerController
     @State private var artworkAppearanceID = UUID().uuidString
 
@@ -1824,9 +1815,9 @@ struct PlozziOSHomeStaticBackdrop: View {
             surface: .home
         )
         let artworkItem = item
-        let onlineArtworkFallback: @Sendable () async -> URL? = { [style] in
+        let onlineArtworkFallback: @Sendable () async -> URL? = { [style, language = locale.identifier] in
             await PlozziOSHeroArtworkFallback.resolve(
-                for: artworkItem, style: style, surfaceRole: .home
+                for: artworkItem, style: style, surfaceRole: .home, language: language
             )
         }
         PlozziOSReflectedHeroStage(
@@ -2445,7 +2436,6 @@ struct PlozziOSHomeHeroForeground: View {
 }
 
 struct PlozziOSDetailHeroForeground: View {
-    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @State private var isVersionPickerPresented = false
     @State var sourceMenu = PlaybackSourceMenuState()
     @Environment(\.colorScheme) private var colorScheme
@@ -2553,21 +2543,11 @@ struct PlozziOSDetailHeroForeground: View {
     /// The episode's own 16:9 still, shown above its details on an episode page.
     /// Same artwork chain and spoiler policy as the episode cards.
     private var episodeStill: some View {
-        let source = MediaArtworkSource(
-            item: item, placement: .episodeThumbnail, policy: artworkPolicy.forArea(.episodes)
-        )
-        return FallbackAsyncImage(
-            references: source.references,
-            variant: .landscapeCard,
-            artworkPolicy: source.policy,
-            asyncFallbackURL: source.fallbackURL,
-            pinIdentity: source.itemIdentity
-        ) {
+        PlozziOSEpisodeStill(item: item, spoilers: appModel.settings.spoilers.settings) {
             MediaArtworkPlaceholder(
                 symbol: .init(for: item), cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius
             )
         }
-        .blur(radius: appModel.settings.spoilers.settings.shouldHideThumbnail(for: item) ? 24 : 0)
         .aspectRatio(16 / 9, contentMode: .fit)
         .frame(maxWidth: style == .compactPortrait ? .infinity : 560)
         .clipShape(
@@ -2587,6 +2567,8 @@ struct PlozziOSDetailHeroForeground: View {
         let entries = actions
         let extras = orderedInlineExtras(from: entries)
         let parentNavigationEntry = entries.first { $0.action == .goToSeason }
+        let spoilers = appModel.settings.spoilers.settings
+        let hidesText = spoilers.shouldHideText(for: item)
         VStack(
             alignment: style == .compactPortrait ? .center : .leading,
             spacing: 12
@@ -2607,7 +2589,9 @@ struct PlozziOSDetailHeroForeground: View {
                 onTapBreadcrumb: parentNavigationEntry.map { entry in
                     { perform(entry) }
                 },
-                subjectTitle: presentsEpisodeStill ? item.title : nil,
+                subjectTitle: presentsEpisodeStill && !hidesText ? item.title : nil,
+                maskedSubjectTitle: presentsEpisodeStill && hidesText ? spoilers.maskedTitle(for: item) : nil,
+                hiddenOverviewMode: hidesText ? spoilers.mode : nil,
                 scheduleLine: scheduleLine,
                 logoFallback: PlozziOSHeroMetadata.tmdbLogoFallback(for: rootItem),
                 usesCompactDetailLayout: style == .compactPortrait,
@@ -3171,6 +3155,8 @@ struct PlozziOSHeroMetadata: View {
     var onTapBreadcrumb: (() -> Void)? = nil
     /// The subject's own title, when it differs from `presentation.title`.
     var subjectTitle: String? = nil
+    var maskedSubjectTitle: LocalizedStringResource? = nil
+    var hiddenOverviewMode: SpoilerSettings.Mode? = nil
     /// The air-schedule badge above the title ("New episode every Wednesday"), or
     /// `nil` when there is nothing truthful to say. Matches tvOS.
     var scheduleLine: LocalizedStringResource? = nil
@@ -3253,10 +3239,12 @@ struct PlozziOSHeroMetadata: View {
                     .disabled(onTapBreadcrumb == nil)
                     .accessibilityLabel(Text("Go to \(seriesBreadcrumb)"))
 
+                }
+                if let title = maskedSubjectTitle.map({ Text($0) }) ?? subjectTitle.map({ Text(verbatim: $0) }) {
                     // `presentation.title` resolves an episode to its *show's* name,
                     // which is right when a series hero fronts an episode but wrong
                     // here: the breadcrumb above already names the show.
-                    Text(subjectTitle ?? presentation.title)
+                    title
                         .font(textScale == 1 ? .largeTitle : .system(size: titleFontSize * textScale))
                         .fontWeight(.bold)
                         .foregroundStyle(palette.primaryText)
@@ -3311,7 +3299,13 @@ struct PlozziOSHeroMetadata: View {
                 }
 
                 if let descriptionText {
-                    if usesCompactDetailLayout {
+                    if let hiddenOverviewMode {
+                        SpoilerSafeOverviewText(
+                            overview: descriptionText, hidesSpoilers: true, mode: hiddenOverviewMode,
+                            lineCount: textSize.descriptionLineLimit(base: usesCompactDetailLayout ? 2 : 3),
+                            fontSize: overviewFontSize * textScale, reservesSpace: false
+                        )
+                    } else if usesCompactDetailLayout {
                         ExpandableOverviewText(
                             text: descriptionText,
                             title: subjectTitle ?? presentation.title,

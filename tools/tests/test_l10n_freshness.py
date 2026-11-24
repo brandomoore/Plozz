@@ -387,7 +387,7 @@ class ExtractionFreshnessTests(unittest.TestCase):
         self.write("tools/main-landing.py", (TOOLS / "main-landing.py").read_text())
         self.write("tools/l10n-guard.sh", '#!/bin/sh\necho guard >> "$HOOK_LOG"\n')
         (self.root / "tools/l10n-guard.sh").chmod(0o755)
-        for name in ("l10n-sync.py", "l10n-export-source.py"):
+        for name in ("testflight-resolutions.py", "l10n-sync.py", "l10n-export-source.py"):
             self.write("tools/" + name, """
 import json,os,sys
 from pathlib import Path
@@ -411,8 +411,9 @@ raise SystemExit(7 if os.environ.get("FAIL_STEP")==Path(__file__).name else 0)
         result = self.run_hook("feature a refs/heads/main b\n")
         self.assertEqual(result.returncode, 0, result.stderr)
         lines = log.read_text().splitlines()
-        self.assertEqual(lines[0], "guard")
-        calls = [json.loads(line) for line in lines[1:]]
+        self.assertEqual(json.loads(lines[0]), ["testflight-resolutions.py", "--lint", "b", "a"])
+        self.assertEqual(lines[1], "guard")
+        calls = [json.loads(line) for line in lines[2:]]
         sync = [call for call in calls if call[0] == "l10n-sync.py"]
         self.assertEqual(len(sync), 1)
         self.assertEqual(sync[0], ["l10n-sync.py", "--validate-only"])

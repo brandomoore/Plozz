@@ -36,6 +36,16 @@ struct PlayerOptionsRow: View {
     private var isFocused: Bool { focus == .row(row.slot) }
 
     var body: some View {
+        if case let .toggle(isOn, _) = row.kind {
+            button
+                .accessibilityLabel(Text(row.title))
+                .accessibilityValue(isOn ? Text("On") : Text("Off"))
+        } else {
+            button
+        }
+    }
+
+    private var button: some View {
         Button {
             switch row.kind {
             case let .number(_, step): step(1)

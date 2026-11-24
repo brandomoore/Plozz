@@ -239,10 +239,9 @@ public struct PlozziOSRootView: View {
         // profile left behind it never imports a watchlist at all; resuming asks
         // the question that was never answered.
         //
-        // Only the launch-origin case presents here. Creating a profile happens
-        // inside the Settings sheet and is presented from there instead — a cover
-        // asked for from this view while Settings is up would never appear. See
-        // `ProfileOnboardingOrigin`.
+        // Settings-origin creation dismisses Settings before activating the
+        // profile, so its rebuilt shell presents setup here. Resumed setup while
+        // Settings remains visible belongs to that sheet instead.
         .plozzFullScreenCover(isPresented: Binding(
             get: { appModel.isPresentingProfileOnboarding(from: .launch) },
             set: { if !$0 { appModel.cancelProfileOnboarding() } }
@@ -480,6 +479,10 @@ public struct PlozziOSRootView: View {
             )
         )
         .mediaItemActionHandler(appModel.mediaItemActionHandler)
+        .onChange(of: appModel.publicMetaDBService.catalogNavigation?.id) { _, request in
+            guard request != nil else { return }
+            showingSettings = false
+        }
         .environment(\.plozzCardCaptionSettings, appModel.settings.cardStyle.captions)
         .environment(
             \.plozzContinueWatchingPresentation,
@@ -1546,7 +1549,11 @@ struct PlozziOSTabShell: View {
                 openDestination(.watchlist)
             })
             .plozziOSLibraryDestination(appModel: appModel)
-            .plozziOSItemNavigation(appModel: appModel, registersScreenshotRouting: true)
+            .plozziOSItemNavigation(
+                appModel: appModel, registersScreenshotRouting: true,
+                acceptsCatalogNavigation: effectiveSelectedDestination == .home && !isShowingMorePage
+                    && !showingSettings && !appModel.isSettingsPresented
+            )
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarBackground(.hidden, for: .tabBar)
             .background { AppBackground(palette: palette) }
@@ -1915,6 +1922,13 @@ struct PlozziOSTabShell: View {
             guard let request = homeEntrance, request.id == id else { return }
             onHomeEntranceReady(request, request.profileID)
         }
+        .onChange(of: appModel.publicMetaDBService.catalogNavigation?.id, initial: true) { _, request in
+            guard request != nil, appModel.publicMetaDBService.hasPendingCatalogNavigation,
+                  appModel.isActiveProfileAuthorized else { return }
+            retainsExplicitHomeEntry = true
+            _ = appModel.consumeStandaloneLiveTVEntryIntent()
+            openDestination(.home)
+        }
         .onChange(
             of: PlozziOSDownloadNotificationNavigation.shared.presentation?.id, initial: true
         ) { _, _ in
@@ -2006,9 +2020,14 @@ struct PlozziOSTabShell: View {
             // when the sheet is actually gone.
             if presented { appModel.noteSettingsPresented(true) }
         }
+        .onChange(of: appModel.hasPendingProfileCreation) { _, pending in
+            if pending { showingSettings = false }
+        }
         .plozzSheet(isPresented: $showingSettings, onDismiss: {
             appModel.noteSettingsPresented(false)
-            if wantsProfileSwitcher {
+            if appModel.hasPendingProfileCreation {
+                appModel.completePendingProfileCreation()
+            } else if wantsProfileSwitcher {
                 wantsProfileSwitcher = false
                 showingProfileSwitcher = true
             } else if let id = pendingSwitchProfileID {

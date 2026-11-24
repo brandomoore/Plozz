@@ -65,6 +65,10 @@ def pre_push(root, updates):
         lease_names = ("APPLE_BUILD_LEASE_LOCK_FD", "APPLE_BUILD_LEASE_PROOF_FD")
         fds = (fd, *(int(os.environ[name]) for name in lease_names if name in os.environ))
         env = dict(os.environ, GIT_CONFIG_PARAMETERS="'safe.bareRepository=all'")
+        for _, target, remote_ref, before in rows:
+            if remote_ref == "refs/heads/main":
+                subprocess.run([sys.executable, "tools/testflight-resolutions.py", "--lint", before, target],
+                               cwd=root, env=env, pass_fds=fds, check=True, timeout=300)
         output = root / ".build"
         output.mkdir(exist_ok=True)
         with tempfile.NamedTemporaryFile(prefix="main-l10n-", suffix=".json", dir=output) as delta:

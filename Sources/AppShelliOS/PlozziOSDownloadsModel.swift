@@ -186,7 +186,7 @@ final class PlozziOSDownloadsModel {
     private let storage: (any DownloadStorageLocating)?
     private let defaults: UserDefaults?
     @ObservationIgnored
-    private var artworkSettings: @MainActor () -> ArtworkSettings = { .default }
+    private var artworkPolicy: @MainActor () -> ArtworkPresentationPolicy = { .init(area: .downloads) }
     private let policyKey: String
     private let preferencesKey: String
     private let renditionCapabilitiesKey: String
@@ -254,7 +254,7 @@ final class PlozziOSDownloadsModel {
         sourceUserID: (@MainActor @Sendable (String) -> String?)? = nil,
         preferredAudioLanguages:
             @escaping @MainActor (MediaItem) -> [String],
-        artworkSettings: @escaping @MainActor () -> ArtworkSettings = { .default },
+        artworkPolicy: @escaping @MainActor () -> ArtworkPresentationPolicy = { .init(area: .downloads) },
         startsActive: Bool = true,
         activityScheduler: (any PlozziOSDownloadActivityScheduling)? = PlozziOSDownloadActivity.systemScheduler(),
         notificationClient: any PlozziOSDownloadNotificationClient = PlozziOSSystemDownloadNotificationClient(),
@@ -326,7 +326,7 @@ final class PlozziOSDownloadsModel {
         self.providerKind = providerKind
         self.sourceUserID = sourceUserID
         self.preferredAudioLanguages = preferredAudioLanguages
-        self.artworkSettings = artworkSettings
+        self.artworkPolicy = artworkPolicy
         self.resolveArtworkItem = resolveArtworkItem
         self.loadArtwork = { item, policy in
             if let loadArtwork { return try await loadArtwork(item) }
@@ -1146,10 +1146,7 @@ final class PlozziOSDownloadsModel {
               ) else {
             return
         }
-        let artworkPolicy = ArtworkPresentationPolicy(
-            area: .downloads, settings: artworkSettings(),
-            providers: MetadataProviderSettingsStore().load()
-        )
+        let artworkPolicy = artworkPolicy()
         let taskID = UUID()
         let task = Task { @MainActor [weak self] in
             _ = await ArtworkSession.warmLimiter.runUnlessCancelled { [weak self] in

@@ -120,7 +120,8 @@ class ResultSummaryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), ["CoreUITests", "FeatureProfilesTests"])
 
-    def run_reaped_driver(self, value, *, finalizes=True, build_exit=0, manifests=1, filtered=True):
+    def run_reaped_driver(self, value, *, finalizes=True, build_exit=0, manifests=1, filtered=True,
+                          build_delay=0, start_delay=0, compile_limit=60, test_limit=60):
         self.write(value)
         binaries = self.root / "bin"
         binaries.mkdir()
@@ -128,6 +129,7 @@ class ResultSummaryTests(unittest.TestCase):
             "xcodebuild": """#!/bin/bash
 printf '%s\\n' "$*" >> "$FIXTURE_ROOT/calls.log"
 if [[ "$1" == "build-for-testing" ]]; then
+  sleep "$FIXTURE_BUILD_DELAY"
   if [[ "$FIXTURE_BUILD_EXIT" != "0" ]]; then exit "$FIXTURE_BUILD_EXIT"; fi
   mkdir -p "$FIXTURE_ROOT/derived/Build/Products"
   for ((i=0; i<FIXTURE_MANIFESTS; i++)); do
@@ -142,6 +144,7 @@ while [[ $# -gt 0 ]]; do
   fi
   shift
 done
+sleep "$FIXTURE_START_DELAY"
 printf "Test Suite 'FeatureProfilesTests.xctest' passed\\n"
 if [[ "$FIXTURE_FINALIZES" == "1" ]]; then
   sleep 2
@@ -169,7 +172,8 @@ LEAN_SETTINGS=(ONLY_ACTIVE_ARCH=YES)
 PLOZZ_SIM_ID=fixture
 PLOZZ_DERIVED_DATA="$FIXTURE_ROOT/derived"
 PLOZZ_TEST_RESULTS_DIR="$FIXTURE_ROOT/results"
-PLOZZ_HANG_SECS=60
+PLOZZ_HANG_SECS="$FIXTURE_TEST_LIMIT"
+PLOZZ_COMPILE_HANG_SECS="$FIXTURE_COMPILE_LIMIT"
 PLOZZ_VERDICT_GRACE=0
 PLOZZ_RESULT_TIMEOUT="$FIXTURE_RESULT_TIMEOUT"
 POLL_SECS=1
@@ -186,6 +190,8 @@ EXPECTED_BUNDLES=1
                 "FIXTURE_ROOT": str(self.root), "FIXTURE_SUMMARY": str(self.path),
                 "FIXTURE_FINALIZES": "1" if finalizes else "0",
                 "FIXTURE_BUILD_EXIT": str(build_exit),
+                "FIXTURE_BUILD_DELAY": str(build_delay), "FIXTURE_START_DELAY": str(start_delay),
+                "FIXTURE_COMPILE_LIMIT": str(compile_limit), "FIXTURE_TEST_LIMIT": str(test_limit),
                 "FIXTURE_MANIFESTS": str(manifests),
                 "FIXTURE_RESULT_TIMEOUT": "15" if finalizes else "4",
             },
@@ -229,6 +235,22 @@ EXPECTED_BUNDLES=1
         result = self.run_reaped_driver(summary(), build_exit=65)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(len((self.root / "calls.log").read_text().splitlines()), 1)
+
+    def test_quiet_compile_can_outlast_test_silence_budget(self):
+        result = self.run_reaped_driver(summary(), build_delay=5, test_limit=3, compile_limit=10)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("xcresult: Passed", result.stdout)
+
+    def test_silent_compile_remains_bounded(self):
+        result = self.run_reaped_driver(summary(), build_delay=15, compile_limit=2)
+        self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+        self.assertIn("no compile output", result.stderr)
+        self.assertEqual(len((self.root / "calls.log").read_text().splitlines()), 1)
+
+    def test_silent_tests_do_not_inherit_the_compile_budget(self):
+        result = self.run_reaped_driver(summary(), start_delay=15, test_limit=2)
+        self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+        self.assertIn("no test output", result.stderr)
 
     def test_full_matrix_runs_without_test_filters_under_nounset(self):
         result = self.run_reaped_driver(summary(), filtered=False)

@@ -8,6 +8,14 @@ import MetadataKit
 import UIKit
 
 enum PlozziOSDownloadArtwork {
+    @MainActor
+    static func policy(settings: ArtworkSettings, appLanguage: AppLanguageSettingsModel) -> ArtworkPresentationPolicy {
+        ArtworkPresentationPolicy(
+            area: .downloads, settings: settings, providers: MetadataProviderSettingsStore().load(),
+            logoLanguage: (appLanguage.locale ?? .current).identifier
+        )
+    }
+
     enum Failure: Error {
         case unavailable
         case invalidImage
@@ -37,11 +45,11 @@ enum PlozziOSDownloadArtwork {
 
     static func lookup(
         for item: MediaItem, router: ArtworkRouter = .shared,
-        role: PinnedMediaSnapshot.ArtworkRole = .landscape
+        role: PinnedMediaSnapshot.ArtworkRole = .landscape, language: String = Locale.current.identifier
     ) async -> URL? {
         await ArtworkSession.artworkResolveLimiter.run {
             guard !Task.isCancelled else { return nil }
-            return await router.artworkURL(for: item, placements: placements(for: item, role: role))
+            return await router.artworkURL(for: item, placements: placements(for: item, role: role), language: language)
         }
     }
 
@@ -56,7 +64,7 @@ enum PlozziOSDownloadArtwork {
             references: references(for: item, policy: policy, role: role),
             variant: role == .poster ? .posterCard : .landscapeCard,
             maxAspectRatio: role == .poster ? 1 : nil,
-            asyncOnlineURL: { await lookup(for: item, router: router, role: role) },
+            asyncOnlineURL: { await lookup(for: item, router: router, role: role, language: policy.artworkLanguage) },
             prefersOnlineArtwork: policy.prefersOnlineArtwork,
             background: true
         ) else { throw Failure.unavailable }

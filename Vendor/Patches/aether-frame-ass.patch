@@ -1,0 +1,1554 @@
+diff --git a/Sources/AetherEngine/AetherEngine+Loading.swift b/Sources/AetherEngine/AetherEngine+Loading.swift
+index 21e6f09d..056003b2 100644
+--- a/Sources/AetherEngine/AetherEngine+Loading.swift
++++ b/Sources/AetherEngine/AetherEngine+Loading.swift
+@@ -2139,6 +2139,7 @@ extension AetherEngine {
+         isLive: Bool = false,
+         dvrWindowSeconds: Double? = nil,
+         preopenedDemuxer: Demuxer?,
++        frameIndexTrack: TrackInfo?,
+         requiresDeinterlaceWarmup: Bool,
+         inverseTelecine: Bool = false,
+         autostarts: Bool,
+@@ -2301,6 +2302,25 @@ extension AetherEngine {
+         // playhead-paced drainer reads it exactly like the HLS session's store.
+         let packetStore = SubtitlePacketStore()
+         self.softwareSubtitlePacketStore = packetStore
++        frameASSIndexTask?.cancel()
++        if frameASSRouteAdmitted, !isCustomSource, !OriginRequestBudget.shared.isPaced(url),
++           let track = frameIndexTrack, let stream = Int32(exactly:track.id),
++           let (count,writer) = preopenedDemuxer?.assInventoryStats(stream) {
++            frameASSIndexTask = Task.detached(priority:.utility) { [weak packetStore] in
++                do {
++                    let index = try await MatroskaASSIndex.fetch(url:url,headers:sourceHTTPHeaders,track:track,
++                                                               expected:count,writer:writer)
++                    try Task.checkCancellation()
++                    packetStore?.installFrameASSIndex(index,stream:stream)
++                } catch {
++                    EngineLog.emit("[SoftwareASS] cue inventory unavailable stream=\(stream)",category:.engine)
++                }
++            }
++        }
++        if frameASSRouteAdmitted, let startPosition, startPosition > 0, startPosition <= 90,
++           activeEmbeddedSubtitleStreamIndex != nil {
++            startSubtitleForwardPrefetcher(startAt: startPosition)
++        }
+         host.preserveASSMarkupForSubtitleTap = loadedOptions.preserveASSMarkup
+         host.teletextPageForSubtitleTap = loadedOptions.teletextPage
+         host.subtitleTapSink = { idx, pkt, tb, assembleSplitSets in
+@@ -2991,6 +3011,7 @@ extension AetherEngine {
+                     isLive: loadedOptions.isLive,
+                     dvrWindowSeconds: loadedOptions.dvrWindowSeconds,
+                     preopenedDemuxer: customPreopened,
++                    frameIndexTrack: activeSubtitleTrackIndex.flatMap { MatroskaASSIndex.track(for: $0, in: subtitleTracks) },
+                     requiresDeinterlaceWarmup: reopenedRequiresDeinterlaceWarmup,
+                     inverseTelecine: reopenedInverseTelecine,
+                     autostarts: transportIntentUnderReconstruction ?? resumesPlaying,
+diff --git a/Sources/AetherEngine/AetherEngine+Subtitles.swift b/Sources/AetherEngine/AetherEngine+Subtitles.swift
+index 37d25e62..329442b0 100644
+--- a/Sources/AetherEngine/AetherEngine+Subtitles.swift
++++ b/Sources/AetherEngine/AetherEngine+Subtitles.swift
+@@ -363,8 +363,8 @@ extension AetherEngine {
+             let events = await BlockingWork.detached(priority: .userInitiated) { handoff.decode() }.value
+             guard let self, self.subtitleDrainTickSerial == serial else { return }
+             self.subtitleDrainTickInFlight = nil
+-            self.finishSubtitleDrainTick(work, events: events)
+-            if self.subtitleDrainTickRequested {
++            let needsCatchUp = self.finishSubtitleDrainTick(work, events: events)
++            if needsCatchUp || self.subtitleDrainTickRequested {
+                 self.subtitleDrainTickRequested = false
+                 self.requestSubtitleDrainTick()
+             }
+@@ -459,13 +459,25 @@ extension AetherEngine {
+                 if step == .reconstruct { subtitleDrainCursors[channel] = nil }
+             }
+             let hadCursor = subtitleDrainCursors[channel] != nil
+-            let plan = SubtitleOverlayDrainer.drainPlan(
++            let lead = subtitleDrainLead(for: channel, streamIndex: streamIndex)
++            var plan = SubtitleOverlayDrainer.drainPlan(
+                 cursor: subtitleDrainCursors[channel],
+                 playhead: playhead,
+-                lead: subtitleDrainLead(for: channel, streamIndex: streamIndex),
++                lead: lead,
+                 backscan: Self.subtitleDrainBackscanSeconds,
+                 jumpThreshold: Self.subtitleDrainJumpThresholdSeconds,
+                 elapsedSinceLastPlan: elapsed)
++            var replayingASS = false
++            if !isSidecar, subtitleTracks.contains(where: { $0.id == Int(streamIndex) && $0.assHeader != nil }) {
++                // Arm before the snapshot: packets can arrive while its decode is in flight.
++                let firstNew = store.watchASSDrain(channel, stream: streamIndex, playhead: playhead, through: playhead + lead)
++                if case .resetAndDecode = plan {
++                    // This is a different landing; the normal reconstruction owns it.
++                } else if let firstNew, let cursor = subtitleDrainCursors[channel], firstNew <= cursor.lastDecodedPts {
++                    plan = .decode(from: firstNew, through: playhead + lead)
++                    replayingASS = true
++                }
++            }
+             if !isSidecar, Self.subtitleForwardPrefetchNeedsReanchor(plan: plan, hadCursor: hadCursor) {
+                 work.prefetchNeedsReanchor = true
+             }
+@@ -543,7 +555,7 @@ extension AetherEngine {
+             // island the previous run harvested sits further ahead, and the cursor never comes back.
+             // #941: the ledger sees the holes order cannot, a forward re-anchor's above all. The
+             // playhead closing on the island is what ends a hold; see `harvestGapStep`.
+-            let held = subtitleDrainCursors[channel]
++            let held = replayingASS ? nil : subtitleDrainCursors[channel]
+             let step = SubtitleOverlayDrainer.harvestGapStep(
+                 count: batchEnd,
+                 ptsAt: { entries[$0].ptsSeconds },
+@@ -565,8 +577,9 @@ extension AetherEngine {
+     /// AE#628: the MainActor half after the decode. `events` holds one decoded result per packet
+     /// the prepare half handed out, channel by channel. A channel re-selected, cleared or rebuilt
+     /// while its batch decoded is skipped: its cursor did not move, so the next tick redoes it.
++    @discardableResult
+     func finishSubtitleDrainTick(_ work: SubtitleDrainTickWork,
+-                                 events decodedByChannel: [[EmbeddedSubtitleDecoder.SubtitleEvent?]]) {
++                                 events decodedByChannel: [[EmbeddedSubtitleDecoder.SubtitleEvent?]]) -> Bool {
+         // AE#1022 round 3: a batch planned before a seek was decoded around the departure. Applied
+         // after it, it republished a set whose clear was unread as open, after the seek had closed
+         // it, and that set was drawn at the landing until the landing's reset closed it again
+@@ -574,9 +587,10 @@ extension AetherEngine {
+         // cursors did not move, so the tick after the landing decodes what still matters.
+         guard work.seekGeneration == currentSeekGeneration else {
+             subtitleDrainTickRequested = true
+-            return
++            return true
+         }
+         let playhead = work.playhead
++        var needsCatchUp = false
+         for (job, events) in zip(work.channels, decodedByChannel) {
+             let channel = job.channel
+             let streamIndex = job.streamIndex
+@@ -593,6 +607,15 @@ extension AetherEngine {
+             let batchEnd = job.batchEnd
+             let decodeEnd = job.decodeEnd
+             let gapHold = job.gapHold
++            // A dense ASS backscan can fill many batches before reaching the landing.
++            // Keep the worker serial and capped, but don't sleep between already-due
++            // batches. Retain normal pacing for distant lookahead and unread gaps.
++            if gapHold == nil, decodeEnd > 0, decodeEnd == batchEnd, batchEnd < entries.count,
++               entries[batchEnd].ptsSeconds <= playhead + Double(Self.subtitleDrainTickNanoseconds) / 1e9,
++               sidecarBitmapSources[channel] == nil,
++               subtitleTracks.contains(where: { $0.id == Int(streamIndex) && $0.assHeader != nil }) {
++                needsCatchUp = true
++            }
+             // #271: bind the channel's cue array ONCE for the whole batch. `subtitleCues` is
+             // `@Published`, whose wrapper exposes get/set and no `_modify`, so passing it inout per
+             // event both copy-on-writes the array and publishes it: every consumer then walks a
+@@ -784,6 +807,7 @@ extension AetherEngine {
+         // SubtitlePacketStore.perStreamByteCap (evict-oldest per stream): text tracks keep the whole
+         // session, bitmap tracks keep a wide trailing window. Mirrors the segment cache retaining
+         // history for backward seeks rather than clamping to a time window ahead of the playhead.
++        return needsCatchUp
+     }
+ 
+     // MARK: - #151: subtitle forward prefetch
+@@ -905,6 +929,8 @@ extension AetherEngine {
+         cancelSubtitleForwardPrefetcher(reason: .prefetchRebuild)
+         guard let store = activeSubtitlePacketStore,
+             let url = loadedURL else { return }
++        let initialReadAnchor = role == .readAhead && frameASSRouteAdmitted
++            ? store.frameASSInitialReadAnchor(at: anchor) : anchor
+         let isCustom = isCustomSource
+         if isCustom, customReader == nil { return }
+         let headers = loadedOptions.httpHeaders
+@@ -926,7 +952,7 @@ extension AetherEngine {
+                 maxConsecutiveFailures: AetherEngine.subtitleForwardPrefetchMaxConsecutiveFailures,
+                 maxRestarts: AetherEngine.subtitleForwardPrefetchMaxRestarts,
+                 backoffNanoseconds: AetherEngine.subtitleForwardPrefetchRestartBackoffNanoseconds)
+-            var resumeAt = anchor
++            var resumeAt = initialReadAnchor
+             var holdingForMeteredOrigin = false
+             while !Task.isCancelled {
+                 let originPaced = OriginRequestBudget.shared.isPaced(url)
+diff --git a/Sources/AetherEngine/AetherEngine.swift b/Sources/AetherEngine/AetherEngine.swift
+index fff4dcc5..41f460fb 100644
+--- a/Sources/AetherEngine/AetherEngine.swift
++++ b/Sources/AetherEngine/AetherEngine.swift
+@@ -1067,9 +1067,14 @@ public final class AetherEngine: ObservableObject {
+ 
+     /// Updates software subtitle composition without reopening media or shifting the A/V clock.
+     /// Non-finite values are ignored. Takes effect on the next composited video frame.
++    /// Fullscreen host policy, evaluated against demuxed tracks before routing.
++    public var frameASSSelection: (([TrackInfo]) -> Int?)?
++    public internal(set) var frameASSRouteAdmitted = false
++
+     public func setSoftwareSubtitleDelay(_ seconds: Double) {
+         guard seconds.isFinite, seconds != softwareSubtitleDelaySeconds else { return }
+         softwareSubtitleDelaySeconds = seconds
++        if softwareHost?.assProvider != nil { refreshSoftwareASSArtwork() }
+         softwareHost?.updateSubtitleCompositor(cues: subtitleCues + secondarySubtitleCues,
+             enabled: pictureInPictureActive, delaySeconds: seconds)
+         EngineLog.emit("[AetherEngine] software subtitle delay=\(seconds)s", category: .engine)
+@@ -1101,6 +1106,7 @@ public final class AetherEngine: ObservableObject {
+             #endif
+             updatePictureFit()
+             nativeHost?.pictureInPictureActive = pictureInPictureActive
++            if softwareHost?.assProvider != nil { refreshSoftwareASSArtwork() }
+             // SW-PiP Phase C: flip the frame compositor with the PiP state so subtitles appear in the
+             // window and never double-draw under the fullscreen host overlay.
+             softwareHost?.updateSubtitleCompositor(cues: subtitleCues + secondarySubtitleCues, enabled: pictureInPictureActive, delaySeconds: softwareSubtitleDelaySeconds)
+@@ -1723,6 +1729,7 @@ public final class AetherEngine: ObservableObject {
+     #endif
+     /// SW-host sessions have no HLSVideoEngine; their tap fills this store instead.
+     var softwareSubtitlePacketStore: SubtitlePacketStore?
++    var frameASSIndexTask: Task<Void, Never>?
+     var subtitleDrainDecoders: [SubtitleChannel: EmbeddedSubtitleDecoder] = [:]
+     var subtitleDrainCursors: [SubtitleChannel: SubtitleDrainCursor] = [:]
+     /// #271: monotonic timestamp of the previous drain tick, so a tick that ran long is not read as
+@@ -1849,7 +1856,9 @@ public final class AetherEngine: ObservableObject {
+     /// Active primary embedded subtitle stream index (matches TrackInfo.id), or nil when subtitles are off or
+     /// a sidecar (not an embedded track) is active. Mirrors `activeAudioTrackIndex` so a host picker reflects
+     /// the track auto-selected by `LoadOptions.preferredSubtitleLanguages` (#73) as well as host `selectSubtitleTrack` calls.
+-    @Published public internal(set) var activeSubtitleTrackIndex: Int?
++    @Published public internal(set) var activeSubtitleTrackIndex: Int? {
++        didSet { if softwareHost?.assProvider != nil { refreshSoftwareASSArtwork() } }
++    }
+ 
+     /// ASS script header ([Script Info] + [V4+ Styles] + [Events] Format line) for the primary sidecar, or nil.
+     /// Populated when `LoadOptions.preserveASSMarkup` is set and the file is ASS/SSA; `subtitleCues` then carry
+@@ -6537,6 +6546,33 @@ public final class AetherEngine: ObservableObject {
+             EngineLog.emit(line, category: .engine)
+         }
+         sourceUpscalePlan = upscaleDecision.plan
++        // Do not trade native delivery features for subtitle styling. Admit only
++        // the bounded SDR workload and never use the process-wide test override.
++        frameASSRouteAdmitted = false
++        var frameIndexTrack: TrackInfo?
++        #if os(tvOS)
++        if let frameASSSelection, probeOpened, probe.isSourceSeekable, !options.isLive,
++           !options.sequentialOrigin, options.nativeSourcePlaybackRange == nil,
++           !wirelessAirPlayRoute, !airPlayReceiverShowsVideo, !pictureInPictureActive,
++           sourceUpscalePlan?.supportsFrameASS != false, detectedFormat == .sdr, detectedDVProfileNum == nil,
++           let color = sourceVideoStreamFormat, [nil, "bt709"].contains(color.transfer),
++           [nil, "bt709"].contains(color.colorPrimaries), [nil, "bt709"].contains(color.matrix),
++           sourceContainerFormat?.contains("matroska") == true,
++           detectedCodecID == AV_CODEC_ID_H264,
++           (1...1920).contains(sourceVideoWidth), (1...1080).contains(sourceVideoHeight),
++           let fps = sourceVideoFrameRate, fps > 0, fps <= 30.1,
++           !audioTracks.isEmpty, audioTracks.allSatisfy({
++               (1...2).contains($0.channels) && !$0.isAtmos && !$0.isDTSX
++                   && ["aac", "flac", "opus", "vorbis", "mp3"].contains($0.codec)
++           }), let id = frameASSSelection(probedSubtitleTracks),
++           let track = MatroskaASSIndex.track(for: id, in: probedSubtitleTracks) {
++            frameIndexTrack = track
++            frameASSRouteAdmitted = true
++            useSoftwarePath = true
++            EngineLog.emit("[SoftwareASS] fullscreen primary admitted stream=\(id)", category: .engine)
++        }
++        #endif
++        // Only reload on scaler failure if nothing else requires software output.
+         sourceSoftwareOnlyForUpscale = sourceUpscalePlan != nil && !useSoftwarePath
+         if sourceUpscalePlan != nil { useSoftwarePath = true }
+         // #957: the same place and the same reason as the upscale route. The two never both take a source:
+@@ -6644,6 +6680,7 @@ public final class AetherEngine: ObservableObject {
+                     isLive: options.isLive,
+                     dvrWindowSeconds: options.dvrWindowSeconds,
+                     preopenedDemuxer: probeOpened ? probe : nil,
++                    frameIndexTrack: frameIndexTrack,
+                     requiresDeinterlaceWarmup: requiresDeinterlaceWarmup,
+                     inverseTelecine: inverseTelecine,
+                     autostarts: Self.loadPerformsAutostart(options),
+@@ -7471,6 +7508,10 @@ public final class AetherEngine: ObservableObject {
+             // silently extends one run over the whole offset, which is exactly the claim
+             // `SubtitleHarvestCoverage` exists to refuse.
+             let landingSource = host.sourceSeconds(forSession: clockTarget)
++            if host.assProvider != nil {
++                await prepareLocalASSLanding(landingSource, host: host, seek: seekGen)
++                guard loadGeneration == loadGen, seekGeneration == seekGen, softwareHost === host else { return }
++            }
+             softwareSubtitlePacketStore?.noteHarvestAnchor(.pump, at: landingSource)
+             // AE#1022: the landing read goes out with the seek, not with the first drain tick after
+             // it, which comes only once the landed frame has prerolled (measured 0.67 s). The ground
+@@ -9467,6 +9508,7 @@ public final class AetherEngine: ObservableObject {
+         softwareHost?.stop()
+         softwarePiPSource = nil
+         softwareHost = nil
++        frameASSRouteAdmitted = false
+ 
+         // Clear audioHost so music<->video handoffs start from a clean slate; the engine is a process-wide
+         // singleton and a lingering host would keep the old synchronizer alive under the next session.
+@@ -9570,6 +9612,8 @@ public final class AetherEngine: ObservableObject {
+         stopSubtitleDrainer(reason: .sessionStopped)   // #112 rework: both channels
+         resetSubtitleOCRState()                // Phase D
+         subtitleDrainTargets.removeAll()
++        frameASSIndexTask?.cancel()
++        frameASSIndexTask = nil
+         softwareSubtitlePacketStore = nil
+         activeEmbeddedSubtitleStreamIndex = -1
+         activeSubtitleTrackIndex = nil
+diff --git a/Sources/AetherEngine/Demuxer/Demuxer.swift b/Sources/AetherEngine/Demuxer/Demuxer.swift
+index 083680d6..100ddacb 100644
+--- a/Sources/AetherEngine/Demuxer/Demuxer.swift
++++ b/Sources/AetherEngine/Demuxer/Demuxer.swift
+@@ -2681,6 +2681,19 @@ public final class Demuxer: @unchecked Sendable {
+         return Self.resolveBitrate(codecparBitrate: codecparRate, bpsTag: bpsTag)
+     }
+ 
++    func assInventoryStats(_ index: Int32) -> (Int, String)? {
++        withStream(at: index) { stream -> (Int,String)? in
++            let meta = stream.pointee.metadata
++            guard stream.pointee.codecpar.pointee.codec_id == AV_CODEC_ID_ASS,
++                  let writer = metadataValue(meta,key:"_STATISTICS_WRITING_APP"),
++                  let tags = metadataValue(meta,key:"_STATISTICS_TAGS"),
++                  tags.split(separator:" ").contains("NUMBER_OF_FRAMES"),
++                  let count = metadataValue(meta,key:"NUMBER_OF_FRAMES").flatMap(Int.init),
++                  (1...40_000).contains(count) else { return nil }
++            return (count,writer)
++        } ?? nil
++    }
++
+     /// Pure bitrate resolution: a positive declared `codecpar.bit_rate` wins; otherwise a positive parsed
+     /// `BPS` tag; otherwise 0. Factored out so the codecpar-vs-tag precedence is unit-testable without a fixture.
+     static func resolveBitrate(codecparBitrate: Int64, bpsTag: String?) -> Int64 {
+diff --git a/Sources/AetherEngine/Native/SoftwarePlaybackHost.swift b/Sources/AetherEngine/Native/SoftwarePlaybackHost.swift
+index 38c5542c..bb29eea1 100644
+--- a/Sources/AetherEngine/Native/SoftwarePlaybackHost.swift
++++ b/Sources/AetherEngine/Native/SoftwarePlaybackHost.swift
+@@ -317,6 +317,8 @@ final class SoftwarePlaybackHost {
+     // MARK: - Internals
+ 
+     private let renderer: SampleBufferRenderer
++    var assProvider: SoftwareASSArtworkProvider?
++    var artworkGate: SoftwareArtworkGate { renderer.artworkGate }
+     /// Swapped per codec at load(): SoftwareVideoDecoder for AV1 and unsupported hardware formats, HardwareVideoDecoder for HEVC/VP9. Protocol keeps the demux loop codec-agnostic.
+     private var videoDecoder: any VideoDecodingPipeline
+     private var audioDecoder: (any SoftwareAudioProducing)?
+@@ -3065,6 +3067,8 @@ final class SoftwarePlaybackHost {
+         vodPacketReadAhead = nil
+         directLiveReadAhead?.close()
+         directLiveReadAhead = nil
++        assProvider = nil
++        artworkGate.set(nil)
+         renderer.subtitleCompositor.reset()
+ 
+         if let extractor = stillExtractorSlot.reset() {
+diff --git a/Sources/AetherEngine/Renderer/SampleBufferRenderer.swift b/Sources/AetherEngine/Renderer/SampleBufferRenderer.swift
+index 43fb725d..f2849748 100644
+--- a/Sources/AetherEngine/Renderer/SampleBufferRenderer.swift
++++ b/Sources/AetherEngine/Renderer/SampleBufferRenderer.swift
+@@ -34,6 +34,8 @@ final class SampleBufferRenderer: @unchecked Sendable {
+     /// SW-PiP Phase C: composites active subtitle cues into frames while PiP is active (the system
+     /// window renders only this layer, the host overlay cannot reach it).
+     let subtitleCompositor = SubtitleFrameCompositor()
++    let artworkGate = SoftwareArtworkGate()
++    private var loggedUpscaledArtworkGeneration: UInt64?
+ 
+     /// B-frame reorder buffer: collects decoder output, flushes to display layer in ascending PTS order. Third tuple slot carries per-frame HDR10+ T.35 SEI bytes, paired through the reorder to kCMSampleAttachmentKey_HDR10PlusPerFrameData.
+     private let reorderLock = NSLock()
+@@ -707,6 +709,7 @@ final class SampleBufferRenderer: @unchecked Sendable {
+     func recoverAfterSuspensionIfNeeded() {
+         let status = resumeQueue?.status() ?? queueStatus
+         guard status == .failed else { return }
++        artworkGate.invalidate()
+         activePictureTimeline.invalidate()
+         EngineLog.emit("[Renderer] AE#870 queue target failed while paused (\(queueError?.localizedDescription ?? "nil")), flushing before the feeder resumes", category: .swPlayback)
+         if let resumeQueue {
+@@ -855,8 +858,9 @@ final class SampleBufferRenderer: @unchecked Sendable {
+             // #407: the successor is already held, so its timestamp is the frame's exact duration at
+             // no extra latency. Read before the unlock, since enqueue() runs on the decode thread.
+             let next = reorderBuffer.first?.1
++            let stamp = artworkGate.generation
+             reorderLock.unlock()
+-            flushFrame(pixelBuffer: pb, pts: t, hdr10PlusData: hdr, analysisGeneration: analysisGeneration, nextPTS: next)
++            flushFrame(pixelBuffer: pb, pts: t, hdr10PlusData: hdr, analysisGeneration: analysisGeneration, stamp: stamp, nextPTS: next)
+             reorderLock.lock()
+         }
+ 
+@@ -901,10 +905,11 @@ final class SampleBufferRenderer: @unchecked Sendable {
+         let floor = arrivalFloor?.floor
+         let generation = _flushGeneration
+         let analysisGeneration = activePictureTimeline.generation(at: ptsSeconds)
++        let stamp = artworkGate.generation
+         reorderLock.unlock()
+ 
+         flushFrame(pixelBuffer: pixelBuffer, pts: pts, hdr10PlusData: hdr10PlusData,
+-                   analysisGeneration: analysisGeneration, displayOrderSpacing: step.contiguous)
++                   analysisGeneration: analysisGeneration, stamp: stamp, displayOrderSpacing: step.contiguous)
+         if let raised = step.raisedFloor, #available(visionOS 1.1, *) {
+             let source = CMTime(seconds: raised, preferredTimescale: 90_000)
+             // A flush in between dropped this promise along with the frames it covered; setting it
+@@ -970,6 +975,7 @@ final class SampleBufferRenderer: @unchecked Sendable {
+         gateReorderLead = 0   // a seek relearns the lead from the new position
+         // #311: everything reported before this point describes frames that are now gone.
+         _flushGeneration = SampleBufferRenderer.flushGenerations.next()
++        artworkGate.invalidate(retainingPictureAt: removingDisplayedImage ? nil : CMTimebaseGetTime(videoRenderer.timebase).seconds)
+         // Invalidate the format description cache; the next load() may open a stream with different colorimetry at the same resolution.
+         cachedFormatDesc = nil
+         cachedFormatKey = nil
+@@ -988,6 +994,7 @@ final class SampleBufferRenderer: @unchecked Sendable {
+             videoRenderer.presentationTimeExpectation = .none
+         }
+         let remaining = reorderBuffer
++        let stamp = artworkGate.generation
+         reorderBuffer.removeAll()
+         if let newest = remaining.last { _lastReleasedPtsSeconds = CMTimeGetSeconds(newest.1) }
+         reorderLock.unlock()
+@@ -997,7 +1004,7 @@ final class SampleBufferRenderer: @unchecked Sendable {
+             // media that is the frame that stays on screen, and a length is exactly what it must not
+             // have.
+             let next = i + 1 < remaining.count ? remaining[i + 1].1 : nil
+-            flushFrame(pixelBuffer: pb, pts: t, hdr10PlusData: hdr, analysisGeneration: analysisGeneration, nextPTS: next)
++            flushFrame(pixelBuffer: pb, pts: t, hdr10PlusData: hdr, analysisGeneration: analysisGeneration, stamp: stamp, nextPTS: next)
+         }
+     }
+ 
+@@ -1007,11 +1014,14 @@ final class SampleBufferRenderer: @unchecked Sendable {
+     /// path, where consecutive handovers are in decode order and their gaps say nothing about cadence:
+     /// it lists the timestamps that this frame made contiguous, in the order they will be shown.
+     private func flushFrame(pixelBuffer: CVPixelBuffer, pts: CMTime, hdr10PlusData: Data?,
+-                            analysisGeneration: UInt64?, nextPTS: CMTime? = nil, displayOrderSpacing: [Double]? = nil) {
++                            analysisGeneration: UInt64?, stamp: UInt64, nextPTS: CMTime? = nil, displayOrderSpacing: [Double]? = nil) {
+         #if DEBUG
+         beforeActivePictureHandoverForTesting?()
+         #endif
+-        let outputBuffer = subtitleCompositor.composite(pixelBuffer, ptsSeconds: pts.seconds)
++        var art = artworkGate.artwork(stamp, pts: pts, size: CGSize(width: CVPixelBufferGetWidth(pixelBuffer),
++                                                                     height: CVPixelBufferGetHeight(pixelBuffer)))
++        let outputBuffer = subtitleCompositor.composite(pixelBuffer, ptsSeconds: pts.seconds, supplied: art)
++        if case .images? = art, outputBuffer === pixelBuffer { art = .notReady }
+         reorderLock.lock()
+         let timeline = _timeline
+         reorderLock.unlock()
+@@ -1052,6 +1062,7 @@ final class SampleBufferRenderer: @unchecked Sendable {
+                 loggedRequiresFlushAtEnqueue = true
+                 EngineLog.emit("[Renderer] queue target requires a flush at enqueue #\(enqueueCount + 1) (status=\(statusName)), flushing", category: .swPlayback)
+             }
++            artworkGate.invalidate()
+             target.flush()
+             reorderLock.lock()
+             _pendingPresentation.removeAll()
+@@ -1066,9 +1077,16 @@ final class SampleBufferRenderer: @unchecked Sendable {
+             loggedNotReady = true
+             EngineLog.emit("[Renderer] isReadyForMoreMediaData=false at enqueue #\(enqueueCount + 1) status=\(statusName)", category: .swPlayback)
+         }
+-        target.enqueue(sampleBuffer)
++        guard artworkGate.submit(stamp, art, sourceTime: pts.seconds,
++                                 { target.enqueue(sampleBuffer) }) else { return }
+         let accepted = queueFlushReasonNow() == nil
+         reorderLock.lock()
++        if accepted, loggedUpscaledArtworkGeneration != stamp,
++           case .images(let images)? = art, let raster = images.first?.canvasSize,
++           raster.width < CGFloat(CVPixelBufferGetWidth(outputBuffer)) {
++            loggedUpscaledArtworkGeneration = stamp
++            EngineLog.emit("[SoftwareASS] submitted raster=\(Int(raster.width))x\(Int(raster.height)) output=\(CVPixelBufferGetWidth(outputBuffer))x\(CVPixelBufferGetHeight(outputBuffer)) pts=\(pts.seconds)", category: .swPlayback)
++        }
+         _lastEnqueuedFrame = pixelBuffer
+         if accepted, let analysisGeneration,
+            analysisGeneration == activePictureTimeline.generation(at: pts.seconds), pts.isNumeric,
+diff --git a/Sources/AetherEngine/Renderer/SoftwareASSArtwork.swift b/Sources/AetherEngine/Renderer/SoftwareASSArtwork.swift
+new file mode 100644
+index 00000000..7242061f
+--- /dev/null
++++ b/Sources/AetherEngine/Renderer/SoftwareASSArtwork.swift
+@@ -0,0 +1,157 @@
++import CoreMedia
++import Foundation
++
++/// One selected embedded Matroska ASS packet, with source times (not presentation clock times).
++public struct SoftwareASSPacket: Sendable {
++    public let start, duration: Double
++    public let data: Data
++}
++
++public struct SoftwareASSFrame: Sendable {
++    public let generation: UInt64
++    public let track: TrackInfo
++    public let fonts: [FontAttachment]
++    public let sourcePTS: CMTime
++    public let subtitleSeconds: Double
++    public let canvas: CGSize
++    /// Active overlapping packets in authors' order, or nil if harvest cannot certify this frame.
++    public let packets: [SoftwareASSPacket]?
++}
++
++public enum SoftwareASSArtwork: Sendable {
++    case images([SubtitleImage]), clear, notReady
++}
++
++/// Called off-main before sample submission. Return immutable artwork or notReady, never wait on UI.
++public typealias SoftwareASSArtworkProvider = @Sendable (SoftwareASSFrame) -> SoftwareASSArtwork
++
++final class SoftwareArtworkGate: @unchecked Sendable {
++    typealias Resolve = @Sendable (UInt64, CMTime, CGSize) -> SoftwareASSArtwork
++    private let lock = NSLock()
++    private var epoch: UInt64 = 0
++    private var resolve: Resolve?
++    // A seek can discard the queue without removing the picture on screen.
++    private var retainedPictureOwns = false
++    private var owners: [(time: Double, frame: Bool)] = []
++    private func ownerLocked(at time: Double) -> Bool {
++        owners.last(where: { $0.time <= time })?.frame ?? retainedPictureOwns
++    }
++    func owns(_ sourceTime: Double) -> Bool {
++        lock.withLock { ownerLocked(at: sourceTime) }
++    }
++    private(set) var totals = (clear: 0, notReady: 0, stale: 0)
++    var counts: (clear: Int, notReady: Int, stale: Int) { lock.withLock { totals } }
++    var generation: UInt64 { lock.withLock { epoch } }
++    func set(_ resolve: Resolve?) { lock.withLock { epoch &+= 1; self.resolve = resolve } }
++    func invalidate(retainingPictureAt time: Double? = nil) {
++        lock.withLock {
++            retainedPictureOwns = time.map { ownerLocked(at: $0) } ?? false
++            owners.removeAll(keepingCapacity: true)
++            epoch &+= 1
++        }
++    }
++    func artwork(_ stamp: UInt64, pts: CMTime, size: CGSize) -> SoftwareASSArtwork? {
++        let callback = lock.withLock { stamp == epoch ? resolve : nil }
++        return callback?(stamp, pts, size)
++    }
++
++    /// Atomic relative to invalidation; a checked-then-unlocked enqueue would admit an old landing.
++    func submit(_ stamp: UInt64, _ art: SoftwareASSArtwork?, sourceTime: Double? = nil, _ handover: () -> Void) -> Bool {
++        lock.withLock {
++            guard stamp == epoch else { totals.stale += 1; return false }
++            switch art { case .clear?: totals.clear += 1; case .notReady?: totals.notReady += 1; default: break }
++            handover()
++            if let time = sourceTime, time.isFinite, art != nil || retainedPictureOwns || !owners.isEmpty {
++                let ownsFrame: Bool
++                switch art { case .images?, .clear?: ownsFrame = true; default: ownsFrame = false }
++                // Decoder output may arrive out of display order.
++                let i = owners.lastIndex(where: { $0.time <= time }).map { $0 + 1 } ?? 0
++                owners.insert((time, ownsFrame), at: i)
++                if owners.count > 240 { owners.removeFirst() }
++                if !ownsFrame, !retainedPictureOwns, resolve == nil, !owners.contains(where: \.frame) { owners.removeAll() }
++            }
++            return true
++        }
++    }
++}
++
++extension AetherEngine {
++    /// Let the existing reader catch the resumed playhead while video is preparing.
++    /// Never change the clock or claim a blank on a timeout or superseded load.
++    public func prerollResumedFrameASS(at position: Double) async {
++        guard frameASSRouteAdmitted, position > 0, position <= 90,
++              let store = softwareSubtitlePacketStore, let track = activeSubtitleTrackIndex,
++              subtitleForwardPrefetchTask != nil, !pictureInPictureActive else { return }
++        let deadline = ContinuousClock.now + .seconds(4)
++        while !Task.isCancelled, softwareSubtitlePacketStore === store, activeSubtitleTrackIndex == track,
++              subtitleForwardPrefetchTask != nil, !pictureInPictureActive, ContinuousClock.now < deadline,
++              !store.hasStrictPrefix(past: position + 0.5) {
++            do { try await Task.sleep(for: .milliseconds(30)) } catch { return }
++        }
++    }
++    public var hasSoftwareASSArtworkProvider: Bool { softwareHost?.assProvider != nil }
++    public var softwareFrameOwnsPrimarySubtitle: Bool {
++        guard let host = softwareHost, let tb = softwarePresentationTimebase else { return false }
++        return host.artworkGate.owns(CMTimebaseGetTime(tb).seconds)
++    }
++    /// Before repositioning a paused local source, let the existing subtitle reader finish a
++    /// bounded contiguous read. Re-anchoring first leaves previous long-lived overlaps unknowable.
++    func prepareLocalASSLanding(_ source: Double, host: SoftwarePlaybackHost, seek: UInt64) async {
++        let end = source - softwareSubtitleDelaySeconds + 1
++        guard loadedURL?.isFileURL == true, !isCustomSource, !host.isPlaying, host.assProvider != nil,
++              !pictureInPictureActive, let id = activeSubtitleTrackIndex,
++              subtitleTracks.contains(where: { $0.id == id && !$0.isExternal && $0.assHeader != nil }),
++              subtitleForwardPrefetchActiveRole == .readAhead,
++              let reader = subtitleForwardPrefetchReanchor, !reader.hasPending,
++              let store = softwareSubtitlePacketStore, end.isFinite, end >= 0,
++              !store.hasStrictPrefix(past: end), store.hasStrictPrefix(past: max(0, end-90))
++        else { return }
++        let owner = host.artworkGate.generation
++        let deadline = ContinuousClock.now + .milliseconds(1500)
++        reader.extendRead(through: end, generation: seek)
++        defer {
++            reader.endExtendedRead(generation: seek)
++            EngineLog.emit("[SoftwareASSLanding] prefixReady=\(store.hasStrictPrefix(past: end))", category: .swPlayback)
++        }
++        while !Task.isCancelled, ContinuousClock.now < deadline, seek == currentSeekGeneration,
++              softwareHost === host, owner == host.artworkGate.generation,
++              reader === subtitleForwardPrefetchReanchor, !reader.hasPending,
++              !store.hasStrictPrefix(past: end) {
++            do { try await Task.sleep(for: .milliseconds(15)) } catch { break }
++        }
++    }
++
++    /// Session-scoped, fullscreen, primary embedded ASS only. Returns false without a software
++    /// host. Register while paused; select/change/disable tracks using the normal selection API.
++    @discardableResult
++    public func setSoftwareASSArtworkProvider(_ provider: SoftwareASSArtworkProvider?) -> Bool {
++        guard let host = softwareHost else { return false }
++        host.assProvider = provider
++        refreshSoftwareASSArtwork()
++        return true
++    }
++
++    func refreshSoftwareASSArtwork() {
++        guard let host = softwareHost else { return }
++        guard let provider = host.assProvider, let store = softwareSubtitlePacketStore,
++              !pictureInPictureActive, let id = activeSubtitleTrackIndex,
++              let track = subtitleTracks.first(where: { $0.id == id }), !track.isExternal,
++              track.assHeader != nil, let index = Int32(exactly: id)
++        else { host.artworkGate.set(nil); return }
++        let fonts = fontAttachments, delay = softwareSubtitleDelaySeconds
++        let plan = sourceUpscalePlan
++        host.artworkGate.set { stamp, pts, size in
++            let t = pts.seconds - delay
++            let packets = store.activeASSPackets(stream: index, at: t)
++            // The upscaler has already processed the video. Rasterize the ASS
++            // at authored video resolution; map only its regions onto the result.
++            let canvas: CGSize
++            if let plan, plan.supportsFrameASS, size == CGSize(width: plan.targetWidth, height: plan.targetHeight) {
++                canvas = CGSize(width: plan.sourceWidth, height: plan.sourceHeight)
++            } else { canvas = size }
++            let result = provider(.init(generation: stamp, track: track, fonts: fonts,
++                                        sourcePTS: pts, subtitleSeconds: t, canvas: canvas, packets: packets))
++            return packets == nil ? .notReady : result
++        }
++    }
++}
+diff --git a/Sources/AetherEngine/Renderer/SubtitleFrameCompositor.swift b/Sources/AetherEngine/Renderer/SubtitleFrameCompositor.swift
+index 3d5d2f00..4a23b60a 100644
+--- a/Sources/AetherEngine/Renderer/SubtitleFrameCompositor.swift
++++ b/Sources/AetherEngine/Renderer/SubtitleFrameCompositor.swift
+@@ -93,6 +93,10 @@ final class SubtitleFrameCompositor: @unchecked Sendable {
+     private var styleObservation: SubtitleCaptionStyle.Observation?
+ 
+     private lazy var ciContext = CIContext(options: [.cacheIntermediates: false])
++    // Authored SDR ASS opacity is applied to encoded video values, not linear-light RGB.
++    private lazy var ass709Context = CIContext(options: [
++        .cacheIntermediates: false, .workingColorSpace: NSNull(), .outputColorSpace: NSNull()
++    ])
+     private var pool: CVPixelBufferPool?
+     private var poolFormat: (width: Int, height: Int, pixelFormat: OSType)?
+ 
+@@ -183,16 +187,21 @@ final class SubtitleFrameCompositor: @unchecked Sendable {
+     }
+ 
+     /// Render thread. Returns the input buffer untouched on passthrough or ANY failure.
+-    func composite(_ buffer: CVPixelBuffer, ptsSeconds: Double) -> CVPixelBuffer {
++    func composite(_ buffer: CVPixelBuffer, ptsSeconds: Double, supplied: SoftwareASSArtwork? = nil) -> CVPixelBuffer {
+         lock.lock()
+         let enabled = self.enabled
+         let cues = self.cues
+         let delay = self.delaySeconds
+         let style = self.style
+         lock.unlock()
+-        guard enabled else { return buffer }
+-
+-        let active = Self.activeCues(in: cues, at: ptsSeconds, delaySeconds: delay)
++        let active: [SubtitleCue]
++        if let supplied {
++            guard case .images(let images) = supplied else { return buffer }
++            active = images.enumerated().map { SubtitleCue(id: $0.offset, startTime: 0, endTime: 0, body: .image($0.element)) }
++        } else {
++            guard enabled else { return buffer }
++            active = Self.activeCues(in: cues, at: ptsSeconds, delaySeconds: delay)
++        }
+         guard !active.isEmpty else {
+             lock.lock(); cachedKey = nil; cachedOverlay = nil; lock.unlock()
+             return buffer
+@@ -200,12 +209,28 @@ final class SubtitleFrameCompositor: @unchecked Sendable {
+ 
+         let width = CVPixelBufferGetWidth(buffer)
+         let height = CVPixelBufferGetHeight(buffer)
++        let outputSpace = Self.renderColorSpace(for: buffer)
++        let encodedASS: Bool
++        if supplied != nil {
++            let transfer = CVBufferCopyAttachment(buffer, kCVImageBufferTransferFunctionKey, nil) as? String
++            let primaries = CVBufferCopyAttachment(buffer, kCVImageBufferColorPrimariesKey, nil) as? String
++            let tagged709 = transfer == kCVImageBufferTransferFunction_ITU_R_709_2 as String
++                && primaries == kCVImageBufferColorPrimaries_ITU_R_709_2 as String
++            encodedASS = tagged709 || (transfer == nil && primaries == nil && outputSpace.name == CGColorSpace.itur_709)
++        } else { encodedASS = false }
++        let imageOptions: [CIImageOption: Any] = encodedASS ? [.colorSpace: NSNull()] : [:]
+         let overlay: CIImage
+         let key = OverlayKey(cues: active.map(OverlayKey.Cue.init), width: width, height: height, style: style)
+         lock.lock()
+-        let cacheHit = cachedKey == key ? cachedOverlay : nil
++        let cacheHit = supplied == nil && cachedKey == key ? cachedOverlay : nil
+         lock.unlock()
+-        if let cacheHit {
++        if case .images(let images)? = supplied, images.first?.canvasSize != CGSize(width: width, height: height) {
++            // No full-size transparent CPU bitmap per 4K sample. Place only
++            // the authored regions, in order, over the already-upscaled video.
++            guard let regions = Self.regionOverlay(images, width: width, height: height, options: imageOptions)
++            else { return buffer }
++            overlay = regions
++        } else if let cacheHit {
+             overlay = cacheHit
+         } else {
+             guard let rendered = Self.renderOverlay(for: active, frameWidth: CGFloat(width), frameHeight: CGFloat(height),
+@@ -213,9 +238,9 @@ final class SubtitleFrameCompositor: @unchecked Sendable {
+                 logFailureOnce("overlay render failed")
+                 return buffer
+             }
+-            overlay = CIImage(cgImage: rendered)
++            overlay = CIImage(cgImage: rendered, options: imageOptions)
+             lock.lock()
+-            cachedKey = key
++            cachedKey = supplied == nil ? key : nil
+             cachedOverlay = overlay
+             _overlaysRendered += 1
+             lock.unlock()
+@@ -230,14 +255,31 @@ final class SubtitleFrameCompositor: @unchecked Sendable {
+         // content shows at coded size and HDR drops to SDR for as long as a cue is up. Carried
+         // before the render too, because CoreImage picks the YCbCr matrix from the destination.
+         Self.carryAttachments(from: buffer, to: output)
+-        let base = CIImage(cvPixelBuffer: buffer)
++        let base = CIImage(cvPixelBuffer: buffer, options: imageOptions)
+         let composited = overlay.composited(over: base)
+-        ciContext.render(composited, to: output, bounds: CGRect(x: 0, y: 0, width: width, height: height),
+-                         colorSpace: Self.renderColorSpace(for: buffer))
++        let context = encodedASS ? ass709Context : ciContext
++        context.render(composited, to: output, bounds: CGRect(x: 0, y: 0, width: width, height: height),
++                       colorSpace: encodedASS ? nil : outputSpace)
+         Self.carryAttachments(from: buffer, to: output)
+         return output
+     }
+ 
++    nonisolated static func regionOverlay(_ images: [SubtitleImage], width: Int, height: Int,
++                                          options: [CIImageOption: Any]) -> CIImage? {
++        var overlay: CIImage?
++        for image in images {
++            let destination = imageRect(position: image.position, canvasSize: image.canvasSize,
++                                        frameWidth: CGFloat(width), frameHeight: CGFloat(height))
++            guard !destination.isEmpty else { continue }
++            let raw = CIImage(cgImage: image.cgImage, options: options)
++            let region = raw.transformed(by: CGAffineTransform(
++                a: destination.width / raw.extent.width, b: 0, c: 0, d: destination.height / raw.extent.height,
++                tx: destination.minX, ty: CGFloat(height) - destination.maxY))
++            overlay = overlay.map { region.composited(over: $0) } ?? region
++        }
++        return overlay
++    }
++
+     /// The source's own colour space, so the render encodes the picture the way it was decoded
+     /// (PQ and HLG included). BT.709 only when the source carries no usable tags.
+     nonisolated static func renderColorSpace(for buffer: CVPixelBuffer) -> CGColorSpace {
+diff --git a/Sources/AetherEngine/Subtitles/MatroskaASSIndex.swift b/Sources/AetherEngine/Subtitles/MatroskaASSIndex.swift
+new file mode 100644
+index 00000000..b12d4123
+--- /dev/null
++++ b/Sources/AetherEngine/Subtitles/MatroskaASSIndex.swift
+@@ -0,0 +1,290 @@
++import Foundation
++
++/// A Matroska seek table alone isn't a subtitle inventory. Accept only the
++/// mkvmerge all-frames layout, reconciled against the selected track's stats.
++struct MatroskaASSIndex: Sendable {
++    struct Interval: Comparable, Sendable {
++        let start, duration: Int
++        static func < (lhs: Self, rhs: Self) -> Bool {
++            (lhs.start, lhs.duration) < (rhs.start, rhs.duration)
++        }
++    }
++    struct Cue: Sendable {
++        let interval: Interval
++        let location: Int
++    }
++    let sorted: [Interval]
++    private let maxDuration: Int
++    init?(_ cues: [Cue], expected: Int) {
++        guard (1...40_000).contains(expected), cues.count == expected,
++              Set(cues.map(\.location)).count == expected,
++              cues.allSatisfy({ $0.location >= 0 && (0...Int(Int32.max)).contains($0.interval.start)
++                  && (0...Int(Int32.max)).contains($0.interval.duration) }) else { return nil }
++        sorted = cues.map(\.interval).sorted()
++        maxDuration = sorted.map(\.duration).max() ?? 0
++    }
++    func matches(at ms: Int, packets: [SoftwareASSPacket]) -> Bool {
++        var lo = 0, hi = sorted.count
++        while lo < hi {
++            let m = (lo + hi) / 2
++            if sorted[m].start <= ms { lo = m + 1 } else { hi = m }
++        }
++        var active: [Interval] = []
++        var i = lo
++        while i > 0, sorted[i-1].start > ms - maxDuration {
++            i -= 1
++            guard lo - i <= 4096 else { return false }
++            if ms < sorted[i].start + sorted[i].duration { active.append(sorted[i]) }
++        }
++        guard active.count == packets.count else { return false }
++        return active.reversed().elementsEqual(packets.map {
++            Interval(start: Int(($0.start * 1000).rounded()), duration: Int(($0.duration * 1000).rounded()))
++        }.sorted())
++    }
++}
++
++private enum Invalid: Error { case index }
++
++/// Strict finite EBML subset. Header offsets are relative to the byte span;
++/// a partial top-level element may be inspected but never iterated as complete.
++private struct Elements {
++    let bytes: [UInt8]
++    struct Node { let id: Int; let body: Range<Int> }
++    func vint(_ at: Int, id: Bool = false) throws -> (Int, Int) {
++        guard bytes.indices.contains(at), bytes[at] != 0 else { throw Invalid.index }
++        let n = bytes[at].leadingZeroBitCount + 1
++        guard n <= (id ? 4 : 8), n <= bytes.count - at else { throw Invalid.index }
++        var v = Int(bytes[at])
++        if !id { v &= (1 << (8-n))-1 }
++        for i in 1..<n { v = (v << 8) | Int(bytes[at+i]) }
++        guard id || v != (1 << (7*n))-1 else { throw Invalid.index }
++        return (v,n)
++    }
++    func element(_ at: Int) throws -> Node {
++        let (tag,n) = try vint(at,id:true), (size,m) = try vint(at+n)
++        let start = at+n+m
++        return Node(id: tag, body: start..<start+size)
++    }
++    func children(_ node: Node) throws -> [Node] {
++        guard node.body.upperBound <= bytes.count else { throw Invalid.index }
++        var p = node.body.lowerBound, result: [Node] = []
++        while p < node.body.upperBound {
++            let el = try element(p)
++            guard el.body.upperBound <= node.body.upperBound, result.count < 50_000 else { throw Invalid.index }
++            result.append(el); p = el.body.upperBound
++        }
++        return result
++    }
++    func one(_ nodes: [Node], _ id: Int) throws -> Node {
++        let hits = nodes.filter { $0.id == id }; guard hits.count == 1 else { throw Invalid.index }; return hits[0]
++    }
++    func number(_ node: Node) throws -> Int {
++        guard (1...7).contains(node.body.count),node.body.upperBound <= bytes.count else { throw Invalid.index }
++        return bytes[node.body].reduce(0) { ($0 << 8) | Int($1) }
++    }
++    func number(_ nodes: [Node], _ id: Int) throws -> Int { try number(one(nodes,id)) }
++    func text(_ nodes: [Node], _ id: Int) throws -> String {
++        let node = try one(nodes,id)
++        guard let s = String(bytes: bytes[node.body],encoding:.utf8) else { throw Invalid.index }
++        return s
++    }
++}
++
++private final class NoRangeRedirect: NSObject, URLSessionTaskDelegate {
++    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
++                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
++        completionHandler(nil)
++    }
++}
++
++extension MatroskaASSIndex {
++    /// One spare-slot retry for the entire inventory. Only a timeout before headers returns
++    /// nil from `attempt`; entity, body, budget and cancellation errors propagate unchanged.
++    struct HeaderRetry {
++        private var used = false
++        mutating func read<T>(entityPinned: Bool, attempt: () async throws -> T?) async throws -> T {
++            if let value = try await attempt() { return value }
++            try Task.checkCancellation()
++            guard entityPinned, !used else { throw URLError(.timedOut) }
++            used = true
++            guard let value = try await attempt() else { throw URLError(.timedOut) }
++            return value
++        }
++    }
++
++    /// Resolve only the nominated embedded stream; never select a track on the user's behalf.
++    static func track(for id: Int, in tracks: [TrackInfo]) -> TrackInfo? {
++        tracks.first { $0.id == id && !$0.isExternal && $0.assHeader != nil }
++    }
++
++    /// Resolve a SeekHead/Info/Tracks body by absolute offset. All suffix reads use the
++    /// same validated entity and cumulative transfer budget as the initial head and cues.
++    static func metadataBody(id: Int, at pos: Int, segment: Range<Int>, head: [UInt8],
++                             read: (Int, Int) async throws -> [UInt8]) async throws -> [UInt8] {
++        try Task.checkCancellation()
++        guard segment.contains(pos) else { throw Invalid.index }
++        let headerSize = min(12, segment.upperBound - pos) // four ID bytes + eight size bytes
++        let available = max(0, min(headerSize, head.count - pos))
++        var prefix = available == 0 ? [] : Array(head[pos..<pos + available])
++        if available < headerSize {
++            prefix += try await read(pos + available, headerSize - available)
++        }
++        guard prefix.count == headerSize else { throw Invalid.index }
++        let node = try Elements(bytes:prefix).element(0)
++        guard node.id == id, node.body.upperBound <= segment.upperBound - pos,
++              node.body.count <= 2_500_000 else { throw Invalid.index }
++        let start = pos + node.body.lowerBound, end = pos + node.body.upperBound
++        var body: [UInt8]
++        if available == headerSize {
++            body = Array(head[start..<min(end, head.count)])
++        } else {
++            body = Array(prefix[node.body.lowerBound..<min(node.body.upperBound, prefix.count)])
++        }
++        let next = start + body.count
++        if next < end { body += try await read(next, end - next) }
++        guard body.count == node.body.count else { throw Invalid.index }
++        return body
++    }
++
++    static func reserveRange(for url: URL, budget: OriginRequestBudget = .shared) -> OriginRequestBudget.Ticket? {
++        guard !budget.requiresSerialRequests(url), !budget.isPaced(url) else { return nil }
++        return budget.tryAcquire(for: url, label: "subtitle-index")
++    }
++
++    /// Bounded metadata ranges, plus at most eight ambiguous BlockGroups.
++    /// Never seek the playback demuxer. If the origin ignores Range, reject
++    /// the headers *before* consuming its body; no sequential-read fallback.
++    static func fetch(url: URL, headers: [String:String], track: TrackInfo, expected: Int,
++                      writer: String, configuration: URLSessionConfiguration = .ephemeral,
++                      timeLimit: Duration = .seconds(12)) async throws -> Self {
++        guard ["http","https"].contains(url.scheme?.lowercased() ?? ""), let header = track.assHeader,
++              writer.hasPrefix("mkvmerge "), (1...40_000).contains(expected) else { throw Invalid.index }
++        let session = URLSession(configuration: configuration, delegate: NoRangeRedirect(), delegateQueue: nil)
++        let deadline = ContinuousClock.now + timeLimit
++        let expiry = Task {
++            try await Task.sleep(until: deadline, clock: .continuous)
++            session.invalidateAndCancel()
++        }
++        defer { expiry.cancel(); session.invalidateAndCancel() }
++        return try await withTaskCancellationHandler {
++            try await fetch(url: url, headers: headers, track: track, header: header, expected: expected, writer: writer,
++                            session: session, deadline: deadline)
++        } onCancel: { session.invalidateAndCancel() }
++    }
++
++    private static func fetch(url: URL, headers: [String:String], track: TrackInfo, header: String, expected: Int, writer: String,
++                              session: URLSession, deadline: ContinuousClock.Instant) async throws -> Self {
++        var tag: String?, length: Int?, spent = 0
++        var retry = HeaderRetry()
++        func attempt(_ offset: Int, _ count: Int) async throws -> Elements? {
++            try Task.checkCancellation()
++            guard ContinuousClock.now < deadline, count > 0, offset >= 0,
++                  offset <= (1<<52)-count, spent + count <= 2_500_000,
++                  length.map({ offset+count <= $0 }) ?? true else { throw Invalid.index }
++            guard let ticket = Self.reserveRange(for: url) else { throw Invalid.index }
++            defer { OriginRequestBudget.shared.release(ticket) }
++            let remaining = (deadline - ContinuousClock.now).components
++            let timeout = min(3, Double(remaining.seconds) + Double(remaining.attoseconds) / 1e18)
++            guard timeout > 0 else { throw Invalid.index }
++            var request = URLRequest(url:url,cachePolicy:.reloadIgnoringLocalCacheData,timeoutInterval:timeout)
++            request.allHTTPHeaderFields = headers
++            request.setValue("bytes=\(offset)-\(offset+count-1)",forHTTPHeaderField:"Range")
++            request.setValue("identity",forHTTPHeaderField:"Accept-Encoding")
++            if let tag { request.setValue(tag,forHTTPHeaderField:"If-Match") }
++            // Charge the requested range even if transport fails before reporting how much arrived.
++            spent += count
++            let body: URLSession.AsyncBytes, response: URLResponse
++            do { (body,response) = try await session.bytes(for:request) }
++            catch let error as URLError where error.code == .timedOut { return nil }
++            guard let http = response as? HTTPURLResponse, http.statusCode == 206,
++                  let etag = http.value(forHTTPHeaderField:"ETag"), etag.hasPrefix("\""), etag.hasSuffix("\""),
++                  tag == nil || tag == etag,
++                  let cr = http.value(forHTTPHeaderField:"Content-Range")?.split(separator:"/"), cr.count == 2,
++                  cr[0] == "bytes \(offset)-\(offset+count-1)", let size = Int(cr[1]), size >= offset+count,
++                  size < 1<<52, length == nil || length == size else { throw Invalid.index }
++            tag = etag; length = size
++            var data: [UInt8] = []; data.reserveCapacity(count)
++            for try await b in body {
++                guard data.count < count else { throw Invalid.index }
++                if data.count & 4095 == 0 { try Task.checkCancellation(); guard ContinuousClock.now < deadline else { throw Invalid.index } }
++                data.append(b)
++            }
++            try Task.checkCancellation()
++            guard data.count == count, ContinuousClock.now < deadline else { throw Invalid.index }
++            return Elements(bytes:data)
++        }
++        func read(_ offset: Int, _ count: Int) async throws -> Elements {
++            try await retry.read(entityPinned: tag != nil) { try await attempt(offset,count) }
++        }
++        let head = try await read(0,131072)
++        let ebml = try head.element(0); guard ebml.id == 0x1a45dfa3 else { throw Invalid.index }
++        let seg = try head.element(ebml.body.upperBound), base = seg.body.lowerBound
++        guard seg.id == 0x18538067, seg.body.upperBound == length else { throw Invalid.index }
++        func metadata(_ id: Int, at position: Int) async throws -> (Elements, [Elements.Node]) {
++            let bytes = try await Self.metadataBody(id:id, at:position, segment:seg.body, head:head.bytes) {
++                try await read($0,$1).bytes
++            }
++            let elements = Elements(bytes:bytes)
++            return (elements, try elements.children(.init(id:id,body:0..<bytes.count)))
++        }
++        let (seek, entries) = try await metadata(0x114d9b74, at:base)
++        var locations: [Int:Int] = [:]
++        for el in entries where el.id == 0x4dbb {
++            let args = try seek.children(el), id = try seek.number(args,0x53ab), pos = try seek.number(args,0x53ac)
++            guard locations.updateValue(base+pos,forKey:id) == nil else { throw Invalid.index }
++        }
++        guard let infoAt = locations[0x1549a966], let tracksAt = locations[0x1654ae6b] else { throw Invalid.index }
++        let (info, fields) = try await metadata(0x1549a966, at:infoAt)
++        guard try info.number(fields,0x2ad7b1) == 1_000_000, try info.text(fields,0x5741) == writer else { throw Invalid.index }
++        let (tracks, trackEntries) = try await metadata(0x1654ae6b, at:tracksAt)
++        var ids: [Int] = []
++        for entry in trackEntries where entry.id == 0xae {
++            let fields = try tracks.children(entry)
++            guard try tracks.number(fields,0x83) == 17, try tracks.text(fields,0x86) == "S_TEXT/ASS",
++                  (try? tracks.text(fields,0x536e)) == track.name,
++                  (try? tracks.text(fields,0x63a2)) == header,
++                  !fields.contains(where:{ [0x6d80,0x23314f,0x537f,0x56aa,0x23e383].contains($0.id) }) else { continue }
++            ids.append(try tracks.number(fields,0xd7))
++        }
++        guard ids.count == 1, let number = ids.first, let pos = locations[0x1c53bb6b], let length,
++              pos >= base, pos < length-12 else { throw Invalid.index }
++        let prefix = try await read(pos,12), cueElement = try prefix.element(0)
++        guard cueElement.id == 0x1c53bb6b, cueElement.body.count <= 2_000_000 else { throw Invalid.index }
++        let table = try await read(pos+cueElement.body.lowerBound,cueElement.body.count)
++        var cues: [Cue] = [], repairs = 0
++        for point in try table.children(.init(id:cueElement.id,body:0..<table.bytes.count)) where point.id == 0xbb {
++            let fields = try table.children(point), start = try table.number(fields,0xb3)
++            for positions in fields where positions.id == 0xb7 {
++                let values = try table.children(positions)
++                guard try table.number(values,0xf7) == number else { continue }
++                let cluster = base + (try table.number(values,0xf1)), rel = try table.number(values,0xf0)
++                guard cluster >= base, cluster < pos, rel < pos-cluster,
++                      cues.count < expected, start <= Int(Int32.max) else { throw Invalid.index }
++                let duration: Int
++                if values.contains(where:{ $0.id == 0xb2 }) { duration = try table.number(values,0xb2) }
++                else {
++                    // No CueDuration is not zero. Check the actual referenced
++                    // block's track, timestamp, no lacing and explicit BlockDuration.
++                    repairs += 1; guard repairs <= 8 else { throw Invalid.index }
++                    let ch = try await read(cluster,64), cl = try ch.element(0)
++                    guard cl.id == 0x1f43b675, cl.body.upperBound <= pos-cluster, rel < cl.body.count else { throw Invalid.index }
++                    let tc = try ch.element(cl.body.lowerBound)
++                    guard tc.id == 0xe7 else { throw Invalid.index }
++                    let group = try await read(cluster+cl.body.lowerBound+rel,512), g = try group.element(0)
++                    guard g.id == 0xa0, g.body.upperBound <= cl.body.count-rel else { throw Invalid.index }
++                    let parts = try group.children(g), block = try group.one(parts,0xa1)
++                    let (id,n) = try group.vint(block.body.lowerBound), at = block.body.lowerBound+n
++                    guard id == number, at+3 <= block.body.upperBound, group.bytes[at+2]&6 == 0 else { throw Invalid.index }
++                    let delta = Int(Int16(bitPattern:UInt16(group.bytes[at])<<8 | UInt16(group.bytes[at+1])))
++                    guard try ch.number(tc)+delta == start else { throw Invalid.index }
++                    duration = try group.number(parts,0x9b)
++                }
++                cues.append(.init(interval:.init(start:start,duration:duration),location:cluster+rel))
++            }
++        }
++        try Task.checkCancellation()
++        guard let index = Self(cues,expected:expected), ContinuousClock.now < deadline else { throw Invalid.index }
++        EngineLog.emit("[SoftwareASS] verified cue inventory stream=\(track.id) frames=\(expected) bytes=\(spent) blockChecks=\(repairs)", category:.engine)
++        return index
++    }
++}
+diff --git a/Sources/AetherEngine/Subtitles/SideReaderLoop.swift b/Sources/AetherEngine/Subtitles/SideReaderLoop.swift
+index 8826e5a6..ad4f6b15 100644
+--- a/Sources/AetherEngine/Subtitles/SideReaderLoop.swift
++++ b/Sources/AetherEngine/Subtitles/SideReaderLoop.swift
+@@ -42,6 +42,7 @@ enum SideReaderLoop {
+         _ link: SideReaderLinkArbiter,
+         valveGrantedUntil: inout DispatchTime?,
+         inAnchorGrace: () -> Bool,
++        shouldYield: () -> Bool = { true },
+         playhead: () async -> Double?,
+         onWaitStart: () -> Void = {}
+     ) async -> LinkYield? {
+@@ -51,6 +52,7 @@ enum SideReaderLoop {
+         var yielded: Double = 0
+         var latest: Double?
+         while !Task.isCancelled,
++              shouldYield(),
+               link.shouldYield(inAnchorGrace: inAnchorGrace(), yieldedSeconds: yielded) {
+             if yielded == 0 { onWaitStart() }
+             guard let fresh = await playhead() else { return nil }
+diff --git a/Sources/AetherEngine/Subtitles/SubtitleForwardPrefetcher.swift b/Sources/AetherEngine/Subtitles/SubtitleForwardPrefetcher.swift
+index 843ffeca..28bb4c91 100644
+--- a/Sources/AetherEngine/Subtitles/SubtitleForwardPrefetcher.swift
++++ b/Sources/AetherEngine/Subtitles/SubtitleForwardPrefetcher.swift
+@@ -115,6 +115,19 @@ enum SubtitleForwardPrefetcher {
+         let seekTimeout: TimeInterval
+         private let lock = NSLock()
+         private var pending: Anchor?
++        private var readThrough: Anchor?
++
++        /// Raise only this reader's park limit. Do not reposition it or advance harvest coverage.
++        func extendRead(through seconds: Double, generation: UInt64) {
++            lock.withLock { readThrough = Anchor(seconds: seconds, seekGeneration: generation) }
++        }
++        func endExtendedRead(generation: UInt64) {
++            lock.withLock { if readThrough?.seekGeneration == generation { readThrough = nil } }
++        }
++        func shouldKeepReading(at position: Double) -> Bool {
++            lock.withLock { readThrough.map { position <= $0.seconds } ?? false }
++        }
++        var servingLocalLanding: Bool { lock.withLock { readThrough != nil } }
+ 
+         init(anchorStreamIndex: Int32, fallbackDuration: Double, seekTimeout: TimeInterval) {
+             self.anchorStreamIndex = anchorStreamIndex
+@@ -126,6 +139,7 @@ enum SubtitleForwardPrefetcher {
+         func request(_ seconds: Double, seekGeneration: UInt64 = 0) {
+             lock.lock()
+             pending = Anchor(seconds: seconds, seekGeneration: seekGeneration)
++            readThrough = nil
+             lock.unlock()
+         }
+ 
+@@ -147,6 +161,7 @@ enum SubtitleForwardPrefetcher {
+         func clear() {
+             lock.lock()
+             pending = nil
++            readThrough = nil
+             lock.unlock()
+         }
+     }
+@@ -319,6 +334,7 @@ enum SubtitleForwardPrefetcher {
+                     inAnchorGrace: {
+                         DispatchTime.now() < anchorGraceUntil || reanchor?.hasPending == true
+                     },
++                    shouldYield: { reanchor?.servingLocalLanding != true },
+                     playhead: playhead,
+                     onWaitStart: { SubtitlePrefetchTelemetry.recordLinkYield(true) })
+                 else { break readLoop }
+@@ -446,6 +462,7 @@ enum SubtitleForwardPrefetcher {
+                 // reaches the point where the move is taken. The pending move is what voids the
+                 // position this park is judging.
+                 if reanchor?.hasPending == true { break }
++                if reanchor?.shouldKeepReading(at: position) == true { break }
+                 if !didPark {
+                     didPark = true
+                     SubtitlePrefetchTelemetry.recordPark(true)
+diff --git a/Sources/AetherEngine/Subtitles/SubtitleHarvestCoverage.swift b/Sources/AetherEngine/Subtitles/SubtitleHarvestCoverage.swift
+index 11b9120e..9e276ea1 100644
+--- a/Sources/AetherEngine/Subtitles/SubtitleHarvestCoverage.swift
++++ b/Sources/AetherEngine/Subtitles/SubtitleHarvestCoverage.swift
+@@ -47,6 +47,16 @@ struct SubtitleHarvestCoverage: Sendable, Equatable {
+     static let maxSpans: Int = 128
+ 
+     private var closed: [Span] = []
++    // Unlike the overlay's landing heuristic, never bridge a seam for a frame-exact clear.
++    // Disconnected runs that close out of order may underclaim; a miss is preferable.
++    private var closedPrefix: Double = 0
++    func strictlyReadFromOrigin(past t: Double) -> Bool {
++        var end = closedPrefix
++        for span in open.values.sorted(by: { $0.from < $1.from }) where span.from <= end {
++            end = max(end, span.through)
++        }
++        return end > t
++    }
+     private var open: [SubtitlePacketStore.Writer: Span] = [:]
+ 
+     /// No note has ever been made. Callers read this as "nothing is known", never as "nothing was
+@@ -145,6 +155,7 @@ struct SubtitleHarvestCoverage: Sendable, Equatable {
+ 
+     private mutating func closeRun(_ writer: SubtitlePacketStore.Writer) {
+         guard let run = open.removeValue(forKey: writer) else { return }
++        if run.from <= closedPrefix { closedPrefix = max(closedPrefix, run.through) }
+         insert(run)
+     }
+ 
+diff --git a/Sources/AetherEngine/Subtitles/SubtitlePacketStore.swift b/Sources/AetherEngine/Subtitles/SubtitlePacketStore.swift
+index 0d0a5929..cf546c87 100644
+--- a/Sources/AetherEngine/Subtitles/SubtitlePacketStore.swift
++++ b/Sources/AetherEngine/Subtitles/SubtitlePacketStore.swift
+@@ -109,6 +109,65 @@ final class SubtitlePacketStore: @unchecked Sendable {
+     private var totalBytes: Int = 0
+     /// #362: monotonic harvest order, stamped on every appended entry. See `StoredSubtitlePacket`.
+     private var appendCounter: UInt64 = 0
++    // At most two active drain windows. Remember a timestamp, not another copy of the packets.
++    private struct ASSDrainWatch {
++        let stream: Int32
++        let playhead, through: Double
++        var firstNew: Double?
++    }
++    private var assWatches: [SubtitleChannel: ASSDrainWatch] = [:]
++
++    func watchASSDrain(_ channel: SubtitleChannel, stream: Int32, playhead: Double, through: Double) -> Double? {
++        lock.withLock {
++            let previous = assWatches.updateValue(.init(stream: stream, playhead: playhead, through: through),
++                                                   forKey: channel)
++            return previous?.stream == stream ? previous?.firstNew : nil
++        }
++    }
++    private var maxDuration: [Int32: Double] = [:]
++    private var incompleteThrough: [Int32: Double] = [:]
++    private var frameIndexes: [Int32: MatroskaASSIndex] = [:]
++    func installFrameASSIndex(_ index: MatroskaASSIndex, stream: Int32) {
++        lock.withLock { frameIndexes[stream] = index }
++    }
++    func hasStrictPrefix(past seconds: Double) -> Bool {
++        lock.withLock { coverage.strictlyReadFromOrigin(past: seconds) }
++    }
++    // A nonzero cold start leaves a hole before the ordinary backscan. Read
++    // actual packets from zero for nearby landings; never scan a whole film
++    // or claim a blank solely because the player requested a position.
++    func frameASSInitialReadAnchor(at seconds: Double) -> Double {
++        seconds > 0 && seconds <= 90 && !hasStrictPrefix(past: seconds) ? 0 : seconds
++    }
++
++    /// Cannot infer a clear from an empty sparse stream. Require an unbroken read from the
++    /// source origin beyond this PTS and refuse any interval affected by eviction.
++    func activeASSPackets(stream: Int32, at t: Double) -> [SoftwareASSPacket]? {
++        lock.withLock {
++            guard t.isFinite, t >= 0, t < Double(Int32.max)/1000,
++                  t > (incompleteThrough[stream] ?? -.infinity) else { return nil }
++            let prefix = coverage.strictlyReadFromOrigin(past: t)
++            guard prefix || frameIndexes[stream] != nil else { return nil }
++            let entries = entriesByStream[stream] ?? []
++            let lo = Self.lowerBound(entries, t - (maxDuration[stream] ?? 0) - 0.001)
++            let hi = Self.upperBound(entries, t + 0.001)
++            guard hi - lo <= 4096 else { return nil }
++            let packets: [SoftwareASSPacket] = entries[lo..<hi].compactMap { p in
++                // Both the container tick and libass frame time use nearest milliseconds.
++                let ms = (t * 1000).rounded(), start = (p.ptsSeconds * 1000).rounded()
++                guard start <= ms && ms < start + (p.durationSeconds * 1000).rounded() else { return nil }
++                return .init(start: p.ptsSeconds, duration: p.durationSeconds, data: p.payload)
++            }
++            guard prefix || frameIndexes[stream]?.matches(at:Int((t*1000).rounded()),packets:packets) == true
++            else { return nil }
++            return packets
++        }
++    }
++
++    private func lost(_ entries: ArraySlice<StoredSubtitlePacket>, stream: Int32) {
++        for p in entries { incompleteThrough[stream] = max(incompleteThrough[stream] ?? -.infinity,
++                                                            p.ptsSeconds + p.durationSeconds) }
++    }
+     /// #416: which spans of the source the readers have actually read. Lives here because this is
+     /// the object whose EMPTINESS gets interpreted: every "no packet between here and there" answer
+     /// this store gives is only as good as the reading behind it. See `SubtitleHarvestCoverage`.
+@@ -207,6 +266,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
+     private func appendLocked(streamIndex: Int32, ptsSeconds: Double, durationSeconds: Double,
+                               flags: Int32, payload: Data, webvttSettings: String? = nil) {
+         let before = bytesByStream[streamIndex] ?? 0
++        maxDuration[streamIndex] = max(maxDuration[streamIndex] ?? 0, durationSeconds)
+         // Audit SUB-103: taken out of the dictionary before it is mutated. Left in, the dictionary
+         // holds the second reference and the insert below copied every retained packet per append,
+         // 10k appends took 0.65 s and 40k took 10.9 s.
+@@ -236,6 +296,10 @@ final class SubtitlePacketStore: @unchecked Sendable {
+             entries[duplicateIndex] = entry
+         } else {
+             entries.insert(entry, at: run.upperBound)
++            for (channel, watch) in assWatches where watch.stream == streamIndex && ptsSeconds <= watch.through
++                && (ptsSeconds >= watch.playhead || ptsSeconds + durationSeconds > watch.playhead) {
++                if ptsSeconds < watch.firstNew ?? .infinity { assWatches[channel]?.firstNew = ptsSeconds }
++            }
+         }
+         bytes += payload.count
+         if bytes > perStreamCap {
+@@ -247,6 +311,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
+                 bytes -= entries[dropped].payload.count
+                 dropped += 1
+             }
++            lost(entries.prefix(dropped), stream: streamIndex)
+             entries.removeFirst(dropped)
+             payloadHashesByRun[streamIndex] = nil
+         }
+@@ -345,6 +410,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
+                 totalBytes -= removed
+                 dropped += 1
+             }
++            lost(entries.prefix(dropped), stream: idx)
+             entries.removeFirst(dropped)
+             payloadHashesByRun[idx] = nil
+             if entries.isEmpty {
+@@ -548,6 +614,7 @@ final class SubtitlePacketStore: @unchecked Sendable {
+         for (idx, entries) in entriesByStream {
+             let kept = entries.drop { $0.ptsSeconds < cutoff }
+             if kept.count != entries.count {
++                lost(entries.prefix(entries.count - kept.count), stream: idx)
+                 let newBytes = kept.reduce(0) { $0 + $1.payload.count }
+                 totalBytes += newBytes - (bytesByStream[idx] ?? 0)
+                 entriesByStream[idx] = Array(kept)
+@@ -595,6 +662,8 @@ final class SubtitlePacketStore: @unchecked Sendable {
+         totalBytes = 0
+         touchCounter = 0
+         appendCounter = 0
++        maxDuration.removeAll()
++        incompleteThrough.removeAll()
+         coverage = SubtitleHarvestCoverage()
+     }
+ }
+diff --git a/Sources/AetherEngine/Video/UpscaleRouteDecision.swift b/Sources/AetherEngine/Video/UpscaleRouteDecision.swift
+index 4a0b65e9..df272cbd 100644
+--- a/Sources/AetherEngine/Video/UpscaleRouteDecision.swift
++++ b/Sources/AetherEngine/Video/UpscaleRouteDecision.swift
+@@ -35,6 +35,13 @@ struct UpscalePlan: Hashable, Sendable {
+     var needsMetalFX: Bool {
+         scaler == .automatic && (mlOutputWidth != targetWidth || mlOutputHeight != targetHeight)
+     }
++
++    /// Only a square-pixel, exact 2× delivery: the authored source raster then
++    /// maps onto the submitted picture without cropping or a second layout.
++    var supportsFrameASS: Bool {
++        scaler == .lineArt && (1...1920).contains(sourceWidth) && (1...1080).contains(sourceHeight)
++            && targetWidth == sourceWidth * 2 && targetHeight == sourceHeight * 2
++    }
+ }
+ 
+ /// Whether a load takes the low-resolution upscale route, and if not, why. Pure so every exit is
+diff --git a/Tests/AetherEngineTests/SoftwareArtworkGateTests.swift b/Tests/AetherEngineTests/SoftwareArtworkGateTests.swift
+new file mode 100644
+index 00000000..f653bd8d
+--- /dev/null
++++ b/Tests/AetherEngineTests/SoftwareArtworkGateTests.swift
+@@ -0,0 +1,287 @@
++import XCTest
++import CoreMedia
++import AetherLibavformat
++import AetherLibavcodec
++import AetherLibavutil
++@testable import AetherEngine
++
++final class SoftwareArtworkGateTests: XCTestCase {
++    @MainActor func testColdASSResumeDrainsThroughLandingWithoutWaitingForTheTimer() async throws {
++        let format = try XCTUnwrap(avformat_alloc_context())
++        defer { avformat_free_context(format) }
++        let stream = try XCTUnwrap(avformat_new_stream(format, nil))
++        stream.pointee.time_base = AVRational(num: 1, den: 1000)
++        stream.pointee.codecpar.pointee.codec_type = AVMEDIA_TYPE_SUBTITLE
++        stream.pointee.codecpar.pointee.codec_id = AV_CODEC_ID_ASS
++        let engine = try AetherEngine()
++        let store = SubtitlePacketStore()
++        engine.softwareSubtitlePacketStore = store
++        engine.isSubtitleActive = true
++        engine.subtitleDrainTargets[.primary] = 0
++        engine.subtitleTracks = [.init(id: 0, name: "test", codec: "ass", language: "en", isDefault: true, assHeader: "ASS")]
++        engine.subtitleDrainDecoderFactoryForTesting = { _ in
++            EmbeddedSubtitleDecoder(stream: stream, sourceVideoWidth: 320, sourceVideoHeight: 180, preserveASSMarkup: true)
++        }
++        func packet(_ n: Int, at t: Double, for duration: Double) {
++            store.append(streamIndex: 0, ptsSeconds: t, durationSeconds: duration,
++                         payload: Data("\(n),0,Default,,0,0,0,,Layer\(n)".utf8))
++        }
++        let landing = 162.0
++        engine.clock.sourceTime = landing
++        for n in 0..<900 { packet(n, at: 148 + Double(n) / 100, for: 0.01) }
++        for n in 900..<903 { packet(n, at: 161.5, for: 2) }
++        for n in 903..<1800 { packet(n, at: 170 + Double(n - 903) / 100, for: 0.01) }
++
++        // One wake, no periodic timer and no second selection or seek.
++        engine.requestSubtitleDrainTick()
++        while let pending = engine.subtitleDrainTickInFlight { await pending.value }
++        let visible = engine.subtitleCues.filter { $0.startTime <= landing && landing < $0.endTime }
++        XCTAssertEqual(visible.count, 3)
++        XCTAssertLessThan(try XCTUnwrap(engine.subtitleCues.last).startTime, 178,
++                          "Distant lookahead must still use the ordinary paced batches")
++    }
++
++    @MainActor func testLateKaraokeBandsPublishOnFirstLandingWithoutAnotherSeek() throws {
++        let format = try XCTUnwrap(avformat_alloc_context())
++        defer { avformat_free_context(format) }
++        let stream = try XCTUnwrap(avformat_new_stream(format, nil))
++        stream.pointee.time_base = AVRational(num: 1, den: 1000)
++        stream.pointee.codecpar.pointee.codec_type = AVMEDIA_TYPE_SUBTITLE
++        stream.pointee.codecpar.pointee.codec_id = AV_CODEC_ID_ASS
++        let engine = try AetherEngine()
++        let store = SubtitlePacketStore()
++        engine.loadedURL = URL(string: "https://example.invalid/test.mkv")
++        engine.softwareSubtitlePacketStore = store
++        engine.isSubtitleActive = true
++        engine.subtitleDrainTargets[.primary] = 0
++        engine.subtitleTracks = [.init(id: 0, name: "test", codec: "ass", language: "en", isDefault: true, assHeader: "ASS")]
++        engine.subtitleDrainDecoderFactoryForTesting = { _ in
++            EmbeddedSubtitleDecoder(stream: stream, sourceVideoWidth: 320, sourceVideoHeight: 180, preserveASSMarkup: true)
++        }
++        func packet(_ n: Int, _ t: Double, _ duration: Double) {
++            store.append(streamIndex: 0, ptsSeconds: t, durationSeconds: duration,
++                         payload: Data("\(n),0,Default,,0,0,0,,Band\(n)".utf8))
++        }
++        engine.clock.sourceTime = 139
++        packet(0, 149, 2)
++        let first = try XCTUnwrap(engine.prepareSubtitleDrainTick())
++        // The reader fills in earlier overlaps while the later packet is off-thread.
++        packet(1, 129, 16)
++        packet(2, 138, 7)
++        engine.finishSubtitleDrainTick(first, events: first.decodeHandoff.decode())
++        // Upstream holds the future island until the reader establishes its prefix.
++        XCTAssertTrue(engine.subtitleCues.isEmpty)
++        packet(3, 149, 2)  // late sibling at the cursor
++        store.noteHarvestAnchor(.prefetch, at: 129)
++        store.noteHarvestProgress(.prefetch, through: 150)
++        let second = try XCTUnwrap(engine.prepareSubtitleDrainTick())
++        XCTAssertFalse(second.prefetchNeedsReanchor)
++        engine.finishSubtitleDrainTick(second, events: second.decodeHandoff.decode())
++        XCTAssertEqual(engine.subtitleCues.filter { $0.startTime <= 139 && 139 < $0.endTime }.map(\.startTime), [129, 138])
++        XCTAssertEqual(engine.subtitleCues.map(\.startTime), [129, 138, 149, 149])
++        packet(1, 129, 16)  // a duplicate re-harvest should not reopen the window
++        XCTAssertTrue(try XCTUnwrap(engine.prepareSubtitleDrainTick()).decodeHandoff.isEmpty)
++    }
++
++    func testSeekRetainsOnlyDisplayedOwnerUntilReplacementBecomesDue() {
++        let gate = SoftwareArtworkGate()
++        let old = gate.generation
++        XCTAssertTrue(gate.submit(old, .clear, sourceTime: 50) {})
++        XCTAssertTrue(gate.submit(old, .notReady, sourceTime: 51) {})
++        gate.invalidate(retainingPictureAt: 50.5)
++        XCTAssertTrue(gate.owns(10))
++        XCTAssertTrue(gate.owns(51))
++        XCTAssertFalse(gate.submit(old, .clear, sourceTime: 10) { XCTFail("stale enqueue") })
++        gate.invalidate(retainingPictureAt: 10)
++        XCTAssertTrue(gate.submit(gate.generation, nil, sourceTime: 12) {})
++        XCTAssertTrue(gate.owns(11.9))
++        XCTAssertFalse(gate.owns(12))
++        gate.invalidate(retainingPictureAt: 12)
++        XCTAssertFalse(gate.owns(0))
++        XCTAssertTrue(gate.submit(gate.generation, .clear, sourceTime: 1) {})
++        gate.invalidate()
++        XCTAssertFalse(gate.owns(1))
++    }
++
++    func testSlowBodyCannotExtendIndexDeadlineOrKeepItsTicket() async throws {
++        let url = try XCTUnwrap(URL(string: "https://slow-index.test/subtitles"))
++        let config = URLSessionConfiguration.ephemeral
++        config.protocolClasses = [TricklingIndexProtocol.self]
++        let start = ContinuousClock.now
++        do {
++            _ = try await MatroskaASSIndex.fetch(url: url, headers: [:],
++                track: .init(id: 5, name: "test", codec: "ass", language: "en", isDefault: true, assHeader: "ASS"),
++                expected: 1, writer: "mkvmerge test", configuration: config, timeLimit: .milliseconds(500))
++            XCTFail("Accepted an incomplete index")
++        } catch {
++            XCTAssertEqual((error as? URLError)?.code, .cancelled)
++        }
++        XCTAssertLessThan(start.duration(to: .now), .seconds(2))
++        XCTAssertEqual(OriginRequestBudget.shared.snapshot(for: url)?.inflight, 0)
++    }
++
++    func testHeaderTimeoutRetryIsSharedAcrossRangesAndRequiresPinnedEntity() async throws {
++        var retry = MatroskaASSIndex.HeaderRetry(), calls = 0
++        func miss() -> Int? { calls += 1; return nil }
++        do {
++            _ = try await retry.read(entityPinned:false) { miss() }
++            XCTFail("Unpinned entity retried")
++        } catch { XCTAssertEqual((error as? URLError)?.code,.timedOut) }
++        XCTAssertEqual(calls,1)
++        let value: Int = try await retry.read(entityPinned:true) {
++            calls += 1
++            return calls == 3 ? 17 : nil
++        }
++
++        XCTAssertEqual(value,17)
++        do {
++            _ = try await retry.read(entityPinned:true) { miss() }
++            XCTFail("Retried a second range")
++        } catch { XCTAssertEqual((error as? URLError)?.code,.timedOut) }
++        XCTAssertEqual(calls,4)
++    }
++
++    func testBodyTimeoutDoesNotRetryAndCancelledHeaderWaitCannotRetry() async {
++        var retry = MatroskaASSIndex.HeaderRetry(), calls = 0
++        do {
++            let _: Int = try await retry.read(entityPinned:true) {
++                calls += 1
++                throw URLError(.timedOut) // thrown by body iteration, not the pre-header sentinel
++            }
++            XCTFail("Body failed")
++        } catch { XCTAssertEqual((error as? URLError)?.code,.timedOut) }
++        XCTAssertEqual(calls,1)
++        let cancelled = await Task {
++            var retry = MatroskaASSIndex.HeaderRetry(), calls = 0
++            do {
++                let _: Int = try await retry.read(entityPinned:true) {
++                    calls += 1
++                    withUnsafeCurrentTask { $0?.cancel() }
++                    return nil
++                }
++                return false
++            } catch { return error is CancellationError && calls == 1 }
++        }.value
++        XCTAssertTrue(cancelled)
++    }
++
++    func testIndexUsesNominatedEmbeddedASSRatherThanFirstOrExternalTrack() {
++        func track(_ id: Int, header: String? = "ASS", external: Bool = false) -> TrackInfo {
++            .init(id:id, name:"test", codec:"ass", language:"en", isDefault:id == 3,
++                  assHeader:header, isExternal:external)
++        }
++        let tracks = [track(3), track(5), track(7, header:nil), track(900000, external:true)]
++        XCTAssertEqual(MatroskaASSIndex.track(for:5, in:tracks)?.id, 5)
++        for id in [-1, 7, 42, 900000] { XCTAssertNil(MatroskaASSIndex.track(for:id, in:tracks)) }
++    }
++
++    func testMetadataCrossingOrBeyondHeadUsesOnlyMissingRanges() async throws {
++        let payload = Array(UInt8(1)...32)
++        let file = [UInt8](repeating:0, count:30) + [0xae, 0xa0] + payload
++        for headSize in [10, 31, 48, 64] {
++            var reads: [Range<Int>] = []
++            let body = try await MatroskaASSIndex.metadataBody(id:0xae, at:30, segment:20..<64,
++                                                               head:Array(file.prefix(headSize))) { off, count in
++                reads.append(off..<off+count)
++                return Array(file[off..<off+count])
++            }
++            XCTAssertEqual(body, payload)
++            XCTAssertEqual(reads.flatMap { Array($0) }, Array(max(headSize,30)..<64))
++        }
++    }
++
++    func testMetadataRejectsWrongIDUnknownSizeOutOfSegmentAndShortRead() async {
++        for (prefix, length) in [([UInt8(0xae),0xff],40), ([0xaf,0x88],40),
++                                 ([0xae,0xb0],40), ([0xae,0x98],40)] {
++            let head = prefix + [UInt8](repeating:0,count:10)
++            var payloadReads = 0
++            do {
++                _ = try await MatroskaASSIndex.metadataBody(id:0xae, at:0, segment:0..<length, head:head) { _,_ in
++                    payloadReads += 1
++                    return [] // a short validated read must never become metadata
++                }
++                XCTFail("Accepted invalid metadata")
++            } catch {
++                XCTAssertEqual(payloadReads, prefix == [0xae,0x98] ? 1 : 0)
++            }
++        }
++    }
++
++    func testReadThroughDoesNotForgeCoverageAndCannotOutliveANewerSeek() {
++        let reader = SubtitleForwardPrefetcher.SideReaderReanchor(anchorStreamIndex: 3, fallbackDuration: 160, seekTimeout: 1)
++        let store = SubtitlePacketStore()
++        store.noteHarvestAnchor(.prefetch, at: 0)
++        store.noteHarvestProgress(.prefetch, through: 10)
++        reader.extendRead(through: 18, generation: 1)
++        XCTAssertTrue(reader.shouldKeepReading(at: 12))
++        XCTAssertFalse(store.hasStrictPrefix(past: 17))
++        reader.extendRead(through: 20, generation: 2)
++        reader.endExtendedRead(generation: 1)
++        XCTAssertTrue(reader.shouldKeepReading(at: 19))
++        XCTAssertFalse(reader.shouldKeepReading(at: 21))
++        reader.request(8, seekGeneration: 3)
++        XCTAssertFalse(reader.shouldKeepReading(at: 12))
++    }
++    func testSmallUnreadSeamIsNotProofOfAClear() {
++        let s = SubtitlePacketStore()
++        s.noteHarvestAnchor(.prefetch, at: 0)
++        s.noteHarvestProgress(.prefetch, through: 1)
++        s.noteHarvestAnchor(.prefetch, at: 1.1)
++        s.noteHarvestProgress(.prefetch, through: 4)
++        s.noteHarvestPositionLost(.prefetch)
++        XCTAssertNil(s.activeASSPackets(stream: 3, at: 2))
++        XCTAssertNotNil(s.activeASSPackets(stream: 3, at: 0.9))
++    }
++    func testInFlightResultCannotSubmitAfterSeekOrOff() {
++        let gate = SoftwareArtworkGate()
++        gate.set { _,_,_ in .clear }
++        for seek in [true, false] {
++            let stamp = gate.generation
++            let art = gate.artwork(stamp, pts: .zero, size: .zero)
++            XCTAssertNotNil(art)
++            if seek { gate.invalidate() } else { gate.set(nil) }
++            XCTAssertFalse(gate.submit(stamp, art) { XCTFail("submitted stale artwork") })
++        }
++        XCTAssertEqual(gate.counts.stale, 2)
++    }
++
++    func testUnobservedIsNotAClearAndEndIsExclusive() throws {
++        let store = SubtitlePacketStore()
++        store.append(streamIndex: 3, ptsSeconds: 1, durationSeconds: 2, payload: Data([65]))
++        XCTAssertNil(store.activeASSPackets(stream: 3, at: 2))
++        store.noteHarvestAnchor(.prefetch, at: 0)
++        store.noteHarvestProgress(.prefetch, through: 4)
++        XCTAssertEqual(try XCTUnwrap(store.activeASSPackets(stream: 3, at: 2)).map(\.data), [Data([65])])
++        XCTAssertTrue(try XCTUnwrap(store.activeASSPackets(stream: 3, at: 3)).isEmpty)
++        XCTAssertNil(store.activeASSPackets(stream: 3, at: 4))
++        let gate = SoftwareArtworkGate()
++        for art in [SoftwareASSArtwork.clear, .notReady] {
++            XCTAssertTrue(gate.submit(gate.generation, art) {})
++        }
++        XCTAssertEqual(gate.counts.clear, 1)
++        XCTAssertEqual(gate.counts.notReady, 1)
++    }
++}
++
++private final class TricklingIndexProtocol: URLProtocol, @unchecked Sendable {
++    private var timer: Timer?
++    override class func canInit(with request: URLRequest) -> Bool { true }
++    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
++    override func startLoading() {
++        let response = HTTPURLResponse(url: request.url!, statusCode: 206, httpVersion: "HTTP/1.1",
++            headerFields: ["ETag": "\"v1\"", "Content-Range": "bytes 0-131071/262144"])!
++        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
++        client?.urlProtocol(self, didLoad: Data([1]))
++        let stop = ContinuousClock.now + .seconds(3)
++        timer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { [weak self] timer in
++            guard let self else { timer.invalidate(); return }
++            if ContinuousClock.now < stop {
++                client?.urlProtocol(self, didLoad: Data([1]))
++            } else {
++                timer.invalidate()
++                client?.urlProtocolDidFinishLoading(self)
++            }
++        }
++    }
++    override func stopLoading() { timer?.invalidate() }
++}

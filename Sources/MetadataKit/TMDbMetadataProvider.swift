@@ -65,6 +65,48 @@ public struct TMDbMetadataProvider: ArtworkProvider {
 
     public var isEnabled: Bool { access.isEnabled }
 
+    /// Exact catalog evidence, not a playable server item or permission to change its numbering.
+    public func episodeIdentity(seriesID: Int, season: Int, episode: Int) async throws -> MediaItem? {
+        guard seriesID > 0, season >= 0, episode > 0 else { throw AppError.invalidResponse }
+        guard isEnabled else { return nil }
+        try Task.checkCancellation()
+        guard let episodeURL = url("/3/tv/\(seriesID)/season/\(season)/episode/\(episode)?append_to_response=external_ids"),
+              let seriesURL = url("/3/tv/\(seriesID)/external_ids") else { throw AppError.invalidResponse }
+        guard let child = try await detailResponse(EpisodeIdentityResponse.self, url: episodeURL) else { return nil }
+        guard child.id > 0, child.season_number == season, child.episode_number == episode else {
+            throw MetadataDiscoveryHTTPError.invalidResponse
+        }
+        guard let parent = try await detailResponse(IdentityExternalIDs.self, url: seriesURL) else { return nil }
+        guard parent.id == seriesID else { throw MetadataDiscoveryHTTPError.invalidResponse }
+        try Task.checkCancellation()
+        var ids = ["Tmdb": String(child.id), "SeriesTmdb": String(seriesID)]
+        for (prefix, value) in [("", child.external_ids), ("Series", parent)] {
+            if let imdb = value.imdb_id, !imdb.isEmpty { ids[prefix + "Imdb"] = imdb }
+            if let tvdb = value.tvdb_id {
+                guard tvdb > 0 else { throw MetadataDiscoveryHTTPError.invalidResponse }
+                ids[prefix + "Tvdb"] = String(tvdb)
+            }
+        }
+        return MediaItem(
+            id: "tmdb:episode:\(child.id)", title: "", kind: .episode,
+            seasonNumber: season, episodeNumber: episode, episodeOrdering: .tmdb,
+            providerIDs: ids, availability: .unknown, locallyValidatedPlayableSource: false
+        )
+    }
+
+    private struct EpisodeIdentityResponse: Decodable, Sendable {
+        let id: Int
+        let season_number: Int
+        let episode_number: Int
+        let external_ids: IdentityExternalIDs
+    }
+
+    private struct IdentityExternalIDs: Decodable, Sendable {
+        let id: Int?
+        let imdb_id: String?
+        let tvdb_id: Int?
+    }
+
     /// Trailer links from TMDB's documented videos API; no YouTube requests or media extraction.
     public func trailerVideoIDs(for query: MetadataQuery, limit: Int = 6) async throws -> [String] {
         guard isEnabled, limit > 0,
@@ -294,20 +336,21 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         // with no id at all.
         if let id = await resolveID(for: query) {
             if let poster = await images(forID: id, isTV: query.isTV)?.posters,
-               let path = Self.bestImagePath(poster, preferNeutral: false) {
+               let path = Self.rankedImagePaths(poster, preferNeutral: false, limit: 1,
+                                                preferredLanguage: query.artworkLanguage).first {
                 return path
             }
-            if let detail = await details(forID: id, isTV: query.isTV)?.poster_path {
+            if let detail = await details(forID: id, isTV: query.isTV, language: query.artworkLanguage)?.poster_path {
                 return detail
             }
         }
-        return await search(query)?.poster_path
+        return await search(query, language: query.artworkLanguage)?.poster_path
     }
 
     /// The primary record for a title, used for the poster TMDb itself considers
     /// canonical when the images endpoint has nothing usable.
-    private func details(forID id: String, isTV: Bool) async -> SearchResult? {
-        guard let url = url("/3/\(isTV ? "tv" : "movie")/\(id)") else { return nil }
+    private func details(forID id: String, isTV: Bool, language: String) async -> SearchResult? {
+        guard let url = url("/3/\(isTV ? "tv" : "movie")/\(id)", language: language) else { return nil }
         return await MetadataHTTP.get(SearchResult.self, url: url, headers: authHeaders)
     }
 
@@ -617,14 +660,14 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         return normalized.isEmpty ? nil : normalized
     }
 
-    private func search(_ query: MetadataQuery, forceTV: Bool = false) async -> SearchResult? {
+    private func search(_ query: MetadataQuery, forceTV: Bool = false, language: String? = nil) async -> SearchResult? {
         let isTV = forceTV || query.isTV
         guard let escaped = metadataEscaped(query.title) else { return nil }
         var path = "/3/search/\(isTV ? "tv" : "movie")?query=\(escaped)&include_adult=false"
         if let year = query.year {
             path += "&\(isTV ? "first_air_date_year" : "year")=\(year)"
         }
-        guard let url = url(path) else { return nil }
+        guard let url = url(path, language: language) else { return nil }
         let results = await MetadataHTTP.get(
             SearchResponse.self, url: url, headers: authHeaders
         )?.results ?? []
@@ -782,18 +825,20 @@ public struct TMDbMetadataProvider: ArtworkProvider {
         rankedImagePaths(images, preferNeutral: preferNeutral, limit: 1).first
     }
 
-    /// The usable image paths ranked best-first (neutral/`en` language preferred,
+    /// The usable image paths ranked best-first (neutral/preferred language first,
     /// then by vote average), capped at `limit`. Shared by ``bestImagePath`` and the
     /// backdrop candidate-set path so both use identical selection logic.
-    static func rankedImagePaths(_ images: [Image]?, preferNeutral: Bool, limit: Int) -> [String] {
+    static func rankedImagePaths(_ images: [Image]?, preferNeutral: Bool, limit: Int,
+                                 preferredLanguage: String = "en") -> [String] {
         guard let images, limit > 0 else { return [] }
         let usable = images.filter { ($0.file_path?.isEmpty == false) }
         guard !usable.isEmpty else { return [] }
         func rank(_ image: Image) -> Int {
             switch image.iso_639_1 {
             case nil, "": return preferNeutral ? 0 : 1
-            case "en": return preferNeutral ? 1 : 0
-            default: return 2
+            case preferredLanguage: return preferNeutral ? 1 : 0
+            case "en": return 2
+            default: return 3
             }
         }
         return usable.sorted {

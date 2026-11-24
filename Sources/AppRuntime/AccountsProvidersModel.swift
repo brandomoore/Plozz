@@ -48,6 +48,7 @@ public final class AccountsProvidersModel {
     public private(set) var activeAccountIDs: Set<String> = []
     /// Snapshot on reload so rendering picker badges never reads the Keychain.
     private var householdActiveAccountIDs: [String] = []
+    @ObservationIgnored private var lastReloadedViewer: AutomaticSignInStore.Session.ProfileAccess?
 
     /// An explicit selection has no locally available accounts, including when
     /// its selected accounts were removed. Never substitute an excluded account.
@@ -70,6 +71,8 @@ public final class AccountsProvidersModel {
     @ObservationIgnored
     private var liveTVAuthorizationCache: [String: (fingerprint: String, digest: String)] = [:]
     @ObservationIgnored private var sourceDiagnosticObserver: ObservationLease?
+    @ObservationIgnored private var historySyncControllers: [String: (activation: String, controller: TrackerHistorySyncController)] = [:]
+    public private(set) var trackerHistorySyncIsForeground = false
 
     /// The auth token to use for an account id, preferring an in-memory Plex
     /// Home-user override over the account's stored (admin) token. Injected so the
@@ -226,6 +229,152 @@ public final class AccountsProvidersModel {
         }) else {
             throw WatchMutationServerScopeError.unavailable
         }
+    }
+
+    public func makeTrackerHistoryImportSession(
+        tracker: any TrackerHistoryReading, reconciler: WatchStateReconciler,
+        syncStore: DurableLocalStateStore? = nil,
+        index: @escaping @MainActor @Sendable () -> IdentityIndexSnapshot,
+        isPlexIdentityResolved: @escaping @MainActor @Sendable (String) -> Bool,
+        isAuthorized: @escaping @MainActor @Sendable () -> Bool
+    ) -> TrackerHistoryImportSession {
+        let connection = tracker.historyConnectionID
+        let syncTracker = tracker as? any TrackerHistorySyncReading
+        let activation = syncTracker?.historyActivationID
+        let session = makeTrackerHistoryImportSession(
+            purpose: .enrollment, reconciler: reconciler,
+            readSnapshot: {
+                guard let connection else { throw TrackerHistoryError.scopeChanged }
+                return try await tracker.historySnapshot(expectedConnectionID: connection)
+            },
+            index: index, isPlexIdentityResolved: isPlexIdentityResolved,
+            isAuthorized: {
+                isAuthorized() && connection != nil && tracker.historyConnectionID == connection
+                    && (syncTracker == nil || (activation != nil && syncTracker?.historyActivationID == activation))
+            }
+        )
+        if let syncStore, let tracker = syncTracker, let activation,
+           let identity = tracker.historySyncIdentity, identity.trackerID == tracker.historySyncTrackerID,
+           (tracker.historySyncNamespace ?? ProfileStore.defaultProfileID) == watchMutationServerScope.profileID {
+            bindTrackerHistorySync(tracker, store: syncStore)
+            let scope = watchMutationServerScope
+            let controller: TrackerHistorySyncController
+            if let entry = historySyncControllers[identity.trackerID], entry.activation == activation,
+               entry.controller.identity == identity, entry.controller.contextScope == scope,
+               entry.controller.supportedCategories == tracker.historySyncCategories {
+                controller = entry.controller
+            } else {
+                historySyncControllers[identity.trackerID]?.controller.stop()
+                controller = TrackerHistorySyncController(
+                    identity: identity, scope: scope, store: syncStore,
+                    supportedCategories: tracker.historySyncCategories,
+                    isAuthorized: { [weak self, weak tracker] in
+                        guard let self else { return false }
+                        return self.trackerHistorySyncIsForeground && isAuthorized()
+                            && !self.pendingHistorySyncRevocations.contains(.init(
+                                profileID: scope.profileID, trackerID: identity.trackerID
+                            ))
+                            && tracker?.historyActivationID == activation && tracker?.historySyncIdentity == identity
+                            && self.watchMutationServerScope == scope
+                            && self.isCurrentWatchMutationServerScope(scope, isPlexIdentityResolved: isPlexIdentityResolved)
+                    },
+                    makeSession: { [weak self, weak tracker] selectedScope, permitsDelivery in
+                        guard let self else { throw TrackerHistoryError.scopeChanged }
+                        // Enrollment rechecks the full profile; a delivery session
+                        // may only compare and apply to selected media shares.
+                        let sharesOnly = !selectedScope.accounts.isEmpty
+                            && selectedScope.accounts.allSatisfy { $0.providerKind == .mediaShare }
+                        return self.makeTrackerHistoryImportSession(
+                            purpose: sharesOnly ? .transfer : .enrollment, reconciler: reconciler, scope: selectedScope,
+                            readSnapshot: {
+                                guard let tracker, let connection = tracker.historyConnectionID else {
+                                    throw TrackerHistoryError.scopeChanged
+                                }
+                                return try await tracker.historySnapshot(expectedConnectionID: connection)
+                            },
+                            index: index, isPlexIdentityResolved: isPlexIdentityResolved,
+                            isAuthorized: permitsDelivery
+                        )
+                    }
+                )
+                historySyncControllers[identity.trackerID] = (activation, controller)
+            }
+            session.ongoingSync = controller
+        }
+        return session
+    }
+
+    private struct HistorySyncRevocationScope: Hashable {
+        let profileID: String
+        let trackerID: String
+    }
+
+    private var pendingHistorySyncRevocations: Set<HistorySyncRevocationScope> = []
+
+    public func bindTrackerHistorySync(_ tracker: any TrackerHistorySyncReading, store: DurableLocalStateStore?) {
+        tracker.onHistorySyncDisconnect = { [weak self, weak tracker] in
+            guard let self, let tracker else { throw TrackerHistoryError.scopeChanged }
+            let scope = HistorySyncRevocationScope(
+                profileID: tracker.historySyncNamespace ?? ProfileStore.defaultProfileID,
+                trackerID: tracker.historySyncTrackerID
+            )
+            self.pendingHistorySyncRevocations.insert(scope)
+            do {
+                guard let store else { throw TrackerHistorySyncError.revocationFailed }
+                if let controller = self.historySyncControllers[scope.trackerID]?.controller,
+                   controller.contextScope.profileID == scope.profileID {
+                    controller.disable()
+                    if let error = controller.error { throw error }
+                } else {
+                    try TrackerHistorySyncController.revokePermission(
+                        store: store, profileID: scope.profileID, trackerID: scope.trackerID
+                    )
+                }
+                self.pendingHistorySyncRevocations.remove(scope)
+            } catch {
+                throw TrackerHistorySyncError.revocationFailed
+            }
+        }
+    }
+
+    public func stopTrackerHistorySync() {
+        for entry in historySyncControllers.values { entry.controller.stop() }
+    }
+
+    public func setTrackerHistorySyncForeground(_ foreground: Bool) {
+        trackerHistorySyncIsForeground = foreground
+        if !foreground { stopTrackerHistorySync() }
+    }
+
+    private func makeTrackerHistoryImportSession(
+        purpose: TrackerHistoryImportSession.Purpose, reconciler: WatchStateReconciler,
+        scope selectedScope: WatchMutationServerScope? = nil,
+        readSnapshot: @escaping @MainActor @Sendable () async throws -> TrackerHistorySnapshot,
+        index: @escaping @MainActor @Sendable () -> IdentityIndexSnapshot,
+        isPlexIdentityResolved: @escaping @MainActor @Sendable (String) -> Bool,
+        isAuthorized: @escaping @MainActor @Sendable () -> Bool
+    ) -> TrackerHistoryImportSession {
+        let scope = selectedScope ?? watchMutationServerScope
+        let contextScope = watchMutationServerScope
+        let destinations = scope.accounts.compactMap { identity -> TrackerHistoryImportSession.Destination? in
+            guard let account = accounts.first(where: { $0.id == identity.accountID }) else { return nil }
+            let homeName = profilesModel.activeProfile.homeUserBinding(forPlexAccount: account.id)?.name
+            return .init(account: account, userName: homeName)
+        }
+        let current: @MainActor @Sendable () -> Bool = { [weak self] in
+            guard let self, isAuthorized(), self.watchMutationServerScope == contextScope else { return false }
+            return self.isCurrentWatchMutationServerScope(scope, isPlexIdentityResolved: isPlexIdentityResolved)
+        }
+        return TrackerHistoryImportSession(
+            purpose: purpose, scope: scope, destinations: destinations, reconciler: reconciler, readSnapshot: readSnapshot,
+            index: index,
+            resolveProvider: { [weak self] accountID in
+                guard let self, current(), scope.accounts.contains(where: { $0.accountID == accountID }),
+                      let provider = self.provider(forAccountID: accountID) else { throw TrackerHistoryError.scopeChanged }
+                return provider
+            },
+            isAuthorized: current
+        )
     }
 
     public func isCurrentWatchMutationServerScope(
@@ -518,7 +667,7 @@ public final class AccountsProvidersModel {
     }
 
     /// Reloads accounts from the store and recomputes the active set for the
-    /// active profile. Invalidates the provider cache first, then fires
+    /// active profile. Reconciles the provider cache first, then fires
     /// `onActiveAccountsChanged` so the media-share runtime can update its
     /// preferred-account keys.
     public func reloadAccounts(updatingServerAddressesFor addressAccountID: String? = nil) {
@@ -532,7 +681,12 @@ public final class AccountsProvidersModel {
         // Receipt of a household revocation denies use even if Keychain deletion
         // must be retried on a later reload.
         let updated = accountStore.loadAccounts().filter { !removed.contains($0.id) }
+        let viewer = AutomaticSignInStore.Session.ProfileAccess(profilesModel.activeProfile)
+        let householdIDs = accountStore.activeAccountIDs()
+        let selectedIDs = Set(profilesModel.storedActiveAccountIDs(for: viewer.id) ?? householdIDs)
         if let addressAccountID,
+           viewer == lastReloadedViewer, !accountSelectionIsUnavailable,
+           activeAccountIDs == selectedIDs.intersection(updated.map(\.id)),
            let account = updated.first(where: { $0.id == addressAccountID }),
            accounts.map({ old in
                var expected = old
@@ -544,12 +698,22 @@ public final class AccountsProvidersModel {
             registry.updateServerAddresses(accountID: addressAccountID,
                                            alternatives: account.server.alternateConnectionURLs ?? [])
         } else {
-            registry.invalidateCache()
+            // Silo locators refer to grants owned by the instance that negotiated
+            // them. An unchanged login must survive refreshes on either side of start.
+            let retained = updated.compactMap { account -> ProviderResolutionContext? in
+                guard account.server.provider == .silo, viewer == lastReloadedViewer,
+                      localProviders == nil, !accountSelectionIsUnavailable,
+                      activeAccountIDs.contains(account.id), selectedIDs.contains(account.id),
+                      let token = tokenResolver(account.id), !token.isEmpty else { return nil }
+                return providerResolutionContext(for: account, token: token)
+            }
+            registry.invalidateCache(preserving: retained)
         }
+        lastReloadedViewer = viewer
         onAccountsInvalidated()
         accounts = updated
         hasResolvedAccounts = true
-        householdActiveAccountIDs = accountStore.activeAccountIDs()
+        householdActiveAccountIDs = householdIDs
         publishActiveAccountSelection()
     }
 

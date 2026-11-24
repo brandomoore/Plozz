@@ -24,6 +24,10 @@ public protocol MediaProvider: Sendable {
     /// `MediaItem.catalogIdentityIsComplete`; inferred IDs alone cannot.
     var catalogIdentityRequiresEnrichment: Bool { get }
 
+    /// Catalog cards omit resume positions. History discovery must supplement
+    /// them with the complete, library-scoped Continue Watching feed.
+    var catalogResumeRequiresEnrichment: Bool { get }
+
     /// Browsing metadata may omit lazily resolved files. Offer explicit source
     /// discovery when opening the version picker; never preload it while browsing.
     var playbackInventoryRequiresEnrichment: Bool { get }
@@ -80,6 +84,10 @@ public protocol MediaProvider: Sendable {
 
     /// Full presentation metadata without probe-capable playback preparation.
     func item(id: String) async throws -> MediaItem
+
+    /// Fresh watch-state evidence. Providers with presentation-only runtime
+    /// fallbacks can exclude them from tracker edition checks here.
+    func trackerHistoryItem(id: String) async throws -> MediaItem
 
     /// Authoritative file inventory for explicit playback or version selection.
     /// This may trigger expensive server-side probing even without opening a stream.
@@ -512,10 +520,15 @@ public enum MediaProviderURLIdentity {
 // doubles) inherit safe no-ops, so adding the capability never forces every
 // conformer to implement it.
 public extension MediaProvider {
+    func trackerHistoryItem(id: String) async throws -> MediaItem {
+        try await item(id: id)
+    }
+
     func externalMediaLink(for itemID: String, mediaSourceID: String?) async throws -> ExternalMediaLink {
         throw AppError.unknown("This source does not support external title links.")
     }
     var catalogIdentityRequiresEnrichment: Bool { false }
+    var catalogResumeRequiresEnrichment: Bool { false }
     var playbackInventoryRequiresEnrichment: Bool { false }
     var sharesLibraryInventoryAcrossProfiles: Bool { true }
 

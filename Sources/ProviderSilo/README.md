@@ -15,6 +15,12 @@ require server verification. Each connection retains that server profile's
 library restrictions and watch history; Plozz profiles choose which connections
 they use.
 
+Silo's [native item detail](https://github.com/Silo-Server/silo-server/blob/66b836f82a32de2fb3e5dfae6c285c19eea1096d/contracts/api/v2/openapi.json)
+lists local trailer and teaser files in `extras`. Plozz plays the extra's own
+`content_id`, not the parent title or `file_id`. YouTube trailers and teasers
+in `videos` are external links; they never autoplay. Browsing a title does
+not trigger a server metadata refresh.
+
 Nearby-server search probes Silo's standard HTTP port 8090 on directly connected
 private IPv4 LANs. It validates the native v2 system identity and pairing
 capability before displaying a result. The scan is bounded and stops when the
@@ -89,6 +95,9 @@ not silently rewrite it or move an already-playing stream.
 Address-only edits preserve the existing provider's login-revision-bound playback
 and subtitle grants while updating its API routes. They do not invalidate other
 accounts' providers; a new credential revision still receives a new session store.
+Routine account reloads also preserve an active Silo login's grants for the same
+viewer, so resuming from a retained Home row can open the stream it negotiated.
+Changing profiles or disabling the account does not carry those grants over.
 
 ## Server Home
 
@@ -192,11 +201,18 @@ These Home and device-login contracts were checked at upstream revision
   for the server. Anchor-only, empty-ID, older-server and restored cards retain
   bounded detail enrichment to join TVDB-anchored titles to TMDB/IMDb entries.
   The completeness hint is transient, is not persisted, and is not applied to
-  native Home cards. Identity matching, exact library membership, profile scope,
-  cancellation and server cooldowns are unchanged.
+  native Home cards. Background identity scans space native GET attempts by at
+  least 200 ms per connection. Foreground reads, playback and writes do not wait
+  behind that pacing. Queued reads recheck cancellation, login identity and
+  the browsing cooldown before transmitting. Local rate-limit diagnostics count
+  requests and numeric advertised limits, not titles or credentials.
   Episode file resolution and coarse HDR/SDR fields fill missing track-level
   metadata for hero badges; detailed track facts take precedence. An explicit
-  file-level `hdr: false` means SDR even when no video tracks are supplied;
+  progress duration remains authoritative; otherwise a single movie/episode
+  file's duration supplies seconds before falling back to rounded catalog
+  minutes. This keeps matching tracker resumes inside the existing one-second
+  runtime guard without choosing an arbitrary file from multiple versions.
+  An explicit file-level `hdr: false` means SDR even when no video tracks are supplied;
   an absent or null HDR value stays unknown. Unknown audio
   channels never imply stereo or surround. Detail heroes observe source-scoped
   episode metadata separately from the rail, so a later sparse season/resume
@@ -211,7 +227,13 @@ These Home and device-login contracts were checked at upstream revision
   requests are added.
   Progress is read through the paged, library-scoped progress endpoint; Home's
   native next-up selections are corroborated before inclusion in a restricted
-  library view. Versions use the original Silo file ID.
+  library view. Catalog cards advertise that their resume fields are incomplete.
+  Explicit resume-history export supplements the complete selected-library
+  inventory with that scoped feed, then refreshes only resumable item details.
+  Feed entries must belong to the same account, library inventory and media kind;
+  errors never become an empty successful comparison. No whole-library detail
+  hydration or progress inferred from rounded catalog runtime is used.
+  Versions use the original Silo file ID.
   Parent series cards already present in the Home response fill missing episode
   logos and `Series*` identities, including episodes also returned by progress.
   The exact series relationship is checked; resume state and playable episode
@@ -260,6 +282,8 @@ These Home and device-login contracts were checked at upstream revision
   Downloads and scheduled channels remain internal.
 - Watched state and the native Silo watchlist write back to Silo. Batched resume
   synchronization checks each result, not only HTTP success.
+  Resume writes round to whole milliseconds rather than truncating floating-point
+  seconds, preserving tracker positions through a milliseconds/seconds round trip.
   Watched writes use `POST /api/v2/watched/{id}`; unwatched writes use `DELETE`.
   Both accept the native `204 No Content` response and retain the selected
   server-profile headers. This contract is pinned in the
@@ -267,6 +291,9 @@ These Home and device-login contracts were checked at upstream revision
   Failed outbox targets retain their watch intent and use the shared persisted
   retry cooldown rather than retrying on every index or configuration update.
   HTTP 429 honors both numeric and HTTP-date `Retry-After` values.
+  Until the connection's browsing cooldown expires, non-playback reads and
+  writes, including identity hydration and watched-state writes, fail locally.
+  Expiry does not replay a request; the caller must explicitly try again.
 
 ### Watch indicators
 

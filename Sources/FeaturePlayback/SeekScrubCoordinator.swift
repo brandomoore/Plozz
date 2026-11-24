@@ -321,9 +321,8 @@ final class SeekScrubCoordinator {
                 // backwards), the clock never got going, and the give-up below
                 // left playback paused after every seek. Wait instead, without
                 // spending an attempt; the overall cap still ends a real stall.
-                let recovering = attempt > 0 && stalled
-                    && (engine.nowPlayingPlayer.map { $0.timeControlStatus != .paused } ?? false)
-                if recovering {
+                if attempt > 0, stalled, engine.isDrivingPostSeekPlayback ||
+                    (engine.nowPlayingPlayer.map { $0.timeControlStatus != .paused } ?? false) {
                     try? await Task.sleep(nanoseconds: 300_000_000)
                     if Task.isCancelled { return }
                     let now = engine.currentTime
@@ -364,6 +363,13 @@ final class SeekScrubCoordinator {
                     lastTime = now
                 }
             }
+            if engine.isDrivingPostSeekPlayback {
+                // The engine owns underrun/reconnect recovery. End our observation, not playback.
+                ScrubDiagnostics.note("resume-confirm: software output still recovering; preserving playback intent")
+                self.controls.isResumeConfirming = false
+                self.resumeConfirmTask = nil
+                return
+            }
             ScrubDiagnostics.note("resume-confirm: gave up still-stalled after \(kicks) kick(s)")
             // We exhausted the kicks and the engine is genuinely sitting at
             // rate 0 (a real stall, not the transient settle we can recover).
@@ -385,8 +391,7 @@ final class SeekScrubCoordinator {
     /// touch `isResumeConfirming` on its cancellation path, so a brand-new
     /// confirmation started right after a cancel can't be clobbered by the old
     /// task waking up.
-    /// Overall bound on the post-seek resume check (~15 s at 300 ms), so a
-    /// player that reports buffering forever still ends in the give-up path.
+    /// Overall bound on observation (~15 s at 300 ms), even if buffering continues.
     static let resumeConfirmMaximumChecks = 50
 
     func cancelResumeConfirm() {

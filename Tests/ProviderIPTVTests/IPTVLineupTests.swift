@@ -105,6 +105,85 @@ final class IPTVLineupTests: XCTestCase {
         XCTAssertEqual(try catalog.state("live-revision"), revision)
     }
 
+    func testGuideLookupInvalidatesOnExternalCommitEvenAtSameRevisionAndCount() async throws {
+        let (reader, writer, original) = try await guideLookupFixture()
+        let savedRevision = try XCTUnwrap(writer.state("live-revision"))
+        try writer.execute("BEGIN IMMEDIATE")
+        try writer.insert(live("live:1", title: "Replacement"))
+        try writer.setState("live-revision", savedRevision)
+        try writer.execute("COMMIT")
+
+        let current = try await reader.isCurrentGuideLineup(original)
+        XCTAssertFalse(current)
+        let latest = try await reader.savedGuideLineup()
+        XCTAssertNotEqual(latest?.revision, original.revision)
+        XCTAssertEqual(latest?.ordered.map(\.name), ["Replacement"])
+        XCTAssertEqual(latest?.byID["live:1"]?.name, "Replacement")
+    }
+
+    func testGuideLookupRemainsCurrentAfterUnrelatedExternalCommit() async throws {
+        let (reader, writer, original) = try await guideLookupFixture()
+        try writer.setState("unrelated", "1")
+
+        let matches = try await reader.guideLineupStillMatches(original)
+        XCTAssertTrue(matches)
+    }
+
+    func testGuideLookupRemainsCurrentAfterIdenticalReimport() async throws {
+        let (reader, writer, original) = try await guideLookupFixture()
+        let savedRevision = try XCTUnwrap(writer.state("live-revision"))
+        try replace(library: "live", with: [live("live:1", title: "Original")], in: writer)
+        XCTAssertNotEqual(try XCTUnwrap(writer.state("live-revision")), savedRevision)
+
+        let matches = try await reader.guideLineupStillMatches(original)
+        XCTAssertTrue(matches)
+    }
+
+    func testGuideLineupContentComparisonRejectsChangesAtSameRevisionAndCount() async throws {
+        let (reader, writer, original) = try await guideLookupFixture()
+        let savedRevision = try XCTUnwrap(writer.state("live-revision"))
+        try writer.execute("BEGIN IMMEDIATE")
+        try writer.insert(live("live:1", title: "Replacement"))
+        try writer.setState("live-revision", savedRevision)
+        try writer.execute("COMMIT")
+
+        let matches = try await reader.guideLineupStillMatches(original)
+        XCTAssertFalse(matches)
+    }
+
+    func testUnversionedGuideLineupValidatesRecordsRatherThanUsingLegacySentinel() async throws {
+        let (reader, writer, original) = try await guideLookupFixture()
+        let stamp = try XCTUnwrap(writer.state("live"))
+        let token = [stamp, "", "", "", "1"].joined(separator: "|")
+        try writer.execute("BEGIN IMMEDIATE")
+        try writer.insert(live("live:1", title: "Legacy replacement"))
+        try writer.execute("DELETE FROM state WHERE key = 'live-revision'")
+        try writer.saveLineup([IPTVLineupEntry(live("live:1", title: "Original"))], token: token)
+        try writer.execute("COMMIT")
+        let legacy = try await reader.savedGuideLineup()
+        XCTAssertNotNil(original.revision)
+        XCTAssertNil(legacy?.revision)
+        XCTAssertEqual(legacy?.ordered.map(\.name), ["Legacy replacement"])
+        XCTAssertEqual(legacy?.byID["live:1"]?.name, "Legacy replacement")
+    }
+
+    private func guideLookupFixture() async throws -> (IPTVClient, IPTVCatalog, IPTVClient.SavedGuideLineup) {
+        let root = try location().deletingLastPathComponent()
+        let credential = try IPTVCredential(
+            mode: .xtream, address: XCTUnwrap(URL(string: "https://fixture.test")),
+            username: "fixture-user", password: "fixture-password"
+        )
+        let writer = try IPTVCatalog(url: root.appendingPathComponent(credential.identity.uuidString + ".sqlite"),
+                                     key: credential.catalogKey)
+        try replace(library: "live", with: [live("live:1", title: "Original")], in: writer)
+        let reader = try IPTVClient(credential: credential, directory: root, configuration: .ephemeral)
+        addTeardownBlock { await reader.cancel() }
+        let saved = try await reader.savedGuideLineup()
+        let original = try XCTUnwrap(saved)
+        XCTAssertEqual(original.ordered.map(\.name), ["Original"])
+        return (reader, writer, original)
+    }
+
     func testAnotherConnectionCommitChangesTheDataVersion() throws {
         let url = try location()
         let catalog = try IPTVCatalog(url: url, key: key)

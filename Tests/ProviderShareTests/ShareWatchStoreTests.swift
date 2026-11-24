@@ -159,6 +159,45 @@ final class ShareWatchStoreTests: XCTestCase {
         XCTAssertEqual(record?.duration, 5000, "a duration-less resume must keep the previously-learned duration")
     }
 
+    func testPlayedChangesPreserveMeasuredDurationAcrossRestart() async throws {
+        let durableStore = try makeDurableStore()
+        let itemID = "movie:measured"
+        let start = Date(timeIntervalSince1970: 1_000)
+        for played in [true, false] {
+            let account = "measured-\(played)"
+            let store = ShareWatchStore(accountKey: account, durableStore: durableStore)
+            await store.setResume(
+                70.175, itemID: itemID, capturedAt: start, duration: 205.152, measuredFileRevision: "original"
+            )
+            await store.dismissFromContinueWatching(itemID: itemID, at: start.addingTimeInterval(1))
+            await store.setPlayed(played, itemID: itemID, capturedAt: start.addingTimeInterval(2))
+            await store.setResume(
+                40, itemID: itemID, capturedAt: start.addingTimeInterval(1), duration: 999
+            )
+
+            let afterRestart = ShareWatchStore(accountKey: account, durableStore: durableStore)
+            let record = await afterRestart.record(for: itemID)
+            XCTAssertEqual(record, ShareWatchStore.Record(
+                position: 0, played: played, updatedAt: start.addingTimeInterval(2), duration: 205.152,
+                measuredFileRevision: "original"
+            ))
+            let resumable = await afterRestart.resumable(limit: 10)
+            XCTAssertTrue(resumable.isEmpty)
+        }
+    }
+
+    func testPlayedChangesDoNotInventUnknownDuration() async throws {
+        let store = ShareWatchStore(accountKey: "unknown", durableStore: try makeDurableStore())
+        for played in [true, false] {
+            let itemID = "movie:unknown-\(played)"
+            await store.setPlayed(played, itemID: itemID, capturedAt: Date())
+            let record = await store.record(for: itemID)
+            XCTAssertEqual(record?.played, played)
+            XCTAssertEqual(record?.position, 0)
+            XCTAssertNil(record?.duration)
+        }
+    }
+
     func testLongPathsPruneOldestRecordsToDurableByteBudget() async throws {
         let durableStore = try makeDurableStore(
             maximumPayloadBytes: 4_096
@@ -198,16 +237,50 @@ final class ShareWatchStoreTests: XCTestCase {
         )
     }
 
+    func testBatchPlayedWritesOnceAndRejectsStaleEpisodesIndividually() async throws {
+        let secure = ShareWatchMemoryStore()
+        let durable = try DurableLocalStateStore(secureStore: secure)
+        let store = ShareWatchStore(accountKey: "batch", durableStore: durable)
+        let start = Date(timeIntervalSince1970: 1_000)
+        await store.setResume(20, itemID: "older", capturedAt: start, duration: 200)
+        await store.setResume(30, itemID: "newer", capturedAt: start.addingTimeInterval(2), duration: 300)
+        let before = secure.writeCount
+        await store.setPlayed(true, itemIDs: ["older", "newer", "unknown"], capturedAt: start.addingTimeInterval(1))
+        XCTAssertEqual(secure.writeCount, before + 1)
+
+        let reopened = ShareWatchStore(accountKey: "batch", durableStore: durable)
+        let records = await reopened.recordsSnapshot()
+        XCTAssertEqual(records["older"]?.position, 0)
+        XCTAssertEqual(records["older"]?.played, true)
+        XCTAssertEqual(records["older"]?.duration, 200)
+        XCTAssertEqual(records["newer"]?.position, 30)
+        XCTAssertEqual(records["newer"]?.played, false)
+        XCTAssertEqual(records["unknown"]?.played, true)
+        XCTAssertNil(records["unknown"]?.duration)
+
+        await store.setPlayed(false, itemIDs: [], capturedAt: start)
+        await store.setPlayed(false, itemIDs: ["older", "newer"], capturedAt: start)
+        XCTAssertEqual(secure.writeCount, before + 1)
+    }
+
     private final class ShareWatchMemoryStore:
         SecureStoring,
         @unchecked Sendable
     {
         private let lock = NSLock()
         private var storage: [String: String] = [:]
+        private var writes = 0
+
+        var writeCount: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return writes
+        }
 
         func setString(_ value: String, for key: String) throws {
             lock.lock()
             storage[key] = value
+            writes += 1
             lock.unlock()
         }
 

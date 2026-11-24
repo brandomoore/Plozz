@@ -297,7 +297,7 @@ private struct PlozziOSSearchResultCard: View {
     private var card: some View {
         VStack(alignment: .leading, spacing: 6) {
             PlozziOSPosterCard(
-                item: item, captionHorizontalInset: 0
+                item: item, spoilerSettings: appModel.settings.spoilers.settings, captionHorizontalInset: 0
             )
             if let cue = SearchSection.availabilityCue(for: item) {
                 Label(cue, systemImage: "rectangle.stack.badge.plus")

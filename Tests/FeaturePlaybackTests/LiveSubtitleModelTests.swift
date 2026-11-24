@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreGraphics
 import CoreModels
 import Observation
@@ -6,6 +7,99 @@ import XCTest
 
 @MainActor
 final class LiveSubtitleModelTests: XCTestCase {
+    func testScheduledArtworkUsesItemIntervalsAndRelayoutsAlreadyQueuedRegions() throws {
+        let view = ScheduledASSArtworkView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        var style = SubtitleStyle.default
+        style.opacity = 0.6
+        style.avoidsPlayerControls = true
+        let video = CGRect(x: 0, y: 75, width: 800, height: 450)
+        var layout = SubtitleOverlayGeometry.BitmapLayout(
+            style: style, videoRect: video, activePictureRect: nil, sourceAspectRatio: nil, controls: []
+        )
+        view.bitmapLayout = layout
+        let bitmap = try XCTUnwrap(CGContext(
+            data: nil, width: 2, height: 2, bitsPerComponent: 8, bytesPerRow: 8,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )?.makeImage())
+        let sign = SubtitleImage(cgImage: bitmap, normalizedRect: CGRect(x: 0.25, y: 0, width: 0.5, height: 0.25),
+                                 controlAvoidance: .fixed)
+        let line = SubtitleImage(cgImage: bitmap, normalizedRect: CGRect(x: 0.25, y: 0.75, width: 0.5, height: 0.25))
+        let cues = [sign, line].enumerated().map { SubtitleCue(id: $0.offset, start: 0, end: 100, body: .image($0.element)) }
+        let item = AVPlayerItem(asset: AVMutableComposition())
+        view.display(cues, at: 7, item: item)
+        view.display([], at: 7.25, item: item)
+
+        let timeline = try XCTUnwrap(view.layer.sublayers?.first as? AVSynchronizedLayer)
+        let regions = try XCTUnwrap(timeline.sublayers)
+        let interval = try XCTUnwrap(regions.first?.animation(forKey: "contents") as? CAKeyframeAnimation)
+        XCTAssertTrue(timeline.playerItem === item)
+        XCTAssertEqual(interval.beginTime, 7)
+        XCTAssertEqual(interval.calculationMode, .discrete)
+        XCTAssertEqual(try XCTUnwrap(interval.keyTimes?[1]).doubleValue * interval.duration, 0.25, accuracy: 0.00001)
+        let size = try XCTUnwrap(regions.first?.animation(forKey: "bounds") as? CAKeyframeAnimation)
+        XCTAssertEqual((size.values?.last as? NSValue)?.cgRectValue, .zero, "Hold the clear after its deadline.")
+        func firstRects() throws -> [CGRect] {
+            try regions.map { region in
+                let position = try XCTUnwrap((region.animation(forKey: "position") as? CAKeyframeAnimation)?.values?.first as? NSValue)
+                let bounds = try XCTUnwrap((region.animation(forKey: "bounds") as? CAKeyframeAnimation)?.values?.first as? NSValue)
+                return CGRect(origin: position.cgPointValue, size: bounds.cgRectValue.size)
+            }
+        }
+        XCTAssertEqual(try firstRects(), layout.frames(for: [sign, line], in: view.bounds))
+        let oldFrames = try firstRects()
+        layout.controls = [CGRect(x: 0, y: 480, width: 800, height: 120)]
+        view.bitmapLayout = layout
+        view.layoutIfNeeded()
+        XCTAssertEqual(try firstRects(), layout.frames(for: [sign, line], in: view.bounds))
+        XCTAssertEqual(try firstRects().first, oldFrames.first)
+        XCTAssertLessThan(try XCTUnwrap(firstRects().last).maxY, 480)
+        XCTAssertEqual(view.alpha, 0.6, accuracy: 0.001)
+        XCTAssertEqual(regions.first?.animation(forKey: "contents")?.beginTime, 7)
+    }
+
+    func testScheduledArtworkBoundsFutureChangesAndDiscardsOldItemAndReplacedTail() throws {
+        let view = ScheduledASSArtworkView()
+        let first = AVPlayerItem(asset: AVMutableComposition())
+        let bitmap = try XCTUnwrap(CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage())
+        let cues = [SubtitleCue(id: 1, start: 0, end: 200, body: .image(.init(cgImage: bitmap, normalizedRect: .zero)))]
+        for n in 1...200 { view.display(cues, at: Double(n), item: first) }
+        let old = try XCTUnwrap(view.layer.sublayers?.first as? AVSynchronizedLayer)
+        let slot = try XCTUnwrap(old.sublayers?.first)
+        let animation = try XCTUnwrap(slot.animation(forKey: "contents") as? CAKeyframeAnimation)
+        XCTAssertLessThan(try XCTUnwrap(animation.keyTimes).count, 200)
+        XCTAssertEqual(animation.beginTime, 1)
+        view.display([], at: 1, item: first)
+        XCTAssertEqual(old.sublayers?.count, 1)
+        XCTAssertTrue(old.sublayers?.first === slot)
+
+        let next = AVPlayerItem(asset: AVMutableComposition())
+        view.display(cues, at: 0, item: next)
+        let fresh = try XCTUnwrap(view.layer.sublayers?.first as? AVSynchronizedLayer)
+        XCTAssertNil(old.superlayer)
+        XCTAssertNil(old.playerItem)
+        XCTAssertTrue(fresh.playerItem === next)
+        XCTAssertEqual(fresh.sublayers?.last?.animation(forKey: "contents")?.beginTime, AVCoreAnimationBeginTimeAtZero)
+        view.reset()
+        XCTAssertNil(fresh.playerItem)
+        XCTAssertTrue(view.layer.sublayers?.isEmpty ?? true)
+    }
+
+    func testOnlyPrimaryLiveFeedWithoutHDRDimmingPermitsScheduledArtwork() {
+        let model = LiveSubtitleModel()
+        model.beginSecondaryLiveFeed()
+        XCTAssertFalse(model.permitsScheduledASSArtwork)
+        model.beginLiveFeed()
+        model.style.hdrLuminanceScale = 0.75
+        XCTAssertTrue(model.permitsScheduledASSArtwork)
+        model.isHDR = true
+        XCTAssertFalse(model.permitsScheduledASSArtwork)
+        model.style.hdrLuminanceScale = 1
+        XCTAssertTrue(model.permitsScheduledASSArtwork)
+        model.loadPrimary(nil)
+        XCTAssertFalse(model.permitsScheduledASSArtwork)
+    }
+
     func testLiveTextReplacementWithTheSameIDReachesBothLanesImmediately() {
         let model = LiveSubtitleModel()
         model.beginLiveFeed()

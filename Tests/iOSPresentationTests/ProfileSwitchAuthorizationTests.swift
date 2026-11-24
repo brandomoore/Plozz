@@ -2,6 +2,7 @@
 import CoreModels
 import CoreUI
 import FeatureAuth
+import FeatureProfiles
 import SwiftUI
 import UIKit
 import Vision
@@ -24,6 +25,66 @@ final class ProfileSwitchAuthorizationTests: XCTestCase {
         // The old Home report or deadline still has the correct string ID, but
         // belongs to the previous activation and must not reveal this shell.
         XCTAssertFalse(pending.matches(app))
+    }
+
+    func testNewProfileWaitsForSettingsDismissalBeforeActivating() throws {
+        let app = try makeApp()
+        let original = app.profiles.activeProfileID
+        let count = app.profiles.profiles.count
+        let draft = ProfileDraft(
+            id: nil, name: "New viewer", avatarSymbol: "person.fill", colorIndex: 1
+        )
+        app.noteSettingsPresented(true)
+
+        app.saveProfile(draft, isKids: true)
+        XCTAssertTrue(app.hasPendingProfileCreation)
+        XCTAssertEqual(app.profiles.profiles.count, count)
+        XCTAssertEqual(app.profiles.activeProfileID, original)
+        XCTAssertNil(app.profileOnboardingID)
+        app.completePendingProfileCreation()
+        XCTAssertEqual(app.profiles.profiles.count, count)
+
+        app.noteSettingsPresented(false)
+        app.completePendingProfileCreation()
+        XCTAssertFalse(app.hasPendingProfileCreation)
+        XCTAssertEqual(app.profiles.profiles.count, count + 1)
+        XCTAssertNotEqual(app.profiles.activeProfileID, original)
+        XCTAssertEqual(app.profiles.activeProfile.name, draft.name)
+        XCTAssertTrue(app.profiles.activeProfile.isKids)
+        XCTAssertTrue(app.profiles.activeProfile.needsSetup)
+        XCTAssertEqual(app.profileOnboardingID, app.profiles.activeProfileID)
+        XCTAssertTrue(app.profileOnboardingOrigin == .launch)
+
+        app.completePendingProfileCreation()
+        XCTAssertEqual(app.profiles.profiles.count, count + 1)
+    }
+
+    func testSettingsDismissalWithoutSavingDoesNotCreateAProfile() throws {
+        let app = try makeApp()
+        let original = app.profiles.activeProfileID
+        let count = app.profiles.profiles.count
+        app.noteSettingsPresented(true)
+        app.noteSettingsPresented(false)
+        app.completePendingProfileCreation()
+        XCTAssertFalse(app.hasPendingProfileCreation)
+        XCTAssertEqual(app.profiles.profiles.count, count)
+        XCTAssertEqual(app.profiles.activeProfileID, original)
+        XCTAssertNil(app.profileOnboardingID)
+    }
+
+    func testEditingAnExistingProfileDoesNotWaitForSettingsDismissal() throws {
+        let app = try makeApp()
+        let original = app.profiles.activeProfileID
+        let count = app.profiles.profiles.count
+        app.noteSettingsPresented(true)
+        app.saveProfile(ProfileDraft(
+            id: original, name: "Renamed viewer", avatarSymbol: "person.fill", colorIndex: 2
+        ))
+        XCTAssertFalse(app.hasPendingProfileCreation)
+        XCTAssertEqual(app.profiles.profiles.count, count)
+        XCTAssertEqual(app.profiles.activeProfileID, original)
+        XCTAssertEqual(app.profiles.activeProfile.name, "Renamed viewer")
+        XCTAssertNil(app.profileOnboardingID)
     }
 
     func testCancelledVerificationCannotAuthorizeAReplacementRequest() async throws {
@@ -211,18 +272,33 @@ final class ProfileSwitchAuthorizationTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        try await Task.sleep(for: .milliseconds(750))
+        // Establish visible entry before testing what survives authorization.
+        // A fixed delay can capture the first entrance frame on a busy simulator.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        var initialText = try recognizedText(window, attaching: false)
+        while (!initialText.contains("Enter your PIN") || !initialText.contains("Cancel")),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+            initialText = try recognizedText(window, attaching: false)
+        }
+        guard initialText.contains("Enter your PIN"), initialText.contains("Cancel") else {
+            _ = try recognizedText(window)
+            XCTFail("Expected visible PIN entry before authorization: \(initialText)")
+            return
+        }
         try await operation(window)
     }
 
-    private func recognizedText(_ window: UIWindow) throws -> String {
+    private func recognizedText(_ window: UIWindow, attaching: Bool = true) throws -> String {
         window.layoutIfNeeded()
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
-        let attachment = XCTAttachment(image: image)
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        if attaching {
+            let attachment = XCTAttachment(image: image)
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])

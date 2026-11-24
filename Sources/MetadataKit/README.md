@@ -87,6 +87,12 @@ load-bearing.
   still comes from the requested-language endpoint.
   Provider-result keys and detail snapshots separate language variants. Query
   copies retain language when promoting series IDs or threading matched IDs.
+  Online poster selection uses the profile language for tagged TMDb and TheTVDB
+  artwork, including posters newly pinned for iOS downloads. TMDb uses base
+  language tags; TheTVDB keeps its regional and script variants separate in
+  both selection and cache. If no matching poster exists,
+  neutral or provider fallback art remains available. This does not change library
+  artwork preference, provider order, or textless hero selection.
   Providers without requested-language text support cannot fill descriptions,
   genres, titles or taglines for non-English requests; their artwork and other
   capabilities remain available. Once all applicable translated sources have been
@@ -119,6 +125,15 @@ load-bearing.
   library ownership are applied afterward, never stored in the public-feed cache.
 - `MetadataDiscoveryHTTPClient` — identifying User-Agent, explicit HTTP/decode
   failures, bounded request admission, and response-size checks for discovery.
+- `TMDbDiscoveryProvider.title` — exact movie/show hydration using the same
+  authenticated transport and mapping as discovery, without recency filtering.
+  It verifies the returned identity and does not assert library availability.
+- `TMDbMetadataProvider.episodeIdentity` — bounded exact episode and parent
+  external-ID reads for tracker identity verification, using configured metadata
+  access. Validates returned coordinates and parent ID, including season-zero
+  specials. Returns reference-only metadata, never a playable library item.
+  Disabled access and not-found are absence; transport, authorization and decoding
+  failures remain errors. Callers must retain the server's IDs and ordering.
 
 ## Community skip markers
 
