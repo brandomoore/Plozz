@@ -70,6 +70,30 @@ final class DiagnosticsSharingInteractionTests: XCTestCase {
         XCTAssertTrue(send.isEnabled)
     }
 
+    func testErrorDetailsOfferTheFormWithoutAutomaticallySubmittingOrLosingTheDraft() {
+        launch(arguments: ["--diagnostics-error-details"])
+        app.buttons["content-failure-details"].tap()
+        let field = messageField
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        app.buttons["diagnostics-enable-sharing"].tap()
+        app.buttons["Share Diagnostics"].tap()
+        let send = app.buttons["diagnostics-submit"]
+        XCTAssertTrue(send.waitForExistence(timeout: 5))
+        XCTAssertFalse(send.isEnabled)
+        field.tap()
+        field.typeText("   ")
+        XCTAssertFalse(send.isEnabled)
+        field.typeText("The row never loaded")
+        XCTAssertTrue(send.isEnabled)
+        send.tap()
+        // The fixture does not start Sentry. A rejected handoff must allow retry.
+        XCTAssertTrue(app.staticTexts[
+            "Couldn't submit diagnostics. Check that Share Diagnostics is on and try again."
+        ].waitForExistence(timeout: 5))
+        XCTAssertTrue((field.value as? String)?.contains("The row never loaded") == true)
+        XCTAssertTrue(send.isEnabled)
+    }
+
     func testOnboardingInfoUsesNeutralThemeInk() throws {
         for isLight in [false, true] {
             launch(arguments: ["--diagnostics-onboarding"] + (isLight ? ["--light"] : []))

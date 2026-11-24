@@ -258,8 +258,14 @@ Local **Details** are separate from automatic reporting. Failed IPTV sign-in/imp
 forms and terminal Live TV playback errors retain a small in-memory support report
 even without crash-reporting consent, including in App Store builds. Where known,
 it shows the failed stage, HTTP status, response type, numeric network/engine/storage
-codes, aggregate import counts and timings, and app/OS versions. iPhone and iPad
-can share the report through the system share sheet; Apple TV displays it locally.
+codes, aggregate import counts and timings, and app/OS versions. Error **Details**
+on Apple TV, iPhone and iPad also offer the Settings diagnostic submission form,
+including for Home sections and library refresh failures. **Send to Developer**
+requires a nonblank message and diagnostic-sharing consent. Opening Details or
+enabling sharing does not submit anything. Explicit submission adds the displayed
+error's allowlisted support fields to the usual technical attachment; the message
+is sent separately as linked feedback. iPhone and iPad can still share just the
+technical details through the system share sheet.
 The report excludes addresses, headers, credentials, account/channel names and
 arbitrary error descriptions. Unknown causes remain unknown rather than implying
 a subscription, regional restriction or unsupported codec.

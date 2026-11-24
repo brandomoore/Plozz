@@ -83,6 +83,13 @@ public struct PlozziOSRootView: View {
         AppLanguageScope(model: appModel.appLanguage) {
             rootContent
         }
+        .environment(\.diagnosticSubmissionForm, IssueDiagnosticSubmissionForm(
+            sharingEnabled: Binding(
+                get: { appModel.crashReporting.isEnabled },
+                set: { appModel.crashReporting.isEnabled = $0; appModel.applyCrashReportingPreference() }
+            ),
+            isConfigured: appModel.crashReportingController.isConfigured
+        ))
     }
 
     private var rootContent: some View {

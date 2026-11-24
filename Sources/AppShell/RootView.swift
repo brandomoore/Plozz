@@ -589,6 +589,13 @@ public struct RootView: View {
             }
         }
         .seerRequestDestination(appState.seerService)
+        .environment(\.diagnosticSubmissionForm, IssueDiagnosticSubmissionForm(
+            sharingEnabled: Binding(
+                get: { appState.crashReportingModel.isEnabled },
+                set: { appState.crashReportingModel.isEnabled = $0; reconcileCrashReporting() }
+            ),
+            isConfigured: crashReporting.isConfigured
+        ))
         .signInSyncPermission(
             appState.providerCredentialSync.publicationPermission,
             canPresent: startupPresentationReady && rootPresentation.active == nil

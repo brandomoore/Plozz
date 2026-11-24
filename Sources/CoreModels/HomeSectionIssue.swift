@@ -34,8 +34,12 @@ public struct HomeSectionIssue: Identifiable, Equatable, Sendable {
         }
     }
 
-    public var explanation: LocalizedStringResource {
-        switch reason {
+    public var explanation: LocalizedStringResource { reason.explanation }
+}
+
+extension HomeSectionIssue.Reason {
+    var explanation: LocalizedStringResource {
+        switch self {
         case let .failed(error): return error.userMessage
         case .empty:
             return "The latest request completed, but there are no titles to show with your current Home settings. This isn't a connection error."

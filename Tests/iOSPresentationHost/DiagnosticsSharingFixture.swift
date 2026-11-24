@@ -14,7 +14,12 @@ struct DiagnosticsSharingFixture: View {
 
     var body: some View {
         Group {
-            if showsOnboarding {
+            if ProcessInfo.processInfo.arguments.contains("--diagnostics-error-details") {
+                ContentFailureActions(report: .homeSection(.failed(.serverUnreachable), provider: .jellyfin)) {}
+                    .environment(\.diagnosticSubmissionForm, IssueDiagnosticSubmissionForm(
+                        sharingEnabled: $sharingEnabled, isConfigured: isConfigured
+                    ))
+            } else if showsOnboarding {
                 CrashReportingConsentView { choice in
                     sharingEnabled = choice
                     showsOnboarding = false

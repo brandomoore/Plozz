@@ -163,6 +163,7 @@ final class CrashDiagnosticsTests: XCTestCase {
                 XCTAssertEqual(attachment.filename, "plozz-diagnostics.json")
                 XCTAssertEqual(attachment.contentType, "application/json")
                 XCTAssertEqual(self.payload(attachment)["format"] as? String, "plozz-user-diagnostics-2")
+                XCTAssertNil(self.payload(attachment)["issueDetails"], "Settings sends have no selected error.")
                 XCTAssertFalse(String(decoding: attachment.data ?? Data(), as: UTF8.self).contains("Sources disappeared"))
                 return capturedID
             },
@@ -183,6 +184,33 @@ final class CrashDiagnosticsTests: XCTestCase {
         XCTAssertTrue(sent)
         XCTAssertTrue(didCaptureEvent)
         XCTAssertTrue(didCaptureFeedback)
+    }
+
+    @MainActor
+    func testDetailsSubmissionRequiresConsentAndMessageAndOnlyAttachesSafeIssueFields() {
+        let issue = PlaybackDiagnosticReport.homeSection(.failed(.unknown("private server name")), provider: .plex)
+        for (enabled, note, expected) in [(false, "My note", false), (true, " \n", false), (true, "My note", true)] {
+            var captured = false
+            let sent = CrashDiagnostics.send(
+                note: note, isEnabled: enabled, issue: issue,
+                captureEvent: { _, attachment in
+                    captured = true
+                    let details = self.payload(attachment)["issueDetails"] as? String
+                    XCTAssertEqual(details, "format=plozz-home-section-1\noperation=homeSection\nprovider=plex\nreason=unknown")
+                    let json = String(decoding: attachment.data ?? Data(), as: UTF8.self)
+                    XCTAssertFalse(json.contains("private server name"))
+                    XCTAssertFalse(json.contains("My note"))
+                    return SentryId()
+                },
+                captureFeedback: { event in
+                    XCTAssertTrue(expected)
+                    XCTAssertEqual(event.context?["feedback"]?["message"] as? String, "My note")
+                    return SentryId()
+                }
+            )
+            XCTAssertEqual(sent, expected)
+            XCTAssertEqual(captured, expected)
+        }
     }
 
     @MainActor

@@ -29,7 +29,7 @@ public enum CrashDiagnostics {
     /// `false` when the message is blank, reporting is inactive, or either event was rejected.
     @MainActor
     @discardableResult
-    public static func send(note: String? = nil) async -> Bool {
+    public static func send(note: String? = nil, issue: PlaybackDiagnosticReport? = nil) async -> Bool {
         guard let note = normalizedNote(note) else {
             PlozzLog.app.error("A message is required to submit diagnostics; nothing submitted.")
             return false
@@ -41,6 +41,7 @@ public enum CrashDiagnostics {
         return send(
             note: note,
             isEnabled: SentrySDK.isEnabled,
+            issue: issue,
             activity: { PlozzLog.activityExport(scope: scope) },
             sourceDiagnostics: { LiveTVSourceDiagnostics.captureExport(scope: scope) },
             preparationDiagnostics: { PlaybackPreparationDiagnostics.export(scope: scope) },
@@ -65,6 +66,7 @@ public enum CrashDiagnostics {
     static func send(
         note: String?,
         isEnabled: Bool,
+        issue: PlaybackDiagnosticReport? = nil,
         activity: @MainActor () -> PlozzLog.ActivityExport = { PlozzLog.activityExport() },
         sourceDiagnostics: @MainActor () -> LiveTVSourceDiagnostics.Export = {
             LiveTVSourceDiagnostics.captureExport(scope: DiagnosticExportScope())
@@ -93,6 +95,7 @@ public enum CrashDiagnostics {
         guard isEnabled else { return false }
 
         let report = TechnicalReport(
+            issueDetails: issue?.supportText,
             activity: activity(), sources: sourceDiagnostics(), preparation: preparationDiagnostics(),
             library: libraryDiagnostics(), connections: connectionDiagnostics(),
             playback: playbackDiagnostics,
@@ -141,6 +144,7 @@ public enum CrashDiagnostics {
 
     private struct TechnicalReport: Encodable {
         let format = "plozz-user-diagnostics-2"
+        let issueDetails: String?
         let activity: PlozzLog.ActivityExport
         let sources: LiveTVSourceDiagnostics.Export
         let preparation: PlaybackPreparationDiagnostics.Export

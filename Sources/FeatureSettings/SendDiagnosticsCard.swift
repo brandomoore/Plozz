@@ -57,27 +57,48 @@ public struct MobileDiagnosticsSubmissionSection: View {
 }
 #endif
 
-/// "Send my recent activity to the developer" card, shared by the Help &
-/// Diagnostics page (so it's discoverable without digging) and the Recent
-/// Activity page (next to the log it sends).
-///
-/// Uses the existing diagnostic-sharing consent and transport.
+public struct IssueDiagnosticSubmissionForm: DiagnosticSubmissionFormProviding {
+    private let sharingEnabled: Binding<Bool>
+    private let isConfigured: Bool
+
+    public init(sharingEnabled: Binding<Bool>, isConfigured: Bool) {
+        self.sharingEnabled = sharingEnabled
+        self.isConfigured = isConfigured
+    }
+
+    public func form(for report: PlaybackDiagnosticReport) -> AnyView {
+        AnyView(SendDiagnosticsCard(sharingEnabled: sharingEnabled, isConfigured: isConfigured, issue: report))
+    }
+}
+
 struct SendDiagnosticsCard: View {
     @Binding var sharingEnabled: Bool
     let isConfigured: Bool
+    var issue: PlaybackDiagnosticReport? = nil
     private enum SendState { case idle, sent, failed }
     @State private var sendState: SendState = .idle
     @State private var isSending = false
     @State private var message: String = ""   // l10n:content — user-typed message text
+    #if os(iOS)
+    @FocusState private var editing: Bool
+    #endif
 
     var body: some View {
         SettingsPanel(title: "Send Diagnostics", footer: footer) {
             VStack(alignment: .leading, spacing: 18) {
+                #if os(iOS)
+                TextField(text: $message, axis: .vertical) { Text(SettingsCopy.diagnosticsMessage) }
+                    .lineLimit(2...4)
+                    .focused($editing)
+                    .accessibilityIdentifier("diagnostics-message")
+                    .disabled(!isConfigured || sendState == .sent || isSending)
+                #else
                 TextField(text: $message) {
                     Text(SettingsCopy.diagnosticsMessage)
                 }
                 .accessibilityIdentifier("diagnostics-message")
                 .disabled(!isConfigured || sendState == .sent || isSending)
+                #endif
 
                 HStack(spacing: 16) {
                     DiagnosticsSendButton(
@@ -85,11 +106,15 @@ struct SendDiagnosticsCard: View {
                         hasMessage: CrashDiagnostics.normalizedNote(message) != nil,
                         isSending: isSending, isSubmitted: sendState == .sent
                     ) {
-                        let note = message
+                        guard !isSending, sendState != .sent, sharingEnabled,
+                              let note = CrashDiagnostics.normalizedNote(message) else { return }
+                        #if os(iOS)
+                        editing = false
+                        #endif
                         isSending = true
                         Task {
                             defer { isSending = false }
-                            let ok = await CrashDiagnostics.send(note: note)
+                            let ok = await CrashDiagnostics.send(note: note, issue: issue)
                             sendState = ok ? .sent : .failed
                             if ok { message = "" }
                         }

@@ -66,14 +66,8 @@ public struct HomeSectionStatusView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home-section-status-\(issue.id.presentationID)")
-        .alert(Text(issue.summary), isPresented: $showsDetails) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            if case let .failed(error) = issue.reason {
-                Text(issue.explanation) + Text(verbatim: "\n\n\(HandoffDiagnostics.errorCode(error))")
-            } else {
-                Text(issue.explanation)
-            }
+        .plozzSheet(isPresented: $showsDetails) {
+            PlaybackDiagnosticDetailsSheet(report: .homeSection(issue.reason, provider: issue.providerKind))
         }
     }
 
