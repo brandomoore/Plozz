@@ -181,6 +181,15 @@ public final class ProfileFlowModel {
     }
 
     public func selectProfileFromPicker(to id: String) {
+        // The manual picker can return to the current session without starting
+        // a new activation. A remembered profile at launch is not a session.
+        if id == profilesModel.activeProfileID, isChoosingProfile, isProfileSelectionCancelable,
+           !isForegroundLocked, !activeProfileAwaitsUnlock, parentalFallThrough == nil,
+           pendingLockedProfile == nil, pendingParentalSwitch == nil,
+           plexHomeUsers.pendingPlexPINRequest == nil, !accountsProviders.activeProfileAwaitsIdentity {
+            cancelProfileSelection()
+            return
+        }
         cancelProfileLockPrompt()
         cancelParentalSwitch()
         switchProfile(to: id)

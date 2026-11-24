@@ -71,6 +71,11 @@ struct PlozziOSProfileSelectionView: View {
                 profiles: displayedProfiles,
                 activeProfileID: appModel.profiles.activeProfileID,
                 onSelect: { profile in
+                    if onCancel != nil, profile.id == appModel.profiles.activeProfileID,
+                       appModel.isActiveProfileAuthorized {
+                        onComplete()
+                        return
+                    }
                     onSelectionStarted()
                     // Activation changes recency immediately; keep the tapped
                     // tile in place through verification and cancellation.
