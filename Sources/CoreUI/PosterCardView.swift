@@ -941,7 +941,7 @@ public struct PosterCardView: View {
 
     // MARK: Artwork
     private var artworkReferences: [ArtworkReference] {
-        artworkPolicy.references(for: item, style: style)
+        artworkPolicy.references(for: item, style: style, policy: presentationArtworkPolicy)
     }
 
     private var cardArtworkPresentationPolicy: ArtworkPresentationPolicy {
@@ -1794,10 +1794,11 @@ public extension MediaItem {
     /// may use additional fallbacks after these preferred candidates fail.
     func artworkCandidates(
         for style: PosterCardView.Style,
-        artworkPolicy: CardArtworkPolicy = .standard
+        artworkPolicy: CardArtworkPolicy = .standard,
+        policy: ArtworkPresentationPolicy = .init()
     ) -> [URL] {
         if artworkPolicy == .extra {
-            return artworkPolicy.references(for: self, style: style).compactMap {
+            return artworkPolicy.references(for: self, style: style, policy: policy).compactMap {
                 if case .remote(let url) = $0 { return url }
                 return nil
             }
@@ -1817,7 +1818,7 @@ public extension MediaItem {
                 // display ladder may use show artwork only as a late fallback.
                 return [posterURL, backdropURL].compactMap(libraryArtworkURL)
             }
-            return artworkPolicy.references(for: self, style: style).compactMap {
+            return artworkPolicy.references(for: self, style: style, policy: policy).compactMap {
                 if case .remote(let url) = $0 { return url }
                 return nil
             }
@@ -1834,13 +1835,15 @@ public extension PosterCardView {
         for item: MediaItem,
         showsSeriesArtwork: Bool,
         policy: CardArtworkPolicy = .standard,
-        prefersTextlessArtwork: Bool = true
+        presentationPolicy: ArtworkPresentationPolicy
     ) -> [ArtworkReference] {
-        guard showsSeriesArtwork else { return policy.references(for: item, style: .landscape) }
+        guard showsSeriesArtwork else {
+            return policy.references(for: item, style: .landscape, policy: presentationPolicy)
+        }
         let ladder = item.kind == .episode
             ? item.seriesArtworkReferences(prefersPortrait: false)
-            : policy.references(for: item, style: .landscape, prefersLandscapeKeyArt: false)
-        guard prefersTextlessArtwork else { return ladder }
+            : policy.references(for: item, style: .landscape, prefersLandscapeKeyArt: false, policy: presentationPolicy)
+        guard presentationPolicy.prefersTextlessArtwork else { return ladder }
         return PosterCardPresentation.preferringTextless(
             TextlessBackdropStore.shared.backdrop(for: item),
             over: ladder

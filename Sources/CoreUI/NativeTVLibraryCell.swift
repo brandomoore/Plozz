@@ -130,16 +130,16 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
         }
         accessibilityElementsHidden = false
         let hidesThumbnail = item.map { $0.kind == .episode && spoilerSettings.shouldHideThumbnail(for: $0) } ?? false
+        let inheritedPolicy = environment.plozzArtworkPolicy
         let references =
             item.map {
                 hidesThumbnail
                     ? $0.seriesArtworkReferences(prefersPortrait: true)
-                    : CardArtworkPolicy.standard.references(for: $0, style: style)
+                    : CardArtworkPolicy.standard.references(for: $0, style: style, policy: inheritedPolicy)
             } ?? []
         let variant: ArtworkImageVariant = style == .poster ? .posterCard : .landscapeCard
         let maxAspect: CGFloat? = style == .poster
             && item.map { !PosterCardPresentation.preservesContainerArtwork(for: $0.kind) } != false ? 0.9 : nil
-        let inheritedPolicy = environment.plozzArtworkPolicy
         let policy = item.map {
             CardArtworkPolicy.standard.presentationPolicy(for: $0, style: style, inheriting: inheritedPolicy)
         } ?? inheritedPolicy

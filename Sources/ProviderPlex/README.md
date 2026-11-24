@@ -215,6 +215,8 @@ behavior and never export item identities or response bodies.
 
 ## Hero artwork
 
+Library cards use the item's `thumb` first. If absent, `Image.coverPoster` supplies
+the poster and `Image.snapshot` supplies an episode's still before the show poster fallback.
 Plex's selected `Image` entry with type `backgroundSquare` is retained as
 `.squareHero`, separately from posters, logos, and landscape backgrounds.
 Compact iPhone Home and detail heroes prefer it under Recommended or Library

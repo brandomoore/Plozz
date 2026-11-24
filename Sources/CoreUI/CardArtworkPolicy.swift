@@ -90,7 +90,8 @@ public enum CardArtworkPolicy: Hashable, Sendable {
     }
 
     func references(
-        for item: MediaItem, style: PosterCardView.Style, prefersLandscapeKeyArt: Bool = true
+        for item: MediaItem, style: PosterCardView.Style, prefersLandscapeKeyArt: Bool = true,
+        policy: ArtworkPresentationPolicy = .init()
     ) -> [ArtworkReference] {
         if self == .extra {
             // Primary belongs to this clip; detail/backdrop art can belong to its
@@ -115,8 +116,11 @@ public enum CardArtworkPolicy: Hashable, Sendable {
             }
             let landscape = prefersLandscapeKeyArt && usesLandscapeKeyArt(for: item, style: style)
                 ? item.artworkReferences(for: .landscapeCard) : []
+            let backgrounds = policy.settings.preference(in: policy.area) == .library
+                ? item.artworkReferences(for: .detailBackdrop, preferringLibrarySelection: true)
+                : explicit(.detailBackdrop, for: item)
             return unique(item.libraryArtworkReferences(
-                landscape + explicit(.detailBackdrop, for: item)
+                landscape + backgrounds
                     + remote([item.backdropURL, item.posterURL, item.fallbackArtworkURL])
                     + item.artworkReferences(for: .poster)
             ))
