@@ -26,23 +26,14 @@ public enum LibraryBrowseScope: String, Hashable, Sendable {
 public final class LibraryBrowseViewModel {
     /// State of the *first* page load, whose value is the library's total item
     /// count. Once loaded, individual pages fill in behind the scenes via
-    /// `loaded` without disturbing this state, so a late page failure never
+    /// their slots without disturbing this state, so a late page failure never
     /// wipes the grid.
     public private(set) var state: LoadState<Int> = .idle
 
-    /// Sparse, index-addressed backing store sized to `totalCount`. A `nil`
-    /// slot is a not-yet-loaded item that renders as a placeholder tile.
-    ///
-    /// Each slot is a small `@Observable` reference (``LibrarySlot``) rather than a
-    /// bare `MediaItem?` so that filling one page mutates only *those* slots'
-    /// `.item` — re-rendering just those cells — instead of touching this array
-    /// property and invalidating **every** visible cell that read it. With a fast
-    /// SMB library paging in every few milliseconds, whole-array observation churn
-    /// was re-diffing the entire visible grid on each page fill (the scroll
-    /// choppiness); per-slot observation confines each fill to its own cells. The
-    /// array itself is sized once to the library total and never reassigned during
-    /// paging, so reading it to subscript never registers a firing dependency.
-    public private(set) var loaded: [LibrarySlot] = []
+    /// Materialize only fetched or displayed indices. Cells observe their stable
+    /// slot, not this dictionary, so filling a page doesn't invalidate other cells.
+    @ObservationIgnored private var slots: [Int: LibrarySlot] = [:]
+    package var allocatedSlotCount: Int { slots.count }
     /// Total items reported by the server (0 until the first page loads).
     public private(set) var totalCount: Int = 0
     /// A non-fatal error from loading a follow-up page, if any. Surfaced for
@@ -353,21 +344,22 @@ public final class LibraryBrowseViewModel {
 
     /// The item at `index`, or `nil` if it hasn't been loaded yet (placeholder).
     public func item(at index: Int) -> MediaItem? {
-        guard index >= 0, index < loaded.count else { return nil }
-        return loaded[index].item
+        slots[index]?.item
     }
 
     /// The observable slot backing `index`, or `nil` when out of range. The grid
     /// passes this into a per-cell view that observes only `slot.item`, so filling
-    /// one slot re-renders just that cell. Reading `loaded` here registers a
-    /// dependency on the (paging-stable) array, not on any slot's contents.
+    /// one slot re-renders just that cell.
     public func slot(at index: Int) -> LibrarySlot? {
-        guard index >= 0, index < loaded.count else { return nil }
-        return loaded[index]
+        guard index >= 0, index < totalCount else { return nil }
+        if let slot = slots[index] { return slot }
+        let slot = LibrarySlot()
+        slots[index] = slot
+        return slot
     }
 
     /// Number of items actually loaded so far (non-placeholder). Test/diagnostic.
-    public var loadedCount: Int { loaded.reduce(0) { $0 + ($1.item == nil ? 0 : 1) } }
+    public var loadedCount: Int { slots.values.reduce(0) { $0 + ($1.item == nil ? 0 : 1) } }
 
     /// Called when a cell leaves the visible viewport. Used to cancel stale,
     /// off-screen page loads so bandwidth/CPU goes to visible content.
@@ -394,7 +386,7 @@ public final class LibraryBrowseViewModel {
     /// SwiftUI cancels a `.task` when its view is covered by a push and runs it
     /// again when the view reappears, so a grid's `.task` fires every time the
     /// user comes back from a detail page. Calling ``loadFirstPage()`` there
-    /// re-entered `.loading` and cleared `loaded`, which swapped the whole grid
+    /// re-entered `.loading` and cleared the slots, which swapped the whole grid
     /// for a spinner — destroying the `ScrollView` and returning the user to the
     /// top of a library they had scrolled deep into. Reappearing is not a reason
     /// to refetch; a genuine refresh has its own entry points
@@ -447,7 +439,7 @@ public final class LibraryBrowseViewModel {
         }
         state = .loading
         errorServers = []
-        loaded = []
+        slots = [:]
         initialCollectionCovers = nil
         totalCount = 0
         pageError = nil
@@ -520,7 +512,6 @@ public final class LibraryBrowseViewModel {
             let items = try await preparingCollectionCovers(response.items, generation: generation)
             guard !Task.isCancelled, generation == loadGeneration else { return }
             let page = MediaPage(items: items, startIndex: response.startIndex, totalCount: response.totalCount)
-            totalCount = page.totalCount
             resize(to: page.totalCount)
             fill(page)
             pagesLoaded.insert(0)
@@ -538,7 +529,7 @@ public final class LibraryBrowseViewModel {
             queryProgress = nil
             queryMessage = (underlying as? LibraryQueryFailure)?.message
             let failure = recordBrowseFailure(error, mode: mode, captured: captured)
-            if collectionScanIncomplete, !loaded.isEmpty {
+            if collectionScanIncomplete, totalCount > 0 {
                 pageError = failure
             } else {
                 state = .failed(failure)
@@ -626,14 +617,12 @@ public final class LibraryBrowseViewModel {
             queryPresentation.failureDiagnostic = nil
             queryMessage = nil
             needsRefreshRetry = false
-            totalCount = firstPage.totalCount
             resize(to: firstPage.totalCount)
-            // Native cells observe these objects directly. Replacing the array
-            // with new boxes would strand them on the previous catalog snapshot.
+            // Native cells observe these objects directly; refresh them in place.
             let refreshedIndices = Set(refreshed.values.flatMap { page in
                 page.startIndex..<(page.startIndex + page.items.count)
             })
-            for (index, slot) in loaded.enumerated() where !refreshedIndices.contains(index) {
+            for (index, slot) in slots where !refreshedIndices.contains(index) {
                 slot.item = nil
             }
             for (index, page) in refreshed.sorted(by: { $0.key < $1.key }) {
@@ -665,7 +654,7 @@ public final class LibraryBrowseViewModel {
     /// badges and progress bars update immediately without a provider refetch.
     public func applyWatchedState(_ mutation: MediaItemMutation) {
         var refreshEpisodeCounts = false
-        for slot in loaded {
+        for slot in slots.values {
             guard let item = slot.item else { continue }
             refreshEpisodeCounts = refreshEpisodeCounts
                 || (mutation.refreshEpisodeCounts && mutation.affectsEpisodeCount(in: item))
@@ -1094,7 +1083,7 @@ public final class LibraryBrowseViewModel {
         guard !Task.isCancelled, generation == loadGeneration, contentMode == .collections else { return }
         queryPresentation.collectionScanIncomplete = true
         queryPresentation.collectionProgress = progress
-        guard progress.items.count > loaded.count else { return }
+        guard progress.items.count > totalCount else { return }
         let items: [MediaItem]
         do {
             items = try await preparingCollectionCovers(progress.items, generation: generation)
@@ -1104,11 +1093,10 @@ public final class LibraryBrowseViewModel {
             return
         }
         guard !Task.isCancelled, generation == loadGeneration, contentMode == .collections,
-              items.count > loaded.count else { return }
-        let previousCount = loaded.count
+              items.count > totalCount else { return }
+        let previousCount = totalCount
         resize(to: items.count)
         // The grid count here is confirmed-so-far, never an estimated MediaPage total.
-        totalCount = items.count
         fill(MediaPage(
             items: Array(items.dropFirst(previousCount)),
             startIndex: previousCount, totalCount: items.count
@@ -1470,7 +1458,6 @@ public final class LibraryBrowseViewModel {
         do {
             let response = try captured.result.get()
             if response.totalCount != totalCount {
-                totalCount = response.totalCount
                 resize(to: response.totalCount)
                 pagesLoaded = Set(pagesLoaded.filter { startIndex(forPage: $0) < response.totalCount })
                 failedPages = Set(failedPages.filter { startIndex(forPage: $0) < response.totalCount })
@@ -1639,15 +1626,12 @@ public final class LibraryBrowseViewModel {
     }
 
     /// Writes a fetched page's items into their absolute slots. Mutates each
-    /// slot's `.item` (per-slot observation) rather than the `loaded` array, so a
+    /// slot's `.item` (per-slot observation) rather than the grid size, so a
     /// fill re-renders only the affected cells — not the whole visible grid.
     private func fill(_ page: MediaPage) {
         guard !page.items.isEmpty else { return }
-        if loaded.count < page.startIndex + page.items.count {
-            resize(to: page.startIndex + page.items.count)
-        }
         for (offset, item) in page.items.enumerated() {
-            loaded[page.startIndex + offset].item = tagged(item)
+            slot(at: page.startIndex + offset)?.item = tagged(item)
         }
         updateAlphabetPosition()
     }
@@ -1663,19 +1647,11 @@ public final class LibraryBrowseViewModel {
         await interactive.noteInteractiveBrowseActivity()
     }
 
-    /// A fresh array of `count` empty placeholder slots. Each is a distinct
-    /// instance (never `Array(repeating:)`, which would share one slot across
-    /// every index).
-    private static func makeSlots(count: Int) -> [LibrarySlot] {
-        guard count > 0 else { return [] }
-        return (0..<count).map { _ in LibrarySlot() }
-    }
-
     private func resize(to count: Int) {
-        if count > loaded.count {
-            loaded.append(contentsOf: Self.makeSlots(count: count - loaded.count))
-        } else if count < loaded.count {
-            loaded.removeLast(loaded.count - count)
+        let previousCount = totalCount
+        totalCount = count
+        if count < previousCount {
+            slots = slots.filter { $0.key < count }
             for index in visibleIndices.filter({ $0 >= count }) {
                 itemDisappeared(at: index, generation: contentGeneration)
             }
@@ -1686,8 +1662,7 @@ public final class LibraryBrowseViewModel {
 /// One grid slot's contents: an `@Observable` box holding the loaded `MediaItem`
 /// (or `nil` while it's still a placeholder). Boxing each slot separately means a
 /// page fill mutates only the touched slots' `.item`, re-rendering just those
-/// cells instead of every cell that read the parent `loaded` array. See
-/// ``LibraryBrowseViewModel/loaded``.
+/// cells instead of every cell in the grid.
 @MainActor
 @Observable
 public final class LibrarySlot {

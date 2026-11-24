@@ -33,7 +33,7 @@ final class CrashReportEnvironmentTests: XCTestCase {
 
     func testScreenCategoryNeverIncludesLibraryIdentityOrFreeFormContext() {
         XCTAssertEqual(CrashReportScreen(context: "library:server-id#Movies"), .library)
-        XCTAssertEqual(CrashReportScreen(context: "allLibraries"), .library)
+        XCTAssertEqual(CrashReportScreen(context: "allLibraries"), .allLibraries)
         XCTAssertEqual(CrashReportScreen(context: "detail"), .detail)
         XCTAssertEqual(CrashReportScreen(context: "Watching a private title"), .unknown)
     }
