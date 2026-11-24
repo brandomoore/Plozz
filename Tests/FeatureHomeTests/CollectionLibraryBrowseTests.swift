@@ -152,7 +152,7 @@ final class CollectionLibraryBrowseTests: XCTestCase {
         let model = makeModel(provider, pageSize: 4)
         await model.loadFirstPage()
         XCTAssertEqual(model.state, .failed(.invalidResponse))
-        XCTAssertTrue(model.loaded.isEmpty)
+        XCTAssertEqual(model.allocatedSlotCount, 0)
     }
 
     private func makeModel(

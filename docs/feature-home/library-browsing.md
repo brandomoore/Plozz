@@ -110,6 +110,12 @@ are destination-local and do not change the Home row's settings or order.
 
 ## Browse failures
 
+The library grid uses the reported total for scrolling, but allocates a slot
+only when its title is fetched or its cell appears. Opening All Libraries does
+not allocate a placeholder for every title across every included library.
+Crash reports distinguish `allLibraries` from `library` without including
+library names or identifiers.
+
 - **Library browse failures** — Browse, Collections, Playlists and their member
   pages use the shared Details / Try Again actions on mobile and TV, including
   nonfatal later-page failures. `LibraryLoadDiagnostic` identifies the requested
