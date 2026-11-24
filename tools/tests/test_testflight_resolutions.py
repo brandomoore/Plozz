@@ -66,7 +66,7 @@ class ResolutionGitHub:
             self.comments.append(comment)
             if self.fail_after_comment:
                 self.fail_after_comment = False
-                raise BRIDGE.BridgeError("Ambiguous comment write")
+                raise BRIDGE.TransientBridgeError("Ambiguous comment write")
             return copy.deepcopy(comment)
         if method == "PATCH" and "/comments/" in path:
             comment = next(c for c in self.comments if c["id"] == int(path.rsplit("/", 1)[1]))
@@ -108,7 +108,7 @@ class ResolutionTests(unittest.TestCase):
         for unavailable in (False, True):
             with (self.subTest(unavailable=unavailable),
                   patch("sys.argv", ["watcher", "--mode", "check"]),
-                  patch.dict("os.environ", {"DISCORD_BRIDGE_ENABLED": "false"}),
+                  patch.dict("os.environ", {"DISCORD_BRIDGE_ENABLED": "false", "GITHUB_ACTIONS": "false"}),
                   patch.object(BRIDGE, "API"), patch.object(APP.ANNOUNCEMENTS, "apple_token"),
                   patch.object(APP.NOTES, "build_parts"),
                   patch.object(APP, "delivered_releases", return_value=[],
@@ -120,6 +120,45 @@ class ResolutionTests(unittest.TestCase):
                 self.assertIn("WARNING: competing declarations", diagnostics.getvalue())
                 resolve_main.assert_called_once()
                 self.assertEqual(resolve_main.call_args.args[1:], ([FIX], []))
+                self.assertEqual(resolve_main.call_args.kwargs["delivery_known"], not unavailable)
+
+    def test_recovery_rediscovers_a_comment_after_lost_response(self):
+        github = ResolutionGitHub()
+        github.fail_after_comment = True
+        with (patch.object(BRIDGE, "API", return_value=github),
+              patch.object(APP.ANNOUNCEMENTS, "apple_token"), patch.object(APP.NOTES, "build_parts"),
+              patch.object(APP, "delivered_releases", return_value=[release()]),
+              patch.object(APP, "declared_fixes", return_value=([FIX], [])),
+              patch.object(APP, "git", return_value="2026-10-20T00:00:00+00:00"),
+              patch.object(APP, "ancestor", return_value=True), patch.object(APP, "reverted", return_value=False),
+              patch.dict("os.environ", {"TESTFLIGHT_RESOLUTION_ENABLED": "true", "DISCORD_BRIDGE_ENABLED": "false"}),
+              patch("sys.argv", ["watcher", "--mode", "sync", "--recover"]),
+              patch.object(APP.time, "sleep") as sleep, redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO())):
+            self.assertEqual(APP.main(), 0)
+        sleep.assert_called_once_with(20)
+        self.assertEqual(len(github.comments), 1)
+        self.assertEqual(github.issue["state"], "closed")
+
+    def test_retry_budget_and_permanent_errors_surface_in_actions(self):
+        outage = BRIDGE.APIError("App Store Connect", "GET", 503)
+        denied = BRIDGE.APIError("GitHub", "PATCH", 403)
+        for failures, expected in (([outage], 2), ([denied], 1), ([outage, denied], 1)):
+            def fail(_):
+                BRIDGE.raise_sync_failures([(e, str(e)) for e in failures])
+            with (self.subTest(failures=failures), patch.object(APP, "synchronize", side_effect=fail) as sync,
+                  patch("sys.argv", ["watcher", "--recover"]), patch.object(APP.time, "sleep"),
+                  patch.dict("os.environ", {"GITHUB_ACTIONS": "true"}), redirect_stdout(io.StringIO()) as log):
+                self.assertEqual(APP.main(), 1)
+                self.assertEqual(sync.call_count, expected)
+                self.assertIn("::error::", log.getvalue())
+
+    def test_expired_build_does_not_strand_a_failed_main_close(self):
+        github = ResolutionGitHub()
+        github.fail_before_close = True
+        with self.assertRaises(BRIDGE.BridgeError):
+            resolve(github, [release()])
+        resolve(github)
+        self.assertEqual((len(github.comments), github.issue["state"]), (1, "closed"))
 
     def test_merged_fix_closes_and_marks_awaiting_release_once(self):
         github = ResolutionGitHub()
@@ -341,6 +380,28 @@ class SourceTests(unittest.TestCase):
         fixes, errors = APP.declared_fixes()
         self.assertEqual(fixes, [])
         self.assertIn("invalid TestFlight declaration", errors[0])
+
+    def test_preflight_rejects_new_malformed_and_legacy_trailers_without_blocking_old_quarantine(self):
+        base = self.commit("Existing mistake\n\nTestFlight-Issue: 85 [Mac]")
+        clean = self.commit("Good fix\n\nTestFlight-Issue: 86 [tvOS, iOS]")
+        APP.lint_declarations(base, clean)
+        new = self.commit("Bad fix\n\nTestFlight-Issue: 87 [Mac]")
+        with self.assertRaisesRegex(APP.Error, new):
+            APP.lint_declarations(base, new)
+        legacy = self.commit("Historical syntax\n\nTestFlight-Fix: #88 [tvOS]")
+        with self.assertRaisesRegex(APP.Error, "closing keyword"):
+            APP.lint_declarations(new, legacy)
+
+    def test_preflight_catches_conflict_with_main_and_accepts_integrated_declaration(self):
+        start = self.run_git("rev-parse", "HEAD")
+        base = self.commit("Main fix\n\nTestFlight-Issue: 177 [tvOS]")
+        self.run_git("checkout", "-qb", "topic", start)
+        tip = self.commit("Parallel fix\n\nTestFlight-Issue: 177 [iOS]")
+        with self.assertRaisesRegex(APP.Error, "Issue #177 has competing fixes"):
+            APP.lint_declarations(base, tip)
+        self.run_git("merge", "--no-edit", base)
+        resolved = self.commit("Integrated fix\n\nTestFlight-Issue: 177 [tvOS,iOS]")
+        APP.lint_declarations(base, resolved)
 
     def test_documented_trailer_has_no_github_closing_reference(self):
         guide = (ROOT / ".github/CONTRIBUTING.md").read_text()

@@ -71,4 +71,4 @@ jobs:
           TESTFLIGHT_RESOLUTION_ENABLED: ${{ vars.TESTFLIGHT_RESOLUTION_ENABLED }}
           TESTFLIGHT_DISCORD_MIN_BUILD: ${{ vars.TESTFLIGHT_DISCORD_MIN_BUILD }}
           RESOLUTION_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'check' && 'check' || 'sync' }}
-        run: python3 tools/testflight-resolutions.py --mode "$RESOLUTION_MODE"
+        run: python3 tools/testflight-resolutions.py --mode "$RESOLUTION_MODE" --recover

@@ -109,6 +109,11 @@ TestFlight-Issue: 177 [tvOS]
 Platforms: `tvOS`, `iOS`, or `tvOS,iOS` (`iOS` includes iPad). Partial fixes use
 only `Refs`; reopened issues need a new declaration. Never use
 `TestFlight-Fix: #...`: GitHub treats it as an immediate closing reference.
+Branch pushes, pull requests to `main`, and the local main-landing hook check
+incoming declarations without API access. Run the same check locally with
+`python3 tools/testflight-resolutions.py --lint origin/main HEAD`. An existing
+quarantine does not block unrelated changes. If two branches declare the same
+issue independently, integrate both and declare the complete fix on that history.
 
 The [delivery watcher](../docs/discord-bridge.md#delivery-gated-issue-resolution)
 posts the build number on the closed GitHub issue and archives linked Discord

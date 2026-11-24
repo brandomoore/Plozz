@@ -136,6 +136,16 @@ class APIError(BridgeError):
         super().__init__(f"{service} {method} failed (HTTP {status}{detail}).")
 
 
+def retryable_failure(error):
+    return isinstance(error, TransientBridgeError) or isinstance(error, APIError) and error.retryable
+
+
+def raise_sync_failures(failures):
+    if failures:
+        kind = TransientBridgeError if all(retryable_failure(e) for e, _ in failures) else BridgeError
+        raise kind("\n".join(message for _, message in failures))
+
+
 def snowflake(value):
     if not isinstance(value, str) or not SNOWFLAKE.fullmatch(value) or int(value) > (1 << 64) - 1:
         raise BridgeError("Invalid Discord identifier.")
@@ -1080,9 +1090,8 @@ def sync_release_resolutions(discord, github, *, publish=False):
             if publish:
                 sync_issue_to_discord(discord, thread, messages, index, number)
         except BridgeError as error:
-            failures.append(f"Thread {identifier}: {error}")
-    if failures:
-        raise BridgeError("\n".join(failures))
+            failures.append((error, f"Thread {identifier}: {error}"))
+    raise_sync_failures(failures)
 
 
 def sync(discord, github, matcher, channels, since, dry_run=False):

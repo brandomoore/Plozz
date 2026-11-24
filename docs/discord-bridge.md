@@ -536,7 +536,15 @@ but release announcements and the local archive/upload lane remain independent.
 Discord delivery does not require new-report matching or a model call; it can
 retry even when ordinary report classification is failing.
 
-Failures remain visible in Actions. A GitHub close can succeed while a Discord
+The hosted watcher waits 20 seconds and retries **once** when all failures are
+temporary service errors. It reads remote state again before writing; it does
+not replay the last POST. If Apple cannot be checked, the watcher can still
+record a fix on `main`, but does not claim to know its release availability.
+Permission, configuration, and source errors are not retried. A failed recovery
+leaves a red run with an Actions error annotation; quarantined declarations get
+warnings naming the affected commit(s) without stopping unrelated work.
+
+A GitHub close can succeed while a Discord
 send/archive is pending; the next run retries the Discord work without another
 GitHub closure or notification. Locked posts remain pending rather than having
 their locks removed. Keep bot-owned resolution comments and message footers

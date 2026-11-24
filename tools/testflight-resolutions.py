@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 from urllib.parse import quote
 
 
@@ -115,7 +116,8 @@ def declared_fixes(sources=("HEAD",)):
                 if ancestor(commit, previous["commit"]):
                     continue
                 if not ancestor(previous["commit"], commit):
-                    failures.append(f"Issue #{number} has competing fixes; add one final declaration after integration.")
+                    pair = ", ".join(sorted((commit, previous["commit"])))
+                    failures.append(f"Issue #{number} has competing fixes ({pair}); add one final declaration after integration.")
                     competing.add(number)
                     continue
             fixes[number] = fix
@@ -135,6 +137,19 @@ def declared_fixes(sources=("HEAD",)):
         (fix for number, fix in fixes.items() if number not in competing),
         key=lambda item: item["issue"],
     ), failures
+
+
+def lint_declarations(base, head):
+    base, head = (git("rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}") for ref in (base, head))
+    if not git("log", "-1", "--format=%H", "--grep=^TestFlight-Issue:", "--grep=^TestFlight-Fix:", f"{base}..{head}"):
+        return
+    _, existing = declared_fixes((base,))
+    _, proposed = declared_fixes((base, head))
+    problems = sorted(set(proposed) - set(existing))
+    for sha in git("log", "--format=%H", "--grep=^TestFlight-Fix:", f"{base}..{head}").splitlines():
+        problems.append(f"{sha}: use TestFlight-Issue: N [platforms], not the GitHub closing keyword TestFlight-Fix.")
+    if problems:
+        raise Error("\n".join(problems))
 
 
 def verified_release_source(release):
@@ -157,7 +172,7 @@ def delivered_releases(apple, github, minimum):
     return result
 
 
-def resolution_body(receipt, *, on_main=False):
+def resolution_body(receipt, *, on_main=False, delivery_known=True):
     metadata = BRIDGE.RESOLUTION_HEADER + json.dumps(receipt, sort_keys=True, separators=(",", ":")) + " -->"
     lines = []
     for platform in BRIDGE.RESOLUTION_PLATFORMS:
@@ -172,6 +187,8 @@ def resolution_body(receipt, *, on_main=False):
         names = ", ".join(NAMES[p] for p in BRIDGE.RESOLUTION_PLATFORMS if p in missing)
         text = (f"Fixed on `main`. The fix is coming in the next TestFlight release for {names}."
                 if on_main else f"Implemented; **awaiting external TestFlight availability for {names}**.")
+        if on_main and not delivery_known:
+            text = f"Fixed on `main`. External TestFlight availability has not yet been verified for {names}."
     elif receipt["status"] == "awaiting_release":
         text = "Delivery history is recorded below. A current build has not been verified for every affected platform."
     else:
@@ -223,7 +240,7 @@ def ensure_awaiting_label(github, issue):
     github.call("POST", f"/repos/{BRIDGE.REPO}/issues/{issue['number']}/labels", {"labels": [AWAITING_LABEL]})
 
 
-def resolve_issues(github, fixes, releases, *, publish=False):
+def resolve_issues(github, fixes, releases, *, publish=False, delivery_known=True):
     failures = []
     for fix in fixes:
         number = fix["issue"]
@@ -268,9 +285,11 @@ def resolve_issues(github, fixes, releases, *, publish=False):
             if ready:
                 receipt["status"] = "delivered"
             elif previously_delivered:
-                # An expired build does not retract an already verified delivery.
-                continue
-            body = resolution_body(receipt, on_main=on_main)
+                if not on_main:
+                    continue
+                # Finish interrupted main closure/label cleanup without announcing delivery again.
+                ready = True
+            body = resolution_body(receipt, on_main=on_main, delivery_known=delivery_known)
             close = not closed and (on_main or ready)
             print(f"Issue #{number}: {receipt['status']}{'; close' if close else ''} ({'sync' if publish else 'check'})")
             if not publish:
@@ -302,55 +321,78 @@ def resolve_issues(github, fixes, releases, *, publish=False):
                 raise Error(f"Issue #{number}'s completed state did not persist.")
         except (Error, ValueError, KeyError, TypeError) as error:
             detail = str(error) if isinstance(error, Error) else "Invalid resolution metadata or API response."
-            failures.append(f"Issue #{number}: {detail}")
-    if failures:
-        raise Error("\n".join(failures))
+            failures.append((error, f"Issue #{number}: {detail}"))
+    BRIDGE.raise_sync_failures(failures)
+
+
+CHECK_ERRORS = (Error, ValueError, KeyError, TypeError, subprocess.SubprocessError)
+
+
+def diagnostic(level, message):
+    for line in message.splitlines():
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            print(f"::{level}::{line.replace('%', '%25')}", flush=True)
+        else:
+            print(f"{level.upper()}: {line}", file=sys.stderr)
+
+
+def synchronize(publish):
+    if publish and os.environ.get("TESTFLIGHT_RESOLUTION_ENABLED") != "true":
+        raise Error("TestFlight issue resolution is not explicitly enabled.")
+    github = BRIDGE.API("GitHub", os.environ.get("GITHUB_TOKEN"), write=publish)
+    failures = []
+    releases = []
+    try:
+        releases = delivered_releases(
+            BRIDGE.API("App Store Connect", ANNOUNCEMENTS.apple_token()), github,
+            NOTES.build_parts(os.environ.get("TESTFLIGHT_DISCORD_MIN_BUILD", "")),
+        )
+    except CHECK_ERRORS as error:
+        failures.append((error, str(error) if isinstance(error, Error) else "External release verification failed."))
+    try:
+        fixes, declaration_failures = declared_fixes(("HEAD", *(release["source"] for release in releases)))
+        for warning in declaration_failures:
+            diagnostic("warning", warning)
+        resolve_issues(github, fixes, releases, publish=publish, delivery_known=not failures)
+        if not fixes:
+            print("No eligible TestFlight declarations on main or available release tags; no GitHub issues changed.")
+    except CHECK_ERRORS as error:
+        failures.append((error, str(error) if isinstance(error, Error) else "Invalid release metadata or source history."))
+    if os.environ.get("DISCORD_BRIDGE_ENABLED") == "true":
+        try:
+            BRIDGE.sync_release_resolutions(
+                BRIDGE.API("Discord", os.environ.get("DISCORD_BOT_TOKEN"), write=publish),
+                github, publish=publish,
+            )
+        except Error as error:
+            failures.append((error, str(error)))
+    else:
+        print("Discord issue mirroring is disabled; no Discord posts changed.")
+    BRIDGE.raise_sync_failures(failures)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("check", "sync"), default="check")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--lint", nargs=2, metavar=("BASE", "HEAD"), help="Check incoming declarations offline.")
+    mode.add_argument("--mode", choices=("check", "sync"), default="check")
+    parser.add_argument("--recover", action="store_true", help="Retry once after a temporary service failure.")
     args = parser.parse_args()
-    publish = args.mode == "sync"
-    try:
-        if publish and os.environ.get("TESTFLIGHT_RESOLUTION_ENABLED") != "true":
-            raise Error("TestFlight issue resolution is not explicitly enabled.")
-        github = BRIDGE.API("GitHub", os.environ.get("GITHUB_TOKEN"), write=publish)
-        failures = []
-        releases = []
+    for attempt in range(2):
         try:
-            releases = delivered_releases(
-                BRIDGE.API("App Store Connect", ANNOUNCEMENTS.apple_token()), github,
-                NOTES.build_parts(os.environ.get("TESTFLIGHT_DISCORD_MIN_BUILD", "")),
-            )
-        except (Error, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
-            failures.append(str(error) if isinstance(error, Error) else "External release verification failed.")
-        try:
-            fixes, declaration_failures = declared_fixes(("HEAD", *(release["source"] for release in releases)))
-            for warning in declaration_failures:
-                print(f"WARNING: {warning}", file=sys.stderr)
-            resolve_issues(github, fixes, releases, publish=publish)
-            if not fixes:
-                print("No eligible TestFlight declarations on main or available release tags; no GitHub issues changed.")
-        except (Error, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
-            failures.append(str(error) if isinstance(error, Error) else "Invalid release metadata or source history.")
-        if os.environ.get("DISCORD_BRIDGE_ENABLED") == "true":
-            try:
-                BRIDGE.sync_release_resolutions(
-                    BRIDGE.API("Discord", os.environ.get("DISCORD_BOT_TOKEN"), write=publish),
-                    github, publish=publish,
-                )
-            except Error as error:
-                failures.append(str(error))
-        else:
-            print("Discord issue mirroring is disabled; no Discord posts changed.")
-        if failures:
-            raise Error("\n".join(failures))
-    except (Error, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
-        detail = str(error) if isinstance(error, Error) else "Invalid configuration, source history, or API response."
-        print(f"ERROR: {detail}", file=sys.stderr)
-        return 1
-    return 0
+            if args.lint:
+                lint_declarations(*args.lint)
+            else:
+                synchronize(args.mode == "sync")
+            return 0
+        except CHECK_ERRORS as error:
+            detail = str(error) if isinstance(error, Error) else "Invalid configuration, source history, or API response."
+            if args.recover and not args.lint and not attempt and BRIDGE.retryable_failure(error):
+                diagnostic("warning", f"{detail}\nRetrying once in 20 seconds with fresh remote state.")
+                time.sleep(20)
+                continue
+            diagnostic("error", detail)
+            return 1
 
 
 if __name__ == "__main__":
