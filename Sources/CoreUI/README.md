@@ -989,8 +989,10 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   matching that custom wash. Gradient Off and Reduce Transparency keep the
   underlying information band opaque, so changes behind it cannot tint the cards.
   SwiftUI surfaces keep their
-  shadow and a matching hairline edge. Gradient Off or Reduce Transparency restores the original solid
-  surface and border; unrelated raised cards remain unchanged.
+  shadow and a matching hairline edge. Gradient Off restores the original solid
+  surface and border. With gradients on and glass off, tvOS Settings groups and resting
+  glass-card controls use a solid fill and a hairline edge. Dark lifts the fill;
+  Black and Light retain their near-black and white fills.
   PIN digit/delete keys use native Liquid Glass at rest and during interaction
   on iOS/tvOS 26+, independent of the page gradient. `PINDialPad` and `PINKeyStyle`
   own this for profile, Plex, parental, and Live TV authorization/setup prompts.
@@ -1000,7 +1002,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   The system owns their glass appearance, focus, hover, and press treatment;
   digits keep their original circular size and Delete spans two columns at the
   same height. Mobile activation retains haptic feedback. Reduce Transparency
-  and older OS versions retain the previous shared keypad fallback and exact key sizes.
+  and older OS versions retain the shared keypad fallback and exact key sizes.
+  Its bright focus plate uses dark digits and a dark Delete glyph in every theme.
   Mobile PIN headings use native Title 2 bold, matching the profile picker.
   The shared scaffold keeps this typography consistent across PIN flows;
   tvOS retains its larger viewing-distance heading.

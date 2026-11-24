@@ -254,6 +254,16 @@ public extension ThemePalette {
         gradientSurface(fillOpacity: Self.gradientSurfaceFillOpacity)
     }
 
+    /// A solid counterpart to the glass wash. Keep Black near-black and Light
+    /// white; their rim separates them from the gradient without sampling it.
+    var opaqueGradientSurface: SurfaceStyle {
+        SurfaceStyle(
+            fill: self == .dark ? raised.fill.mix(with: .white, by: 0.08) : raised.fill,
+            border: raised.border ?? cardBorder,
+            borderWidth: raised.borderWidth, shadow: raised.shadow
+        )
+    }
+
     func gradientSurface(fillOpacity: Double) -> SurfaceStyle {
         SurfaceStyle(
             fill: gradientSurfaceTint.opacity(fillOpacity),

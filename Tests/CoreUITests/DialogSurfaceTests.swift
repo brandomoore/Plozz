@@ -25,6 +25,11 @@ final class DialogSurfaceTests: XCTestCase {
     }
 
     func testSolidSettingsFallbackRetainsItsOriginalBorderAndFill() throws {
+        #if os(tvOS)
+        let preferences = [(false, false), (false, true)]
+        #else
+        let preferences = [(false, false), (false, true), (true, true)]
+        #endif
         for palette in [ThemePalette.dark, .pureBlack, .light] {
             let original = try render(
                 Color.clear.frame(width: 120, height: 80)
@@ -32,7 +37,7 @@ final class DialogSurfaceTests: XCTestCase {
                     .padding(40).background(.black)
                     .environment(\.themePalette, palette)
             )
-            for (gradient, reduced) in [(false, false), (true, true)] {
+            for (gradient, reduced) in preferences {
                 let settings = try render(
                     Color.clear.frame(width: 120, height: 80)
                         .settingsGroupSurface(cornerRadius: 16)
@@ -46,14 +51,37 @@ final class DialogSurfaceTests: XCTestCase {
         }
     }
 
+    #if os(tvOS)
+    func testSolidSettingsStandOutEvenWhenThePageMatchesTheirFill() throws {
+        for palette in [ThemePalette.dark, .pureBlack, .light] {
+            let pixels = try render(
+                Color.clear.frame(width: 120, height: 80)
+                    .settingsGroupSurface(cornerRadius: 16)
+                    .padding(40).background(palette.raised.fill)
+                    .environment(\.themePalette, palette)
+                    .environment(\.gradientBackgroundsEnabled, true)
+                    .environment(\.plozzReduceTransparency, true)
+            )
+            let page = pixel(pixels, x: 100, y: 36)
+            let rim = pixel(pixels, x: 100, y: 40)
+            XCTAssertGreaterThan(abs(Int(rim[0]) - Int(page[0])), 12)
+        }
+    }
+    #endif
+
     func testSettingsGroupsBlendOnlyTheirFillWhenGradientsAllowTransparency() throws {
         let backdrop = Color(red: 0.7, green: 0.3, blue: 0.1)
         for palette in [ThemePalette.dark, .pureBlack, .light] {
-            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-            XCTAssertTrue(UIColor(palette.raised.fill).getRed(&r, green: &g, blue: &b, alpha: &a))
-            let fill = [Double(r), Double(g), Double(b)]
             for gradient in [false, true] {
                 for reduced in [false, true] {
+                    #if os(tvOS)
+                    let solid = gradient && reduced ? palette.opaqueGradientSurface : palette.raised
+                    #else
+                    let solid = palette.raised
+                    #endif
+                    var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+                    XCTAssertTrue(UIColor(solid.fill).getRed(&r, green: &g, blue: &b, alpha: &a))
+                    let fill = [Double(r), Double(g), Double(b)]
                     let pixels = try render(
                         Color.white.frame(width: 20, height: 20)
                             .frame(width: 120, height: 80)
