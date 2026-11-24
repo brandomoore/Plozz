@@ -1794,10 +1794,11 @@ public extension MediaItem {
     /// may use additional fallbacks after these preferred candidates fail.
     func artworkCandidates(
         for style: PosterCardView.Style,
-        artworkPolicy: CardArtworkPolicy = .standard
+        artworkPolicy: CardArtworkPolicy = .standard,
+        policy: ArtworkPresentationPolicy = .init()
     ) -> [URL] {
         if artworkPolicy == .extra {
-            return artworkPolicy.references(for: self, style: style).compactMap {
+            return artworkPolicy.references(for: self, style: style, policy: policy).compactMap {
                 if case .remote(let url) = $0 { return url }
                 return nil
             }
@@ -1817,7 +1818,7 @@ public extension MediaItem {
                 // display ladder may use show artwork only as a late fallback.
                 return [posterURL, backdropURL].compactMap(libraryArtworkURL)
             }
-            return artworkPolicy.references(for: self, style: style).compactMap {
+            return artworkPolicy.references(for: self, style: style, policy: policy).compactMap {
                 if case .remote(let url) = $0 { return url }
                 return nil
             }

@@ -3473,6 +3473,7 @@ struct PlozziOSHomeMediaRail: View {
     static var artworkPrefetchSourceBuildCount = 0
     #endif
     @Environment(\.plozzCardStyle) private var cardStyle
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.locale) private var locale
 
@@ -3695,7 +3696,7 @@ struct PlozziOSHomeMediaRail: View {
                 for: candidate,
                 style: style,
                 spoilerSettings: appModel.settings.spoilers.settings,
-                showsSeriesArtwork: showsSeriesArtwork
+                showsSeriesArtwork: showsSeriesArtwork, policy: artworkPolicy
             )
             if style == .poster,
                let preview = candidates.first,
@@ -3728,7 +3729,7 @@ struct PlozziOSHomeMediaRail: View {
                       for: candidate,
                       style: style,
                       spoilerSettings: appModel.settings.spoilers.settings,
-                      showsSeriesArtwork: showsSeriesArtwork
+                      showsSeriesArtwork: showsSeriesArtwork, policy: artworkPolicy
                   ).first,
                   MediaArtworkPrefetchPolicy.claimPreview(
                       for: candidate.stablePresentationID,
