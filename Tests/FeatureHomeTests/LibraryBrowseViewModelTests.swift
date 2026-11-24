@@ -43,7 +43,7 @@ final class LibraryBrowseViewModelTests: XCTestCase {
         await vm.loadFirstPage()
 
         XCTAssertEqual(vm.totalCount, 100)
-        XCTAssertEqual(vm.loaded.count, 100, "Grid is sized to the whole library up front")
+        XCTAssertEqual(vm.allocatedSlotCount, 10, "Only the fetched page needs slots")
         XCTAssertEqual(vm.loadedCount, 10, "Only the first page is populated")
         XCTAssertEqual(vm.state.value, 100)
         XCTAssertNotNil(vm.item(at: 0))
@@ -51,6 +51,42 @@ final class LibraryBrowseViewModelTests: XCTestCase {
         XCTAssertEqual(provider.requestedPages.count, 1)
         XCTAssertEqual(provider.requestedPages.first?.startIndex, 0)
         XCTAssertEqual(provider.interactiveBrowseActivityCount, 1)
+    }
+
+    func testLargeAllLibrariesGridAllocatesOnlyTheFirstPageAndObservedPlaceholders() async throws {
+        final class PagedCatalog: FakeMediaProvider, @unchecked Sendable {
+            static let sectionSize = 25_000
+            override func items(in containerID: String, kind: MediaItemKind, page: PageRequest) async throws -> MediaPage {
+                let start = min(page.startIndex, Self.sectionSize)
+                let end = min(start + page.limit, Self.sectionSize)
+                let items = (start..<end).map { index in
+                    let title = "\(containerID)-\(index)"
+                    return MediaItem(id: title, title: title, kind: kind)
+                }
+                return MediaPage(items: items, startIndex: page.startIndex, totalCount: Self.sectionSize)
+            }
+        }
+        let backend = PagedCatalog(allItems: [], kind: .plex)
+        let aggregate = AggregatedLibraryProvider(sources: [
+            .init(accountID: "plex", containerID: "movies", provider: backend, kind: .movie),
+            .init(accountID: "plex", containerID: "series", provider: backend, kind: .series)
+        ])
+        let pageSize = 10
+        let model = LibraryBrowseViewModel(
+            provider: aggregate, containerID: AllLibrariesBrowse.containerID, containerKind: .unknown,
+            pageSize: pageSize, initialContentMode: .titles
+        )
+        await model.loadFirstPage()
+        XCTAssertEqual(model.totalCount, 2 * PagedCatalog.sectionSize)
+        let last = model.totalCount - 1
+        XCTAssertNil(model.item(at: last))
+        XCTAssertEqual(model.allocatedSlotCount, pageSize, "Only fetched titles should require storage at startup.")
+        let placeholder = try XCTUnwrap(model.slot(at: pageSize))
+        XCTAssertNil(placeholder.item)
+        XCTAssertTrue(placeholder === model.slot(at: pageSize))
+        XCTAssertEqual(model.allocatedSlotCount, pageSize + 1)
+        await model.itemAppeared(at: pageSize)
+        XCTAssertNotNil(placeholder.item, "A visible placeholder must update in place when its page arrives.")
     }
 
     func testCatalogRefreshReplacesStaleSparsePagesWithoutLoadingState() async {
@@ -405,7 +441,7 @@ final class LibraryBrowseViewModelTests: XCTestCase {
             XCTFail("Expected empty state, got \(vm.state)")
         }
         XCTAssertEqual(vm.totalCount, 0)
-        XCTAssertTrue(vm.loaded.isEmpty)
+        XCTAssertEqual(vm.allocatedSlotCount, 0)
     }
 
     func testFirstPageFailureSetsFailedState() async {
@@ -418,7 +454,7 @@ final class LibraryBrowseViewModelTests: XCTestCase {
         if case .failed(.serverUnreachable) = vm.state {} else {
             XCTFail("Expected failed state, got \(vm.state)")
         }
-        XCTAssertTrue(vm.loaded.isEmpty)
+        XCTAssertEqual(vm.allocatedSlotCount, 0)
     }
 
     func testPageFailureKeepsLoadedItemsAndRetriesOnReappear() async {

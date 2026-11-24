@@ -87,14 +87,15 @@ public struct CrashReportContext: Sendable {
 /// Fixed screen categories only. Never send a route, library ID, title, or
 /// other free-form view context to the crash-reporting service.
 public enum CrashReportScreen: String, Sendable {
-    case startup, home, library, detail, settings, watchlist, search
+    case startup, home, library, allLibraries, detail, settings, watchlist, search
     case music, liveTV, downloads, playback, profiles, unknown
 
     public init(context: String) {
         switch context {
         case "startup": self = .startup
         case "home": self = .home
-        case "library", "allLibraries": self = .library
+        case "library": self = .library
+        case "allLibraries": self = .allLibraries
         case "detail": self = .detail
         case "settings": self = .settings
         case "watchlist": self = .watchlist

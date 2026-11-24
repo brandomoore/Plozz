@@ -112,7 +112,12 @@ repeated renewal, not 300 consecutive healthy seconds across those interruptions
 Fixtures are locally generated, not television content: ffmpeg `testsrc2`,
 160x90 at 15 fps, H.264 ultrafast/CRF 32/GOP 30/yuv420p and mono 48 kHz AAC.
 The 90-second TS and 420-second fMP4 single-file HLS indexes use two-second
-segments. The HTTP fixture publishes an advancing four-segment window, or eight
+segments. The raw TS disconnect fixture uses the same index to join the current
+two-second broadcast segment when the player reconnects. Replaying a file from
+byte zero is a different case: the source can withhold new pictures until it
+has resent everything the player already saw. The test measures reconnecting
+to an advancing broadcast, not recovery from an origin that rewinds.
+The HLS fixture publishes an advancing four-segment window, or eight
 segments for the pause scenario so native live holdback leaves a usable DVR range. See
 [IPTVContinuityHostedTests](../Tests/SubtitlePresentationSupport/IPTVContinuityHostedTests.swift)
 and its fixture resources for the actual workload.

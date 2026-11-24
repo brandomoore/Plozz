@@ -1775,9 +1775,9 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 id: UUID().uuidString, title: "Unresolved logo", kind: .movie,
                 backdropURL: artworkURL, logoURL: url, allowsTitleBasedMetadataMatching: false
             )
-            let policy = ArtworkPresentationPolicy().forPlacement(.logo)
+            let policy = ArtworkPresentationPolicy(logoLanguage: Self.windowLocale.identifier).forPlacement(.logo)
             let key = HeroLogoMemo.key(
-                for: [.remote(url)], fallback: HeroLogoFallback(for: item) { nil },
+                for: [.remote(url)], fallback: HeroLogoFallback(for: item) { nil }.localized(to: policy.logoLanguage),
                 prefersOnlineArtwork: policy.prefersOnlineArtwork, providerPolicyIdentity: policy.identity
             )
             for scheme in [ColorScheme.light, .dark] {
@@ -4735,6 +4735,8 @@ final class HomeRowArrangementHostedTests: XCTestCase {
         return ink
     }
 
+    private static let windowLocale = Locale(identifier: "en_US")
+
     private func withWindow<Content: View>(
         size: CGSize? = nil,
         colorScheme: ColorScheme = .dark,
@@ -4759,7 +4761,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 .environment(CardStyleSettingsModel())
                 .environment(\.themePalette, colorScheme == .dark ? ThemePalette.dark : ThemePalette.light)
                 .environment(\.colorScheme, colorScheme)
-                .environment(\.locale, Locale(identifier: "en_US"))
+                .environment(\.locale, Self.windowLocale)
                 .background(.black)
         ))
         window.makeKeyAndVisible()

@@ -290,6 +290,7 @@ final class IPTVContinuityHostedTests: XCTestCase {
         } else if fault == .disconnect {
             XCTAssertTrue(counts.disconnected, "The outage must happen after a presented frame, not during a probe.")
             XCTAssertGreaterThanOrEqual(counts.opens, 2)
+            XCTAssertGreaterThan(source.rawJoinSegment, 0, "The second connection must join the stream in progress.")
         } else {
             XCTAssertEqual(counts.opens, 1, "Healthy playback must retain its original delivery session.")
         }
@@ -335,8 +336,10 @@ private final class RollingIPTVSource: @unchecked Sendable {
     private let mediaBytes: Int
     private let map: String?
     private let segments: [[String]]
+    private let rawSegmentOffsets: [Int]
     private let windowSegments: Int
     private var publishedEnd = 0
+    private var lastRawSegment = 0
     private var base: URL?
     private var started: TimeInterval?
     private var opens = 0
@@ -348,6 +351,7 @@ private final class RollingIPTVSource: @unchecked Sendable {
     private var guideFailure: Int?
     var durationSeconds: Int { segments.count * 2 }
     var publishedEdgeSeconds: Double { lock.withLock { Double(publishedEnd * 2) } }
+    var rawJoinSegment: Int { lock.withLock { lastRawSegment } }
 
     init(bundle: Bundle, fragmented: Bool, fault: Fault, windowSegments: Int? = nil) throws {
         self.fault = fault
@@ -363,6 +367,11 @@ private final class RollingIPTVSource: @unchecked Sendable {
         let lines = try String(contentsOf: playlist, encoding: .utf8).components(separatedBy: .newlines)
         map = lines.first { $0.hasPrefix("#EXT-X-MAP:") }
         segments = lines.indices.filter { lines[$0].hasPrefix("#EXTINF:") }.map { Array(lines[$0...($0 + 2)]) }
+        rawSegmentOffsets = try fault == .disconnect ? segments.map { segment in
+            let line = try XCTUnwrap(segment.first { $0.hasPrefix("#EXT-X-BYTERANGE:") })
+            let offset = try XCTUnwrap(line.split(separator: "@").dropFirst().first)
+            return try XCTUnwrap(Int(offset))
+        } : []
     }
 
     func setBase(_ value: URL) { lock.withLock { base = value } }
@@ -408,8 +417,16 @@ private final class RollingIPTVSource: @unchecked Sendable {
             }
             if request.contains("/raw.ts ") {
                 opens += 1
+                // A new connection to a linear channel joins the broadcast in progress, not at byte zero.
+                let now = ProcessInfo.processInfo.systemUptime
+                let start = started ?? now
+                started = start
+                let index = Int((now - start) / 2)
+                guard rawSegmentOffsets.indices.contains(index) else { return .init(status: 410) }
+                lastRawSegment = index
                 return .init(
-                    file: media, headers: ["Content-Type": "video/mp2t"], delay: .seconds(2)
+                    file: media, headers: ["Content-Type": "video/mp2t"], delay: .seconds(2),
+                    range: rawSegmentOffsets[index]..<mediaBytes
                 )
             }
             if request.contains("/entry.m3u8 ") {
