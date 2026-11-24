@@ -453,8 +453,8 @@ actionlint .github/workflows/testflight-discord.yml
 ## Delivery-gated issue resolution
 
 **TestFlight issue resolutions** is a separate scheduled GitHub Actions workflow
-on GitHub-hosted Ubuntu runners. It runs approximately every 15 minutes and on
-published releases. It uses no Copilot/LLM, local session, local daemon, or
+on GitHub-hosted Ubuntu runners. It runs on pushes to `main`, published releases
+and a 15-minute schedule. It uses no Copilot/LLM, local session, local daemon, or
 self-hosted runner. It does not run inside Fastlane, delay a release, rebuild
 anything, or change App Store Connect. Ordinary new-report matching remains a
 separate hosted bridge operation.
@@ -471,19 +471,21 @@ the actual trailer block never enroll a report.
 
 For each declaration it:
 
-1. Leaves the issue open and records `awaiting release`, with a bot-owned comment
-   identifying the fixing commit and affected platforms.
+1. For a complete fix on `main`, posts the fixing commit and affected platforms,
+   adds `awaiting release`, and closes GitHub as completed. The notice says the
+   fix is coming in the next TestFlight, not that it is available. A release-branch
+   fix not on `main` still requires verified delivery on all affected platforms to close.
 2. Verifies actual external availability using the same read-only Apple checks
    as build announcements. A published GitHub release and matching tagged
    catalog must also exist; the fixing commit must be an ancestor of that exact
    source. Uploads, internal builds, pending review, and unrelated tags do not
    qualify.
 3. Records the first **observed and verified** delivered build for each affected
-   platform. Partial availability is reported but does not close the issue.
+   platform. A closed, labeled issue with the matching bot receipt still receives updates.
    Numeric dotted builds remain distinct. A build disappearing later does not
-   erase its recorded delivery history, but closing still requires a qualifying
+   erase its recorded delivery history, but a delivery announcement still requires a qualifying
    currently available build on every affected platform.
-4. Posts a new build-specific delivery comment, closes GitHub as completed, then
+4. Posts a new build-specific delivery comment, removes `awaiting release`, then
    mirrors that comment and archives every already-linked Discord report.
    Archival is not deletion or locking: history remains accessible, and a new
    reply can reopen an unlocked Discord post.
@@ -499,8 +501,8 @@ recognized Git reverts fail closed. Malformed declarations quarantine their
 referenced issues rather than block unrelated valid fixes; a new complete
 declaration after the malformed commit supersedes its issue's quarantine; the
 historical error clears once every affected issue is superseded. Unidentifiable malformed
-declarations also block older candidates. The run reports declaration errors and
-exits unsuccessfully even when unrelated reports synchronize successfully.
+declarations also block older candidates. Quarantined declarations produce warnings
+without failing unrelated work. API or verification failures still fail the run.
 After withdrawing
 an implementation, remove its `awaiting release` label; a replacement needs a
 new complete-fix declaration. As with any explicit resolution marker, maintainers

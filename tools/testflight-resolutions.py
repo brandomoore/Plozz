@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resolve explicitly declared fixes after external TestFlight delivery, without an LLM."""
+"""Close explicitly declared main fixes and separately notify verified TestFlight delivery."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ PLATFORMS = {"tvOS": "TV_OS", "iOS": "IOS"}
 NAMES = {"tvOS": "Apple TV", "iOS": "iPhone and iPad"}
 DECLARATION_KEYS = ("TestFlight-Issue:", "TestFlight-Fix:")
 TRAILER = re.compile(
-    r"(?:TestFlight-Issue: |TestFlight-Fix: #)([1-9][0-9]*) \[(tvOS|iOS|tvOS,iOS|iOS,tvOS)\]"
+    r"(?:TestFlight-Issue: |TestFlight-Fix: #)([1-9][0-9]*) \[(tvOS|iOS|tvOS, *iOS|iOS, *tvOS)\]"
 )
 SESSION_FOOTER = re.compile(
     r"\n\n+(Copilot-Session: [0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\s*\Z"
@@ -79,7 +79,7 @@ def commit_declarations(commit, body):
         if number in seen:
             raise InvalidDeclaration(f"{commit}: issue #{number} is declared more than once.")
         seen.add(number)
-        result.append({"issue": number, "commit": commit, "platforms": sorted(match[2].split(","))})
+        result.append({"issue": number, "commit": commit, "platforms": sorted(p.strip() for p in match[2].split(","))})
     return result
 
 
@@ -157,7 +157,7 @@ def delivered_releases(apple, github, minimum):
     return result
 
 
-def resolution_body(receipt):
+def resolution_body(receipt, *, on_main=False):
     metadata = BRIDGE.RESOLUTION_HEADER + json.dumps(receipt, sort_keys=True, separators=(",", ":")) + " -->"
     lines = []
     for platform in BRIDGE.RESOLUTION_PLATFORMS:
@@ -170,9 +170,10 @@ def resolution_body(receipt):
     missing = set(receipt["platforms"]) - set(receipt["deliveries"])
     if missing:
         names = ", ".join(NAMES[p] for p in BRIDGE.RESOLUTION_PLATFORMS if p in missing)
-        text = f"Implemented; **awaiting external TestFlight availability for {names}**. This issue stays open until delivery."
+        text = (f"Fixed on `main`. The fix is coming in the next TestFlight release for {names}."
+                if on_main else f"Implemented; **awaiting external TestFlight availability for {names}**.")
     elif receipt["status"] == "awaiting_release":
-        text = "Delivery history is recorded below. This issue stays open until a qualifying build is currently available on every affected platform."
+        text = "Delivery history is recorded below. A current build has not been verified for every affected platform."
     else:
         text = f"The fix has reached external TestFlight testers. [Update in TestFlight]({ANNOUNCEMENTS.TESTFLIGHT})."
     if lines:
@@ -231,10 +232,17 @@ def resolve_issues(github, fixes, releases, *, publish=False):
             issue = github.call("GET", path)
             if "pull_request" in issue:
                 raise Error(f"#{number} is a pull request, not an issue.")
-            if issue["state"] != "open":
+            closed = issue["state"] == "closed"
+            if closed and (issue.get("state_reason") != "completed" or
+                           AWAITING_LABEL not in {label["name"] for label in issue.get("labels", [])}):
                 continue
             comments = github.pages(path + "/comments")
             comment, receipt = fix_record(comments, fix)
+            if closed and comment is None and not any(
+                prior and prior["status"] == "awaiting_release" and ancestor(prior["commit"], fix["commit"])
+                for prior in (BRIDGE.release_resolution(c, number) for c in comments)
+            ):
+                continue  # Follow a superseding declaration, but never enroll by label alone.
             previously_delivered = receipt["status"] == "delivered"
             declared_at = datetime.fromisoformat(git("show", "-s", "--format=%cI", fix["commit"]))
             if was_reopened(github, number, declared_at):
@@ -243,6 +251,7 @@ def resolve_issues(github, fixes, releases, *, publish=False):
             if reverted(fix["commit"], "HEAD"):
                 print(f"WARNING: issue #{number}'s fixing commit was reverted; leaving it open.")
                 continue
+            on_main = ancestor(fix["commit"], "HEAD")
             available = set()
             for release in releases:
                 if not ancestor(fix["commit"], release["source"]) or reverted(fix["commit"], release["source"]):
@@ -254,15 +263,21 @@ def resolve_issues(github, fixes, releases, *, publish=False):
                             key: release[key] for key in ("build", "version", "tag", "source")
                         })
             ready = available == set(fix["platforms"])
+            if not on_main and not available:
+                continue
             if ready:
                 receipt["status"] = "delivered"
-            body = resolution_body(receipt)
-            print(f"Issue #{number}: {'delivered; close' if ready else 'awaiting release'} ({'sync' if publish else 'check'})")
+            elif previously_delivered:
+                # An expired build does not retract an already verified delivery.
+                continue
+            body = resolution_body(receipt, on_main=on_main)
+            close = not closed and (on_main or ready)
+            print(f"Issue #{number}: {receipt['status']}{'; close' if close else ''} ({'sync' if publish else 'check'})")
             if not publish:
                 continue
             # Recheck after the source/API reads; do not overwrite a new human decision.
             current = github.call("GET", path)
-            if current["state"] != "open" or current["updated_at"] != issue["updated_at"]:
+            if current["state"] != issue["state"] or current["updated_at"] != issue["updated_at"]:
                 print(f"WARNING: issue #{number} changed during verification; deferred to the next run.")
                 continue
             if comment is None or (ready and not previously_delivered):
@@ -271,15 +286,16 @@ def resolve_issues(github, fixes, releases, *, publish=False):
                 github.call("PATCH", f"/repos/{BRIDGE.REPO}/issues/comments/{comment['id']}", {"body": body})
             if not ready:
                 ensure_awaiting_label(github, current)
-                continue
             if was_reopened(github, number, declared_at):
                 print(f"WARNING: issue #{number} was reopened during notification; not closing it.")
                 continue
             current = github.call("GET", path)
-            if current["state"] != "open":
+            if current["state"] != issue["state"]:
                 continue
-            if AWAITING_LABEL in {label["name"] for label in current.get("labels", [])}:
+            if ready and AWAITING_LABEL in {label["name"] for label in current.get("labels", [])}:
                 github.call("DELETE", path + "/labels/" + quote(AWAITING_LABEL, safe=""))
+            if not close:
+                continue
             github.call("PATCH", path, {"state": "closed", "state_reason": "completed"})
             verified = github.call("GET", path)
             if verified["state"] != "closed" or verified.get("state_reason") != "completed":
@@ -301,13 +317,18 @@ def main():
             raise Error("TestFlight issue resolution is not explicitly enabled.")
         github = BRIDGE.API("GitHub", os.environ.get("GITHUB_TOKEN"), write=publish)
         failures = []
+        releases = []
         try:
             releases = delivered_releases(
                 BRIDGE.API("App Store Connect", ANNOUNCEMENTS.apple_token()), github,
                 NOTES.build_parts(os.environ.get("TESTFLIGHT_DISCORD_MIN_BUILD", "")),
             )
+        except (Error, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+            failures.append(str(error) if isinstance(error, Error) else "External release verification failed.")
+        try:
             fixes, declaration_failures = declared_fixes(("HEAD", *(release["source"] for release in releases)))
-            failures.extend(declaration_failures)
+            for warning in declaration_failures:
+                print(f"WARNING: {warning}", file=sys.stderr)
             resolve_issues(github, fixes, releases, publish=publish)
             if not fixes:
                 print("No eligible TestFlight declarations on main or available release tags; no GitHub issues changed.")

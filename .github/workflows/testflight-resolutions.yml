@@ -2,15 +2,7 @@ name: TestFlight issue resolutions
 
 on:
   push:
-    paths:
-      - .github/workflows/testflight-resolutions.yml
-      - tools/testflight-resolutions.py
-      - tools/testflight-discord.py
-      - tools/discord-bridge.py
-      - tools/release-notes.py
-      - tools/tests/test_testflight_resolutions.py
-      - tools/tests/test_testflight_discord.py
-      - tools/tests/test_discord_bridge.py
+    branches: [main]
   release:
     types: [published]
   schedule:
@@ -18,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Preview delivery-gated resolutions, or synchronize GitHub and Discord.
+        description: Preview main fixes and TestFlight deliveries, or synchronize GitHub and Discord.
         type: choice
         options: [check, sync]
         default: check
@@ -68,7 +60,7 @@ jobs:
         run: python3 -m pip install --disable-pip-version-check -r tools/testflight-discord-requirements.txt
       - name: Offline regression tests
         run: python3 -m unittest discover -s tools/tests -p 'test_*discord*.py' && python3 -m unittest discover -s tools/tests -p 'test_testflight_resolutions.py'
-      - name: Resolve delivered fixes without model calls
+      - name: Close merged fixes and notify verified deliveries
         env:
           GITHUB_TOKEN: ${{ github.token }}
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}

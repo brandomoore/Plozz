@@ -93,8 +93,9 @@ TestFlight), unless a maintainer requests one; feature requests can precede code
 
 Reference existing issues in the fixing commit itself with `Refs #123`
 (`Refs owner/repo#123` across repositories), not just in the PR.
-For app changes, never use closing keywords (`Fixes`, `Closes`, `Resolves`):
-reports stay open until affected platforms reach external TestFlight.
+For app changes, never use closing keywords (`Fixes`, `Closes`, `Resolves`).
+The watcher closes a declared complete fix when it reaches `main` and tells
+reporters it is coming in the next TestFlight. Closure does not mean delivery.
 When the whole report is implemented, add one trailer per issue:
 
 ```text
@@ -110,7 +111,8 @@ only `Refs`; reopened issues need a new declaration. Never use
 `TestFlight-Fix: #...`: GitHub treats it as an immediate closing reference.
 
 The [delivery watcher](../docs/discord-bridge.md#delivery-gated-issue-resolution)
-verifies release availability before closing GitHub and linked Discord reports.
+posts the build number on the closed GitHub issue and archives linked Discord
+reports only after verifying external availability on every affected platform.
 Non-app issue closure remains maintainer-managed.
 
 ### Preserving contribution credit

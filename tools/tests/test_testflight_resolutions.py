@@ -2,7 +2,7 @@
 """Offline regression coverage for the hosted, delivery-gated issue watcher."""
 
 import copy
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 import importlib.util
 import io
 import json
@@ -104,23 +104,42 @@ def resolve(github, releases=(), publish=True, fixes=None):
 
 
 class ResolutionTests(unittest.TestCase):
-    def test_merged_only_stays_open_and_marks_awaiting_release_once(self):
+    def test_quarantine_warns_but_service_errors_still_fail_after_processing_main(self):
+        for unavailable in (False, True):
+            with (self.subTest(unavailable=unavailable),
+                  patch("sys.argv", ["watcher", "--mode", "check"]),
+                  patch.dict("os.environ", {"DISCORD_BRIDGE_ENABLED": "false"}),
+                  patch.object(BRIDGE, "API"), patch.object(APP.ANNOUNCEMENTS, "apple_token"),
+                  patch.object(APP.NOTES, "build_parts"),
+                  patch.object(APP, "delivered_releases", return_value=[],
+                               side_effect=APP.Error("Apple unavailable") if unavailable else None),
+                  patch.object(APP, "declared_fixes", return_value=([FIX], ["competing declarations"])),
+                  patch.object(APP, "resolve_issues") as resolve_main,
+                  redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as diagnostics):
+                self.assertEqual(APP.main(), int(unavailable))
+                self.assertIn("WARNING: competing declarations", diagnostics.getvalue())
+                resolve_main.assert_called_once()
+                self.assertEqual(resolve_main.call_args.args[1:], ([FIX], []))
+
+    def test_merged_fix_closes_and_marks_awaiting_release_once(self):
         github = ResolutionGitHub()
         github.label_exists = False
         resolve(github)
-        self.assertEqual(github.issue["state"], "open")
+        self.assertEqual(github.issue["state"], "closed")
+        self.assertEqual(github.issue["state_reason"], "completed")
         self.assertIn({"name": APP.AWAITING_LABEL}, github.issue["labels"])
-        self.assertIn("awaiting external TestFlight", github.comments[0]["body"])
+        self.assertIn("next TestFlight release", github.comments[0]["body"])
+        self.assertNotIn("has reached external", github.comments[0]["body"])
         count = len(github.writes)
         resolve(github)
         self.assertEqual(len(github.writes), count)
 
-    def test_partial_delivery_waits_then_posts_a_new_build_comment_before_closing(self):
+    def test_partial_delivery_updates_closed_issue_then_posts_one_build_comment(self):
         github = ResolutionGitHub()
         resolve(github, [release(platforms=("TV_OS",))])
-        self.assertEqual(github.issue["state"], "open")
+        self.assertEqual(github.issue["state"], "closed")
         self.assertIn("build 59.4", github.comments[0]["body"])
-        self.assertIn("awaiting external TestFlight availability for iPhone and iPad", github.comments[0]["body"])
+        self.assertIn("next TestFlight release for iPhone and iPad", github.comments[0]["body"])
         resolve(github, [release()])
         self.assertEqual(github.issue["state"], "closed")
         self.assertEqual(github.issue["state_reason"], "completed")
@@ -141,11 +160,20 @@ class ResolutionTests(unittest.TestCase):
         self.assertEqual(receipt["deliveries"]["tvOS"]["build"], "59.4")
         self.assertEqual(receipt["deliveries"]["iOS"]["build"], "59.5")
 
+    def test_followup_fix_before_release_notifies_the_already_closed_issue(self):
+        github = ResolutionGitHub()
+        resolve(github)
+        followup = {**FIX, "commit": "c" * 40}
+        resolve(github, [release()], fixes=[followup])
+        receipt = BRIDGE.release_resolution(github.comments[-1], FIX["issue"])
+        self.assertEqual((receipt["commit"], receipt["status"]), (followup["commit"], "delivered"))
+        self.assertNotIn({"name": APP.AWAITING_LABEL}, github.issue["labels"])
+
     def test_expired_partial_delivery_waits_and_later_creates_a_new_delivery_notification(self):
         github = ResolutionGitHub()
         resolve(github, [release("59.4", ("TV_OS",))])
         resolve(github, [release("59.5", ("IOS",))])
-        self.assertEqual(github.issue["state"], "open")
+        self.assertEqual(github.issue["state"], "closed")
         self.assertEqual(len(github.comments), 1)
         self.assertEqual(BRIDGE.release_resolution(github.comments[0], 177)["status"], "awaiting_release")
         resolve(github, [release("59.5")])
@@ -174,6 +202,17 @@ class ResolutionTests(unittest.TestCase):
             ):
                 APP.resolve_issues(github, [FIX], [release()], publish=True)
             self.assertEqual(github.issue["state"], "open")
+
+    def test_branch_only_fix_waits_for_all_affected_platforms(self):
+        github = ResolutionGitHub()
+        with (patch.object(APP, "ancestor", side_effect=lambda commit, source: source != "HEAD"),
+              patch.object(APP, "reverted", return_value=False),
+              patch.object(APP, "git", return_value="2026-10-20T00:00:00+00:00")):
+            APP.resolve_issues(github, [FIX], [release(platforms=("IOS",))], publish=True)
+            self.assertEqual(github.issue["state"], "open")
+            self.assertNotIn("on `main`", github.comments[0]["body"])
+            APP.resolve_issues(github, [FIX], [release()], publish=True)
+            self.assertEqual(github.issue["state"], "closed")
 
     def test_ambiguous_notification_does_not_duplicate_and_failed_close_recovers(self):
         for field in ("fail_after_comment", "fail_before_close", "fail_after_close"):
@@ -232,7 +271,7 @@ class ResolutionTests(unittest.TestCase):
         resolve(github)
         github.comments[0]["user"]["login"] = "someone"
         resolve(github, [release()])
-        self.assertEqual(len(github.comments), 2)
+        self.assertEqual(len(github.comments), 1, "A human receipt cannot enroll a closed issue.")
         other = ResolutionGitHub()
         resolve(other)
         other.comments.append(copy.deepcopy(other.comments[0]))
@@ -291,6 +330,8 @@ class SourceTests(unittest.TestCase):
         self.assertEqual(APP.declared_fixes(), ([{"issue": 177, "commit": first, "platforms": ["tvOS"]}], []))
         latest = self.commit("Follow-up fix\n\nRefs #177\n\nTestFlight-Issue: 177 [tvOS,iOS]")
         self.assertEqual(APP.declared_fixes(), ([{**FIX, "commit": latest}], []))
+        spaced = self.commit("Follow-up\n\nTestFlight-Issue: 177 [tvOS, iOS]")
+        self.assertEqual(APP.declared_fixes(), ([{**FIX, "commit": spaced}], []))
 
     def test_malformed_trailer_and_standard_revert_fail_closed(self):
         fixed = self.commit("Fix\n\nTestFlight-Fix: #177 [tvOS]")
