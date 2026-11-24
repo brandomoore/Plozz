@@ -342,6 +342,24 @@ part of the curation task identity so a genuinely empty response still finishes
 curation and removes its placeholder. Existing profile, visibility, and
 resume-snapshot restrictions continue to govern cached heroes.
 
+On mobile, when the profile picker hands off to Home, the authorized viewer's
+ordinary Home loads behind the picker. The selected avatar and the name below
+it move to the center together as the other profiles fade away. Once the pair
+has landed and Home is ready (or its wait has timed out), the picker holds for
+another 600 ms before fading. With Reduce Motion, the pair appears at the
+center without travel and the picker dismisses without the hold or fade. Loading never
+waits for an animation. Home reports readiness from the same presentation it
+draws: a configured hero with a usable item, media in the
+first ordered shelf, or the final empty/error screen. A lower shelf arriving
+first does not count. This signal does not request artwork or rows, and it does
+not mean every image has finished decoding. The entrance can end early and
+cannot wait indefinitely for a slow source. Measure from the **profile tap**,
+including the transition, rather than starting the clock when Home is revealed.
+
+Mobile Home evaluates its `HOMEFRAME` diagnostic key only when fan-out tracing
+is enabled. Building that key can read and decode the persisted Home snapshot
+on the UI thread; normal scrolling does not need that diagnostic read.
+
 Home shares its measured viewport width with loaded and skeleton rails.
 `PlozziOSHomeRowSlot` reserves each row's footprint using the real card sizing
 primitives, heading, captions, and current layout settings. Loading, populated,
@@ -351,6 +369,14 @@ Long status messages can scroll inside the reserved row instead of expanding
 the page. Browse headings reserve chevron space before their action is available;
 only actionable headings are buttons, with the native 44-point touch target.
 Library, featured, Continue Watching, and Live TV rows use their own geometry.
+
+Ordinary Home cards open detail and do not observe the page's Play handler.
+The detail page computes its own unscaled layout metrics when opened; browsing
+the rail does not calculate a detail layout for every card.
+Direct-play cards still open detail if no handler is installed. Download badges
+read the active profile's selected-version download index; mounting a card does
+not start a registry task or scan unrelated downloads for a source ID. Detail-art prewarming validates the current viewer
+once and uses that same scope for both the snapshot cache and bitmap replay.
 
 On iPad, landscape Continue Watching fits complete cards and matches the next
 poster card's visible peek at the same viewport width. Standard density uses

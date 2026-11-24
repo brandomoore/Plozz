@@ -114,6 +114,18 @@ final class ProfileFlowModelTests: XCTestCase {
         await env.plex.waitForPlexPINRequirementCheck()
         XCTAssertFalse(env.flow.isPresentingProfileSelection)
         XCTAssertNil(env.plex.pendingPlexPINRequest)
+        env.flow.finishProfilePickerPresentation()
+
+        let identity = env.plex.plexIdentityGeneration
+        env.flow.requestProfileSelection()
+        env.flow.selectProfileFromPicker(to: profile.id)
+        await env.plex.waitForPlexPINRequirementCheck()
+        XCTAssertFalse(env.flow.isPresentingProfileSelection)
+        XCTAssertFalse(env.flow.profilePickerOwnsAuthorization)
+        XCTAssertNil(env.flow.pendingLockedProfile)
+        XCTAssertNil(env.plex.pendingPlexPINRequest)
+        XCTAssertEqual(env.plex.plexIdentityGeneration, identity)
+        XCTAssertEqual(env.plex.resolvedToken(for: "plex"), "parent-server")
     }
 
     func testForegroundDepartureRevokesPickerPresentationAndPINAttempt() {

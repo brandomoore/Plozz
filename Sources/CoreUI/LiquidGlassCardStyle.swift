@@ -19,6 +19,9 @@ public struct PlozzGlassCardModifier: ViewModifier {
     @Environment(\.plozzNativeFocusSurface) private var nativeSurface
     @Environment(\.plozzRestingCardSurface) private var restingSurface
     @Environment(\.plozzGradientCardSurface) private var gradientSurface
+    #if os(tvOS)
+    @Environment(\.gradientBackgroundsEnabled) private var gradientEnabled
+    #endif
 
     public init(cornerRadius: CGFloat, isFocused: Bool, glassAtRest: Bool = true) {
         self.cornerRadius = cornerRadius
@@ -59,21 +62,22 @@ public struct PlozzGlassCardModifier: ViewModifier {
         if nativeSurface {
             content
         } else if reduceTransparency {
-            // Reduce Transparency on: never lean on translucency. At REST use the
-            // shared elevation surface (identical to the glass branch below and to
-            // every other card), so a card looks the same regardless of this
-            // setting. Focus keeps the strong opaque white "lift".
+            #if os(tvOS)
+            let idleSurface = gradientEnabled ? palette.opaqueGradientSurface : palette.raised
+            #else
+            let idleSurface = palette.raised
+            #endif
             content
                 .background {
                     if isFocused {
                         shape.fill(palette.liftSurface)
                     } else if glassAtRest {
-                        shape.fill(palette.raised.fill)
+                        shape.fill(idleSurface.fill)
                     }
                 }
                 .overlay {
-                    if !isFocused && glassAtRest, let border = palette.raised.border {
-                        shape.strokeBorder(border, lineWidth: palette.raised.borderWidth)
+                    if !isFocused && glassAtRest, let border = idleSurface.border {
+                        shape.strokeBorder(border, lineWidth: idleSurface.borderWidth)
                     }
                 }
                 .clipShape(shape)

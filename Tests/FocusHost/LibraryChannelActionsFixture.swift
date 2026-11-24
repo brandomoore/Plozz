@@ -1,7 +1,7 @@
 import CoreModels
 import CoreUI
 import FeatureLiveTVCore
-import FeaturePlayback
+@testable import FeaturePlayback
 import Observation
 import SwiftUI
 import UIKit
@@ -36,7 +36,12 @@ struct LibraryChannelActionsFixture: View {
     }
 
     var body: some View {
-        if ToolbarFootageView.requested {
+        if ProcessInfo.processInfo.arguments.contains("--more-first-transport") {
+            LiveTransportFocusHost()
+                .ignoresSafeArea()
+                .environment(\.themePalette, .dark)
+                .environment(\.colorScheme, .dark)
+        } else if ToolbarFootageView.requested {
             player.ignoresSafeArea()
                 .environment(\.themePalette, .dark)
                 .environment(\.colorScheme, .dark)
@@ -121,6 +126,135 @@ struct LibraryChannelActionsFixture: View {
     }
 }
 
+/// Uses the production overlay and its real FocusState binding. The native owner
+/// can refuse directional geometry, but never sends a recovery or remote input.
+private struct LiveTransportFocusHost: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Owner { Owner() }
+    func updateUIViewController(_ controller: Owner, context: Context) {}
+
+    final class Owner: UIHostingController<LiveTransportFocusFixture> {
+        private final class Report: UILabel {
+            var read: (() -> String?)?
+            override var accessibilityValue: String? {
+                get { read?() }
+                set {}
+            }
+        }
+
+        private let report = Report()
+        private weak var initialItem: (any UIFocusItem)?
+        private var initialFrame: CGRect?
+        private var rejected = 0
+        private var failed = 0
+        private var headings: [UInt] = []
+        private let rejectsGeometry = ProcessInfo.processInfo.arguments.contains("--reject-more-geometry")
+
+        init() { super.init(rootView: LiveTransportFocusFixture()) }
+        @MainActor required dynamic init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func viewDidLoad() {
+            super.viewDidLoad()
+            report.accessibilityIdentifier = "live-transport-native-focus"
+            report.text = "Native focus"
+            report.font = .systemFont(ofSize: 10)
+            report.textColor = .white
+            report.isUserInteractionEnabled = false
+            report.read = { [weak self] in self?.nativeReport }
+            view.addSubview(report)
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(movementFailed(_:)),
+                name: UIFocusSystem.movementDidFailNotification, object: nil
+            )
+        }
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            report.frame = CGRect(x: 60, y: 30, width: view.bounds.width - 120, height: 24)
+            view.bringSubviewToFront(report)
+        }
+
+        override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
+            if rejectsGeometry, context.previouslyFocusedItem === initialItem,
+               context.focusHeading == .left || context.focusHeading == .down {
+                rejected += 1
+                return false
+            }
+            return super.shouldUpdateFocus(in: context)
+        }
+
+        override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+            super.didUpdateFocus(in: context, with: coordinator)
+            if initialFrame == nil, let next = context.nextFocusedItem {
+                initialItem = next
+                initialFrame = NativeFocusRegion.frame(of: next, in: view)
+            }
+            headings.append(context.focusHeading.rawValue)
+        }
+
+        @objc private func movementFailed(_ notification: Notification) {
+            guard let context = notification.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
+                as? UIFocusUpdateContext,
+                NativeFocusRegion.frame(of: context.previouslyFocusedItem, in: view) != nil else { return }
+            failed += 1
+        }
+
+        private var nativeReport: String {
+            let item = view.window.flatMap { UIFocusSystem.focusSystem(for: $0)?.focusedItem }
+            let frame = NativeFocusRegion.frame(of: item, in: view)
+            return [
+                "initial=\(initialFrame.map(NSCoder.string(for:)) ?? "nil")",
+                "current=\(frame.map(NSCoder.string(for:)) ?? "nil")",
+                "initialMatchesCurrent=\(initialItem === item)",
+                "rejected=\(rejected)", "failed=\(failed)",
+                "headings=\(headings.map(String.init).joined(separator: ","))"
+            ].joined(separator: " | ")
+        }
+
+        deinit { NotificationCenter.default.removeObserver(self) }
+    }
+}
+
+private struct LiveTransportFocusFixture: View {
+    @State private var tracks = LiveChannelPlayerModel(
+        engine: ChannelActionsEngine(item: nil),
+        streamURL: URL(string: "https://fixture.invalid/live.m3u8")!
+    )
+    @State private var ready = false
+    @FocusState private var focus: LiveChannelControl?
+    private let now = Date()
+
+    var body: some View {
+        ZStack {
+            Color.black
+            if ready {
+                LiveChannelOverlay(
+                    title: "Fixture Channel", logoURL: nil, plozzChannelID: nil,
+                    channelID: "fixture",
+                    input: .stream(url: URL(string: "https://fixture.invalid/live.m3u8")!, httpHeaders: [:]),
+                    program: .init(title: "Current programme", start: now.addingTimeInterval(-240),
+                                   end: now.addingTimeInterval(356)),
+                    earlierPrograms: [], libraryItem: nil, openLibraryItem: nil,
+                    phase: .paused, isAtLiveEdge: false, behindLiveSeconds: 56,
+                    canPause: true, canGoLive: true, seekWindowSeconds: 1_800,
+                    onSeekBy: { _ in }, onSeekBehindLive: { _ in }, focus: $focus,
+                    onClose: {}, onPrevious: {}, onPlayPause: {}, onGoLive: {}, onNext: {},
+                    onMultiview: {}, guideContent: { _ in AnyView(Text("Fixture guide")) },
+                    pendingGuideOpen: false, consumeGuideOpen: {}, onGuideCardChange: { _ in },
+                    loadOnNow: { [] }, onTuneChannel: nil, tracks: tracks,
+                    diagnosticsEnabled: false, toggleDiagnostics: {},
+                    onTracksPresentationChange: { _ in }, onControlActivity: {}, onDismissControls: {}
+                )
+                .onAppear { focus = .playback }
+            }
+        }
+        .task {
+            await tracks.start()
+            ready = true
+        }
+        .onDisappear { tracks.stop() }
+    }
+}
+
 @MainActor @Observable
 private final class ChannelActionsEngine: LiveChannelEngine {
     let currentLibraryItem: LibraryChannelItem?
@@ -138,12 +272,15 @@ private final class ChannelActionsEngine: LiveChannelEngine {
     var duration: TimeInterval { 1_800 }
     var furthestObservedPosition: TimeInterval { 100 }
     var supportsConcurrentPlayback: Bool { ToolbarFootageView.requested }
-    var capabilities: PlayerEngineCapabilities { ToolbarFootageView.requested ? [.videoZoom] : [] }
-    var audioTracks: [MediaTrack] { ToolbarFootageView.requested ? [
+    private var hasTransportTracks: Bool {
+        ToolbarFootageView.requested || ProcessInfo.processInfo.arguments.contains("--more-first-transport")
+    }
+    var capabilities: PlayerEngineCapabilities { hasTransportTracks ? [.videoZoom] : [] }
+    var audioTracks: [MediaTrack] { hasTransportTracks ? [
         .init(id: 1, kind: .audio, displayTitle: "English", language: "en"),
         .init(id: 2, kind: .audio, displayTitle: "Commentary", language: "en")
     ] : [] }
-    var subtitleTracks: [MediaTrack] { ToolbarFootageView.requested ? [
+    var subtitleTracks: [MediaTrack] { hasTransportTracks ? [
         .init(id: 3, kind: .subtitle, displayTitle: "English", language: "en")
     ] : [] }
     var currentAudioTrackID: Int? { nil }
@@ -156,7 +293,7 @@ private final class ChannelActionsEngine: LiveChannelEngine {
     @ObservationIgnored var onSecondarySubtitleCues: (@MainActor ([SubtitleCue]) -> Void)?
     @ObservationIgnored var onLiveSourceReset: (@MainActor () -> Void)?
 
-    init(item: LibraryChannelItem) {
+    init(item: LibraryChannelItem?) {
         currentLibraryItem = ToolbarFootageView.requested ? nil : item
         if ToolbarFootageView.requested {
             liveSnapshot.position = 1_744

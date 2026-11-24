@@ -732,7 +732,8 @@ private struct PINKeyBody: View {
 
     var body: some View {
         configuration.label
-            .foregroundStyle(palette.primaryText)
+            // The fallback focus plate is white in every palette.
+            .foregroundStyle(isHighlighted ? .black : palette.primaryText)
             .frame(width: width, height: PINMetrics.keyDiameter)
             // The app's own liquid-glass card surface, cornered to a capsule.
             // Using it rather than a hand-rolled fill means the keys pick up the

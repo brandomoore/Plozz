@@ -80,6 +80,7 @@ struct HomeHeroInteractionFixture: View {
     @State private var pull = PlozziOSHomeHeroPullModel()
     @State private var actions = HeroInteractionActions()
     @State private var playCount = 0
+    @State private var lastHeroPlay = ""
     @State private var settingsCount = 0
     @State private var isMuted = true
     @State private var presentsSeasons = false
@@ -171,10 +172,15 @@ struct HomeHeroInteractionFixture: View {
                 showsPageActions: usesScrollingPageActions
             ) {
                 PlozziOSHomeHeroCarousel(
-                    items: HeroInteractionProvider.slides,
+                    items: HeroInteractionProvider.checksEpisodePlay ? [HeroInteractionProvider.slides[1]] : HeroInteractionProvider.slides,
                     autoAdvance: testsAutoAdvance,
                     autoAdvanceSeconds: 3,
-                    onPlay: { _ in playCount += 1 },
+                    onPlay: { item in
+                        playCount += 1
+                        if HeroInteractionProvider.checksMoviePlay || HeroInteractionProvider.checksEpisodePlay {
+                            lastHeroPlay = "\(item.sourceAccountID ?? "-")/\(item.id):\(item.title)"
+                        }
+                    },
                     onPinnedItemsChanged: { pinnedIDs = $0.sorted().joined(separator: ",") },
                     isFrontmost: homePageIsVisible && !presentsSeasons,
                     pullModel: pull
@@ -272,6 +278,10 @@ struct HomeHeroInteractionFixture: View {
         .overlay(alignment: .bottomTrailing) {
             VStack {
                 Text(verbatim: "\(playCount)").accessibilityIdentifier("hero-play-count")
+                if HeroInteractionProvider.checksMoviePlay || HeroInteractionProvider.checksEpisodePlay {
+                    Text(verbatim: lastHeroPlay).accessibilityIdentifier("hero-play-payload")
+                    Text(verbatim: "\(seriesLookup.playableDetailRequests)").accessibilityIdentifier("hero-play-detail-reads")
+                }
                 Text(verbatim: "\(actions.watchlistCount)").accessibilityIdentifier("hero-watchlist-count")
                 Text(verbatim: "\(settingsCount)").accessibilityIdentifier("hero-settings-count")
                 if ProcessInfo.processInfo.arguments.contains("--hero-series-loading") {
@@ -341,8 +351,10 @@ private final class HeroInteractionActions: MediaItemActionHandling {
 @Observable
 private final class HeroInteractionLookupGate {
     private(set) var requests = 0
+    private(set) var playableDetailRequests = 0
     private var completions = 0
 
+    func recordPlayableRead() { playableDetailRequests += 1 }
     func complete() { completions += 1 }
 
     func wait(remainsOpen: Bool) async throws {
@@ -359,6 +371,8 @@ private final class HeroInteractionLookupGate {
 }
 
 private struct HeroInteractionProvider: MediaProvider {
+    static var checksEpisodePlay: Bool { ProcessInfo.processInfo.arguments.contains("--hero-hydrated-episode") }
+    static var checksMoviePlay: Bool { ProcessInfo.processInfo.arguments.contains("--hero-hydrated-play") }
     static var hasDetailTrailer: Bool { ProcessInfo.processInfo.arguments.contains("--hero-detail-trailer") }
     static let clip = MediaItem(id: "local-trailer", title: "Trailer", kind: .video, isTrailer: true)
     let kind: ProviderKind
@@ -428,6 +442,10 @@ private struct HeroInteractionProvider: MediaProvider {
             throw AppError.notFound
         }
         item.overview = "Details for \(item.id) from \(account.id)"
+        if (Self.checksEpisodePlay && item.id == "episode") || (Self.checksMoviePlay && item.id == "movie") {
+            await seriesLookup?.recordPlayableRead()
+            item.title = Self.checksEpisodePlay ? "Hydrated Episode" : "Hydrated Movie"
+        }
         return item
     }
     func children(of itemID: String) async throws -> [MediaItem] { [] }

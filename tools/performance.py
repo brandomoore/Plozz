@@ -154,6 +154,13 @@ SCENARIOS = {
         }
         for provider in ("plex", "jellyfin", "subsonic")
     },
+    "showcase-series-live-jellyfin": {
+        "suite": "network", "target": "AppRuntimeTests", "platforms": ["tvOS"], "explicitOnly": True,
+        "test": "LiveHomeContentTests/testPerformanceJellyfinShowcaseSeries",
+        "file": "Tests/AppRuntimeTests/LiveHomeContentTests.swift",
+        "description": "Authorized live Jellyfin: compare prior and fixed Showcase enrichment of the same series, alternating order.",
+        "counters": ["priorCalls", "fixedCalls", "priorBytes", "fixedBytes", "priorMicroseconds", "fixedMicroseconds"],
+    },
     "home-jellyfin-live": {
         "suite": "network", "target": "FeatureHomeCoreTests", "explicitOnly": True,
         "test": "JellyfinHomePerformanceTests/testPerformanceLiveHome",
@@ -631,6 +638,16 @@ SCENARIOS = {
         "description": "New Home view graph with warm artwork; observe actual nested host fitting and automatic artwork publication.",
         "counters": ["realizedArtworkHosts", "rowContentSizeQueries", "rowContentPlacements",
                      "cardInputBuilds", "outerHostLayoutPasses"] + HOME_HOST_FITTING_COUNTERS,
+    },
+    **{
+        f"showcase-enrichment-{provider}": {
+            "suite": "ui", "platforms": ["tvOS"],
+            "test": f"ShowcaseEnrichmentPerformanceTests/test{provider.title()}",
+            "file": "Tests/FocusIntegrationTests/ShowcaseEnrichmentPerformanceTests.swift",
+            "description": "Showcase row enrichment with production providers and in-memory HTTP; refocus, Play, carousel and non-series controls.",
+            "counters": ["showcaseItemDetails", "showcaseSeriesChildren", "showcaseSeasonChildren",
+                         "warmRefocusRequests", "selectedSeriesPlayRequests", "carouselRequests", "movieAndEpisodeRequests"],
+        } for provider in ("jellyfin", "emby", "plex")
     },
     "home-series-artwork-identity": {
         "suite": "ui",

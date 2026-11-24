@@ -2,6 +2,88 @@ import XCTest
 
 @MainActor
 final class PlaybackOptionsRemoteTests: XCTestCase {
+    func testInitiallyFocusedMoreRecoversFirstRejectedLeft() {
+        checkInitiallyFocusedMoreEscape(.left, destination: "live-channel-subtitles")
+    }
+
+    func testInitiallyFocusedMoreRecoversFirstRejectedDown() {
+        checkInitiallyFocusedMoreEscape(.down, destination: "live-channel-timeline")
+    }
+
+    func testInitiallyFocusedMoreOpensAndNavigatesMenu() {
+        continueAfterFailure = false
+        let app = launchInitiallyFocusedMore()
+        XCUIRemote.shared.press(.select)
+        assertNativeFocus("player-settings-row-6", in: app, step: "menu-entry")
+        XCUIRemote.shared.press(.down)
+        assertNativeFocus("player-settings-row-0", in: app, step: "menu-down")
+        XCUIRemote.shared.press(.up)
+        assertNativeFocus("player-settings-row-6", in: app, step: "menu-up")
+        XCUIRemote.shared.press(.menu)
+        assertNativeFocus("live-channel-playback", in: app, step: "menu-return")
+        XCTAssertTrue(nativeTransportReport(app).contains("rejected=0"))
+    }
+
+    func testBehindLiveTransportEntersTimelineWithoutRemoteCorrection() {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--toolbar-footage", "--library-channel-actions", "--preview"]
+        app.launch()
+        defer { app.terminate() }
+        let watch = app.buttons["Watch channel"]
+        XCTAssertTrue(waitUntil { watch.exists && watch.hasFocus }, app.debugDescription)
+        XCUIRemote.shared.press(.select)
+        assertNativeFocus("live-channel-timeline", in: app, step: "normal-timeline-entry")
+        XCUIRemote.shared.press(.up)
+        assertNativeFocus("live-channel-go-live", in: app, step: "normal-first-up")
+    }
+
+    private func checkInitiallyFocusedMoreEscape(_ direction: XCUIRemote.Button, destination: String) {
+        continueAfterFailure = false
+        let app = launchInitiallyFocusedMore()
+        XCUIRemote.shared.press(direction)
+        assertNativeFocus(destination, in: app, step: "first-\(direction)")
+        let report = nativeTransportReport(app)
+        XCTAssertNotNil(report.range(of: #"rejected=[1-9]\d*"#, options: .regularExpression), report)
+        XCTAssertTrue(report.contains("failed=1"), report)
+    }
+
+    private func launchInitiallyFocusedMore() -> XCUIApplication {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--library-channel-actions", "--more-first-transport", "--reject-more-geometry"]
+        addTeardownBlock { app.terminate() }
+        app.launch()
+        assertNativeFocus("live-channel-playback", in: app, step: "before-any-input")
+        let report = nativeTransportReport(app)
+        XCTAssertTrue(report.contains("rejected=0"), report)
+        XCTAssertTrue(report.contains("failed=0"), report)
+        XCTAssertTrue(report.contains("initialMatchesCurrent=true"), report)
+        return app
+    }
+
+    private func nativeTransportReport(_ app: XCUIApplication) -> String {
+        app.staticTexts["live-transport-native-focus"].value as? String ?? ""
+    }
+
+    private func assertNativeFocus(_ id: String, in app: XCUIApplication, step: String) {
+        let focused = waitUntil { app.buttons[id].exists && app.buttons[id].hasFocus }
+        recordNativeFocus(in: app, step: step)
+        if !focused { capture("\(step)-focus-failure") }
+        XCTAssertTrue(focused, "\(step): expected \(id). \(app.debugDescription)")
+    }
+
+    private func recordNativeFocus(in app: XCUIApplication, step: String) {
+        let elements = app.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true"))
+            .allElementsBoundByIndex.map {
+                ["identifier": $0.identifier, "label": $0.label, "frame": String(describing: $0.frame)]
+            }
+        let attachment = XCTAttachment(string: "\(step)\n\(elements)\n\(app.debugDescription)")
+        attachment.name = "Native focus — \(step)"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        print("LIVE_TRANSPORT_NATIVE_FOCUS \(step) \(elements)")
+    }
+
     func testAudioSyncResetAndBack() throws {
         try checkSyncPanel(category: "Audio", syncLabel: "Audio Sync", valueID: "audio-sync-milliseconds", step: 10)
     }

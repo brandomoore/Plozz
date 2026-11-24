@@ -248,10 +248,9 @@ private struct SettingsGroupSurface<SurfaceShape: InsettableShape>: ViewModifier
             opaqueGradient: gradientEnabled && reduceTransparency
         ))
         #else
-        let translucent = gradientEnabled && !reduceTransparency
         content.modifier(PlozzSurfaceModifier(
             level: .raised, shape: shape,
-            surfaceOverride: translucent ? palette.gradientSurface : nil
+            surfaceOverride: gradientEnabled ? (reduceTransparency ? palette.opaqueGradientSurface : palette.gradientSurface) : nil
         ))
         #endif
     }

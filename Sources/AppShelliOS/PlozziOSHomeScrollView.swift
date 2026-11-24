@@ -26,6 +26,7 @@ enum PlozziOSHomeContentEntrance {
 
 struct PlozziOSObserveHomeContent: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.plozzHomeEntranceReady) private var profileEntrance
     @Binding var entrance: PlozziOSHomeContentEntrance
     let visibleContent: Bool?
 
@@ -33,7 +34,8 @@ struct PlozziOSObserveHomeContent: ViewModifier {
         content.onChange(of: visibleContent, initial: true) { _, hasMedia in
             guard let hasMedia, entrance != .revealed else { return }
             if hasMedia {
-                let fades = entrance == .waiting && !reduceMotion
+                // The profile overlay owns the reveal; don't uncover a second fade.
+                let fades = entrance == .waiting && !reduceMotion && profileEntrance == nil
                 withAnimation(fades ? .easeOut(duration: 0.35) : nil) { entrance = .revealed }
             } else {
                 entrance = .waiting

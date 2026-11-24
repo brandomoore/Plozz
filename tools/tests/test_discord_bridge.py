@@ -236,7 +236,7 @@ class SynchronizationTests(unittest.TestCase):
             synchronize(discord, github)
         self.assertEqual(github.writes, [])
 
-    def test_legacy_reply_edits_keep_headings_and_new_replies_only_update_status(self):
+    def test_legacy_reply_edits_keep_headings_and_new_replies_stay_on_github(self):
         discord, github = Discord(), GitHub()
         synchronize(discord, github)
         github.comments.append({
@@ -265,7 +265,7 @@ class SynchronizationTests(unittest.TestCase):
         self.assertEqual(first["embeds"][0]["title"], "GitHub #1 - old-maintainer")
         self.assertEqual(first["embeds"][0]["description"], "Edited first reply")
         status = BRIDGE.discord_records(discord.messages[THREAD], "issue:1")[0]["embeds"][0]
-        self.assertIn("Second reply", status["description"])
+        self.assertNotIn("Second reply", status["description"])
         self.assertEqual(BRIDGE.discord_records(discord.messages[THREAD], "comment:41:0"), [])
         self.assertFalse(any(method == "POST" for method, _, _ in discord.writes))
 
@@ -330,7 +330,9 @@ class SynchronizationTests(unittest.TestCase):
         self.assertEqual(len(github.issues), 1)
         self.assertEqual(github.issues[0]["state"], "closed")
         self.assertEqual(len(records(github, "report")), 1)
-        self.assertIn("Closed", discord.messages[THREAD][-1]["embeds"][0]["title"])
+        receipt = discord.messages[THREAD][-1]["embeds"][0]
+        self.assertIn("Your bug report was linked to an existing issue: [GitHub issue #1]", receipt["description"])
+        self.assertEqual(receipt["fields"], [])
         self.assertFalse(any("state" in data for _, _, data in github.writes))
         before = (len(github.writes), len(discord.writes))
         synchronize(discord, github, matcher)
@@ -398,68 +400,44 @@ class SynchronizationTests(unittest.TestCase):
             synchronize(discord, github)
         self.assertEqual(records(github, "votes")[0]["body"], old)
 
-    def test_closed_status_flows_to_discord_without_reopening_github(self):
+    def test_closing_github_alone_does_not_announce_a_fix(self):
         discord, github = Discord(), GitHub()
         synchronize(discord, github)
+        discord.writes.clear()
         github.issues[0]["state"] = "closed"
         synchronize(discord, github)
-        self.assertIn("Closed", discord.messages[THREAD][-1]["embeds"][0]["title"])
+        self.assertEqual(discord.writes, [])
         self.assertFalse(any("state" in data for _, _, data in github.writes))
 
-    def test_human_github_reply_edits_are_mirrored_without_feedback_loops(self):
+    def test_receipt_links_the_issue_and_ignores_triage_and_human_discussion(self):
         discord, github = Discord(), GitHub()
         synchronize(discord, github)
-        github.comments.append({
-            "id": 40, "body": "Hello @everyone! " + "x" * 4000, "user": {"login": "maintainer"},
-            "issue_url": f"https://api.github.com/repos/{BRIDGE.REPO}/issues/1",
-            "created_at": "2026-01-01T00:00:00Z",
-        })
-        synchronize(discord, github)
-        mirrored = BRIDGE.discord_records(discord.messages[THREAD], "issue:1")[0]
-        self.assertIn("Hello @everyone!", mirrored["embeds"][0]["description"])
-        self.assertIn("Full text on GitHub", mirrored["embeds"][0]["description"])
-        self.assertLessEqual(len(mirrored["embeds"][0]["description"].encode("utf-16-le")) // 2, 3800)
-        github.comments[-1]["body"] = "Updated reply."
-        synchronize(discord, github)
-        self.assertIn("Updated reply.", mirrored["embeds"][0]["description"])
-        self.assertNotIn("Hello", mirrored["embeds"][0]["description"])
-        self.assertEqual(len(discord.messages[THREAD]), 2)
-        self.assertEqual(records(github, "reply"), [])
-        self.assertTrue(all(data["allowed_mentions"]["parse"] == [] for _, _, data in discord.writes))
-
-    def test_status_uses_latest_created_comment_not_latest_edit(self):
-        discord, github = Discord(), GitHub()
-        synchronize(discord, github)
-        for identifier, created, updated in [
-            (42, "2026-01-03T00:00:00Z", "2026-01-03T00:00:00Z"),
-            (41, "2026-01-01T00:00:00Z", "2026-01-04T00:00:00Z"),
-            (40, "2026-01-01T00:00:00Z", "2026-01-05T00:00:00Z"),
+        embed = BRIDGE.discord_records(discord.messages[THREAD], "issue:1")[0]["embeds"][0]
+        self.assertTrue(embed["description"].startswith(
+            f"[GitHub issue #1](https://github.com/{BRIDGE.REPO}/issues/1) was created to track your bug report."
+        ))
+        self.assertEqual(embed["fields"], [])
+        discord.writes.clear()
+        for identifier, login, body in [
+            (40, "maintainer", "Implemented and released! @everyone"),
+            (41, BRIDGE.GITHUB_BOT, f"<!-- gh-aw-workflow-call-id: {BRIDGE.REPO}/issue-triage -->\nAutomated assessment"),
         ]:
             github.comments.append({
-                "id": identifier, "body": f"Reply {identifier}", "user": {"login": "maintainer"},
+                "id": identifier, "body": body, "user": {"login": login},
                 "issue_url": f"https://api.github.com/repos/{BRIDGE.REPO}/issues/1",
-                "created_at": created, "updated_at": updated,
+                "created_at": "2026-01-02T00:00:00Z",
             })
         synchronize(discord, github)
-        posted = [
-            data["embeds"][0]["description"] for method, _, data in discord.writes
-            if method == "POST" and ":comment:" in data["embeds"][0]["footer"]["text"]
-        ]
-        self.assertEqual(posted, [])
-        status = BRIDGE.discord_records(discord.messages[THREAD], "issue:1")[0]["embeds"][0]
-        self.assertIn("Reply 42", status["description"])
-        self.assertNotIn("Reply 41", status["description"])
-        self.assertNotIn("Reply 40", status["description"])
+        self.assertEqual(discord.writes, [])
+        self.assertEqual(records(github, "reply"), [])
 
-    def test_failed_status_edit_is_retried_without_new_messages(self):
+    def test_old_assessment_card_is_replaced_in_place_even_after_failed_edit(self):
         discord, github = Discord(), GitHub()
         synchronize(discord, github)
-        for identifier in (40, 41):
-            github.comments.append({
-                "id": identifier, "body": f"Reply {identifier}", "user": {"login": "maintainer"},
-                "issue_url": f"https://api.github.com/repos/{BRIDGE.REPO}/issues/1",
-                "created_at": "2026-01-01T00:00:00Z",
-            })
+        card = BRIDGE.discord_records(discord.messages[THREAD], "issue:1")[0]
+        card["embeds"][0].update(title="GitHub #1 - Open", description="Automated assessment (not delivery confirmation)",
+                                 footer={"text": BRIDGE.FOOTER + "issue:1"})
+        discord.writes.clear()
         original = discord.call
 
         def fail_reply(method, path, data=None, query=None):
@@ -470,55 +448,12 @@ class SynchronizationTests(unittest.TestCase):
         with patch.object(discord, "call", side_effect=fail_reply):
             with self.assertRaisesRegex(BRIDGE.BridgeError, "Temporary send failure"):
                 synchronize(discord, github)
-        self.assertFalse(any(":comment:" in data["embeds"][0]["footer"]["text"] for _, _, data in discord.writes))
         synchronize(discord, github)
-        posted = [
-            data["embeds"][0]["description"] for method, _, data in discord.writes
-            if method == "POST" and ":comment:" in data["embeds"][0]["footer"]["text"]
-        ]
-        self.assertEqual(posted, [])
-        status = BRIDGE.discord_records(discord.messages[THREAD], "issue:1")[0]["embeds"][0]
-        self.assertIn("Reply 41", status["description"])
-        self.assertEqual(len(discord.messages[THREAD]), 2)
-
-    def test_assessment_is_in_status_without_machine_record_or_repeated_posts(self):
-        discord, github = Discord(), GitHub()
         synchronize(discord, github)
-        body = (
-            BRIDGE.TRIAGE["MARKER"] + "\nFeature is not implemented.\n\n"
-            'Structured data:\n```json\n{"schema_version":2,"issue_number":1}\n```'
-        )
-        comment = {
-            "id": 40, "body": body, "user": {"login": BRIDGE.GITHUB_BOT, "type": "Bot"},
-            "issue_url": f"https://api.github.com/repos/{BRIDGE.REPO}/issues/1",
-            "created_at": "2026-01-02T00:00:00Z",
-        }
-        comment["body"] = BRIDGE.TRIAGE["collapsed_body"](comment)
-        github.comments.append(comment)
-        synchronize(discord, github)
-        embed = BRIDGE.discord_records(discord.messages[THREAD], "issue:1")[0]["embeds"][0]
-        self.assertIn("Feature is not implemented.", embed["description"])
-        self.assertNotIn("schema_version", embed["description"])
-        self.assertNotIn("<!--", embed["description"])
-        self.assertNotIn("<details>", embed["description"])
-        discord.writes.clear()
-        synchronize(discord, github)
-        self.assertEqual(discord.writes, [])
-        self.assertEqual(len(discord.messages[THREAD]), 2)
-
-    def test_bad_assessment_does_not_block_other_threads(self):
-        discord, github = Discord([thread(), thread(SECOND)]), GitHub()
-        synchronize(discord, github)
-        github.comments.append({
-            "id": 40, "body": BRIDGE.TRIAGE["MARKER"] + "\nInvalid",
-            "user": {"login": BRIDGE.GITHUB_BOT, "type": "Bot"},
-            "issue_url": f"https://api.github.com/repos/{BRIDGE.REPO}/issues/1",
-            "created_at": "2026-01-02T00:00:00Z",
-        })
-        discord.messages[SECOND][0]["content"] = "Changed second report."
-        with self.assertRaisesRegex(BRIDGE.BridgeError, "invalid structured metadata"):
-            synchronize(discord, github)
-        self.assertIn("Changed second report.", github.issues[1]["body"])
+        self.assertEqual([method for method, _, _ in discord.writes], ["PATCH"])
+        self.assertIn("to track your bug report", card["embeds"][0]["description"])
+        self.assertNotIn("assessment", str(card["embeds"][0]))
+        self.assertEqual(card["embeds"][0]["footer"]["text"], "GitHub issue #1")
 
     def test_legacy_message_growth_and_shrink_never_create_continuations(self):
         discord, github = Discord(), GitHub()
@@ -727,7 +662,7 @@ class SynchronizationTests(unittest.TestCase):
         discord, github = Discord(), GitHub()
         synchronize(discord, github)
         discord.threads[0]["thread_metadata"]["archived"] = True
-        github.issues[0]["state"] = "closed"
+        BRIDGE.discord_records(discord.messages[THREAD], "issue:1")[0]["embeds"][0]["title"] = "GitHub #1 - Open"
         discord.writes.clear()
         synchronize(discord, github)
         self.assertEqual(discord.writes[0], ("PATCH", f"/channels/{THREAD}", {"archived": False}))
@@ -741,7 +676,7 @@ class SynchronizationTests(unittest.TestCase):
         discord, github = Discord(), GitHub()
         synchronize(discord, github)
         discord.threads[0]["thread_metadata"]["archived"] = True
-        github.issues[0]["state"] = "closed"
+        BRIDGE.discord_records(discord.messages[THREAD], "issue:1")[0]["embeds"][0]["title"] = "GitHub #1 - Open"
         original = discord.call
 
         def fail_edit(method, path, data=None, query=None):

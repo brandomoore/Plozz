@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import CoreNetworking
 
 /// An immutable, non-secret identity for one complete "active content identity" —
 /// the profile plus the exact set of accounts (and their effective credentials /
@@ -39,6 +40,6 @@ public struct DetailSnapshotCacheScope: Equatable, Sendable {
         hasher.update(data: Data(profileID.utf8))
         hasher.update(data: Data([0x1f]))
         hasher.update(data: Data(identityMaterial.utf8))
-        self.digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        self.digest = DigestHex.encode(hasher.finalize())
     }
 }
