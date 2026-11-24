@@ -58,6 +58,23 @@ public struct ArtworkPresentationPolicy: Equatable, Sendable {
     }
 }
 
+public extension CardCaptionView {
+    var artworkArea: ArtworkArea {
+        switch self {
+        case .home, .homeLibraries: .homeRows
+        case .recommended: .recommended
+        case .search: .search
+        case .watchlist: .watchlist
+        case .related, .filmography, .extras: .details
+        case .episodes: .episodes
+        case .browse: .browse
+        case .collections: .collections
+        case .playlists: .playlists
+        case .continueWatching: .continueWatching
+        }
+    }
+}
+
 private struct ArtworkSettingsKey: EnvironmentKey {
     static let defaultValue = ArtworkSettings.default
 }
@@ -107,25 +124,9 @@ public extension EnvironmentValues {
     }
 
     var plozzArtworkPolicy: ArtworkPresentationPolicy {
-        let area: ArtworkArea
-        if let explicit = plozzArtworkArea {
-            area = explicit
-        } else {
-            switch plozzCardCaptionView {
-            case .home, .homeLibraries: area = .homeRows
-            case .recommended: area = .recommended
-            case .search: area = .search
-            case .watchlist: area = .watchlist
-            case .related, .filmography, .extras: area = .details
-            case .episodes: area = .episodes
-            case .browse: area = .browse
-            case .collections: area = .collections
-            case .playlists: area = .playlists
-            case .continueWatching: area = .continueWatching
-            }
-        }
-        return ArtworkPresentationPolicy(
-            area: area, settings: plozzArtworkSettings, providers: plozzArtworkProviders,
+        ArtworkPresentationPolicy(
+            area: plozzArtworkArea ?? plozzCardCaptionView.artworkArea,
+            settings: plozzArtworkSettings, providers: plozzArtworkProviders,
             logoLanguage: locale.identifier
         )
     }

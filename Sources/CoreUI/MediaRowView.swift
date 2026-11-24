@@ -1320,7 +1320,7 @@ public struct MediaRowView: View {
                 style: artworkStyle,
                 spoilerSettings: spoilerSettings,
                 showsSeriesArtwork: showsSeriesArtwork,
-                artworkPolicy: artworkPolicy
+                artworkPolicy: artworkPolicy, policy: presentationArtworkPolicy
             )
             // Queue a tiny nearest-first frame before this card's heavier full
             // decode. One preview candidate is enough; if the primary is invalid,
@@ -1357,7 +1357,7 @@ public struct MediaRowView: View {
                           style: artworkStyle,
                           spoilerSettings: spoilerSettings,
                           showsSeriesArtwork: showsSeriesArtwork,
-                          artworkPolicy: artworkPolicy
+                          artworkPolicy: artworkPolicy, policy: presentationArtworkPolicy
                       ).first,
                       MediaArtworkPrefetchPolicy.claimPreview(
                           for: candidate.stablePresentationID,
@@ -1751,14 +1751,15 @@ public enum MediaArtworkPrefetchPolicy {
         style: PosterCardView.Style,
         spoilerSettings: SpoilerSettings,
         showsSeriesArtwork: Bool = false,
-        artworkPolicy: CardArtworkPolicy = .standard
+        artworkPolicy: CardArtworkPolicy = .standard,
+        policy: ArtworkPresentationPolicy = .init()
     ) -> [URL] {
         // Series-artwork mode paints show art on every card regardless of watch
         // state, so warm that rather than a thumbnail the card will never draw.
         // Movies and series keep their own art — they already *are* the show.
         if showsSeriesArtwork {
             guard item.kind == .episode else {
-                return item.artworkCandidates(for: style, artworkPolicy: artworkPolicy)
+                return item.artworkCandidates(for: style, artworkPolicy: artworkPolicy, policy: policy)
             }
             return seriesArtworkCandidates(for: item, style: style)
         }
@@ -1783,7 +1784,7 @@ public enum MediaArtworkPrefetchPolicy {
             // poster the card is still drawing.
             return seriesArtworkCandidates(for: item, style: style)
         }
-        return item.artworkCandidates(for: style, artworkPolicy: artworkPolicy)
+        return item.artworkCandidates(for: style, artworkPolicy: artworkPolicy, policy: policy)
     }
 
     /// Spoiler-safe show art for an episode, ordered for the card's shape: a wide

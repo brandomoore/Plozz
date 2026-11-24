@@ -309,7 +309,7 @@ public struct HomeView: View {
     @Namespace private var heroFocusScope
 
     @Environment(\.plozzMetrics) private var metrics
-    @Environment(\.plozzArtworkSettings) private var artworkSettings
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     /// How far the navigation rail insets page content, so the libraries row can
     /// carry the same gutter as every media row.
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
@@ -1569,7 +1569,7 @@ public struct HomeView: View {
                         && !(row.kind == .continueWatching && visibility.continueWatchingLayout == .portrait)
                         ? { PosterCardView.leadingLandscapeArtwork(
                             for: $0, showsSeriesArtwork: seriesArtwork,
-                            prefersTextlessArtwork: artworkSettings.prefersTextlessArtwork(in: .continueWatching)
+                            presentationPolicy: artworkPolicy.forArea(.continueWatching)
                         ) }
                         : nil
                 ),
@@ -1601,7 +1601,9 @@ public struct HomeView: View {
                         isPlaceholder: row.isLoading,
                         hasFocusableControls: (row.issue != nil || row.failure != nil) && !viewModel.isRefreshing,
                         cardArtwork: section.style == .landscape
-                            ? { PosterCardView.leadingLandscapeArtwork(for: $0, showsSeriesArtwork: false) }
+                            ? { PosterCardView.leadingLandscapeArtwork(
+                                for: $0, showsSeriesArtwork: false, presentationPolicy: artworkPolicy.forArea(.homeRows)
+                            ) }
                             : nil
                     ),
                     .section(row, presentation)

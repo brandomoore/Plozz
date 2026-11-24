@@ -108,7 +108,7 @@ public struct LibraryBrowseView: View {
     private let onSelectAtIndex: ((MediaItem, VideoPlaylistPlaybackOrigin?) -> Void)?
 
     @Environment(\.plozzMetrics) private var metrics
-    @Environment(\.plozzArtworkSettings) private var artworkSettings
+    @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     /// Custom pinned-sidebar clearance. Native top/sidebar styles publish zero.
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
     @Environment(\.plozzNavigationStyle) private var navigationStyle
@@ -220,7 +220,7 @@ public struct LibraryBrowseView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationEntryFocus(isEntryContentPending ? .pending : nil)
-        .environment(\.plozzCardCaptionView, viewModel.browseScope.cardCaptionView(for: viewModel.contentMode))
+        .environment(\.plozzCardCaptionView, gridCaptionView)
         .environment(\.plozzArtworkArea, nil)
         // Root libraries must not remove the focused tab during native navigation.
         .toolbar(isNavigationRoot ? .automatic : .hidden, for: .tabBar)
@@ -292,6 +292,9 @@ public struct LibraryBrowseView: View {
             artworkPrefetch.reset()
         }
         .onChange(of: viewModel.contentGeneration) { _, _ in artworkPrefetch.reset() }
+        .onChange(of: artworkPolicy.settings.preference(in: gridCaptionView.artworkArea)) { _, _ in
+            prefetchArtwork(aheadFrom: viewModel.topVisibleIndex ?? 0)
+        }
         .onChange(of: metrics.libraryPosterColumns.count) { _, _ in
             artworkPrefetch.reset()
             prefetchArtwork(aheadFrom: viewModel.topVisibleIndex ?? 0)
@@ -415,6 +418,10 @@ public struct LibraryBrowseView: View {
             : (section.style == .poster ? .poster : .landscape)
     }
 
+    private func recommendedRowArtworkArea(_ section: LibrarySection) -> ArtworkArea {
+        section.id == "continueWatching" ? .continueWatching : .recommended
+    }
+
     private func recommendedRow(_ section: LibrarySection) -> some View {
         MediaRowView(
             title: section.displayName,
@@ -425,7 +432,7 @@ public struct LibraryBrowseView: View {
             showsResumeChip: section.id == "continueWatching",
             onSelect: onSelect
         )
-        .environment(\.plozzArtworkArea, section.id == "continueWatching" ? .continueWatching : .recommended)
+        .environment(\.plozzArtworkArea, recommendedRowArtworkArea(section))
         .navigationEntryFocus(.content)
     }
 
@@ -441,7 +448,7 @@ public struct LibraryBrowseView: View {
                     ? { PosterCardView.leadingLandscapeArtwork(
                         for: $0,
                         showsSeriesArtwork: section.id == "continueWatching" && continueWatchingShowsSeriesArtwork,
-                        prefersTextlessArtwork: artworkSettings.prefersTextlessArtwork(in: .continueWatching)
+                        presentationPolicy: artworkPolicy.forArea(recommendedRowArtworkArea(section))
                     ) } : nil
             )
         }
@@ -476,7 +483,7 @@ public struct LibraryBrowseView: View {
                     showsResumeChip: section.id == "continueWatching",
                     onSelect: onSelect
                 )
-                .environment(\.plozzArtworkArea, section.id == "continueWatching" ? .continueWatching : .recommended)
+                .environment(\.plozzArtworkArea, recommendedRowArtworkArea(section))
                 .navigationEntryFocus(.content)
             }
         }
@@ -721,7 +728,11 @@ public struct LibraryBrowseView: View {
         .accessibilityIdentifier("library-sort-menu")
     }
 
-    /// Warms decoded poster art in the viewport's direction once a cell loads.
+    private var gridCaptionView: CardCaptionView {
+        viewModel.browseScope.cardCaptionView(for: viewModel.contentMode)
+    }
+
+    /// Warms decoded card art in the viewport's direction once a cell loads.
     private func prefetchArtwork(aheadFrom index: Int) {
         #if canImport(UIKit)
         guard artworkPrefetch.isActive, scenePhase == .active,
@@ -729,6 +740,7 @@ public struct LibraryBrowseView: View {
               index >= 0, index < viewModel.totalCount else { return }
         let tracker = artworkPrefetch
         let style: PosterCardView.Style = viewModel.gridStyle == .landscape ? .landscape : .poster
+        let policy = artworkPolicy.forArea(gridCaptionView.artworkArea)
         let range = tracker.indices(
             aheadFrom: index, total: viewModel.totalCount,
             columns: metrics.libraryPosterColumns.count, generation: viewModel.contentGeneration
@@ -737,7 +749,7 @@ public struct LibraryBrowseView: View {
             guard let candidate = viewModel.item(at: candidateIndex) else {
                 return [ArtworkPrefetchWindow.Request]()
             }
-            return candidate.artworkCandidates(for: style).prefix(2).compactMap {
+            return candidate.artworkCandidates(for: style, policy: policy).prefix(2).compactMap {
                 ArtworkImageCache.shared.prefetchRequest(
                     for: $0, variant: style == .poster ? .posterCard : .landscapeCard
                 )
