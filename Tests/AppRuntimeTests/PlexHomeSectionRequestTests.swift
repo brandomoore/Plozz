@@ -33,6 +33,9 @@ final class PlexHomeSectionRequestTests: XCTestCase {
 
         let navigation = await HomeAggregator().libraryDiscovery(from: [source])
         XCTAssertEqual(navigation.libraries.map(\.library.title), ["Navigation"])
+        http.stub(pathSuffix: "/library/metadata/one", json: """
+        {"MediaContainer":{"Metadata":[{"ratingKey":"one","type":"movie","title":"One","viewCount":0}]}}
+        """)
         http.stubEmpty(pathSuffix: "/:/scrobble")
         let writer = try XCTUnwrap(source.provider as? any PlayedStateWriting)
         try await writer.setPlayed(true, itemID: "one")

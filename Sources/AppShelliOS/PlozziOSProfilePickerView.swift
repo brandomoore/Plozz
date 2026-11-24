@@ -364,6 +364,7 @@ struct PlozziOSProfilePickerView: View {
         let flightCaptionSpace: CGFloat?
         let identity: PINProfileTransition
         @Environment(\.themePalette) private var palette
+        @Environment(\.locale) private var locale
         @State private var showsProgress = false
         @AccessibilityFocusState private var focused: Bool
 
@@ -399,7 +400,9 @@ struct PlozziOSProfilePickerView: View {
                     do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
                     showsProgress = true
                     if UIAccessibility.isVoiceOverRunning {
-                        UIAccessibility.post(notification: .announcement, argument: String(localized: "Loading"))
+                        AccessibilityNotification.Announcement(
+                            String(localized: "Loading", locale: locale) // l10n:content — spoken immediately
+                        ).post()
                     }
                 }
         }

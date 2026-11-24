@@ -137,6 +137,13 @@ final class PlozziOSAppModel {
     var allowsHomeContentAccess: Bool {
         isActiveProfileAuthorized && !profiles.activeProfile.needsSetup
     }
+
+    /// A manual switch hasn't changed the viewer yet. Keep the outgoing tabs
+    /// behind the picker, but never use this to authorize content or a new shell.
+    var isAwaitingOtherProfilePIN: Bool {
+        guard !mustChooseProfile, let request = parentalSwitch ?? lockedSwitch else { return false }
+        return request.target.id != profiles.activeProfileID
+    }
     var allowsHomeContentLoading: Bool { allowsHomeContentAccess && !isSettingsPresented }
     var allowsStandalonePlayback: Bool { admissionContext.explicitStandaloneChoice }
     var pendingStandaloneLiveTVEntry: Bool { appAdmission.pendingLiveTVEntry }

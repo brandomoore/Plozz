@@ -172,7 +172,8 @@ public struct PlozziOSRootView: View {
         Group {
             if !appModel.canEnterApp {
                 PlozziOSOnboardingView(appModel: appModel)
-            } else if showsLaunchProfilePicker || (showingProfileSwitcher && !appModel.allowsHomeContentAccess)
+            } else if showsLaunchProfilePicker || (showingProfileSwitcher && !appModel.allowsHomeContentAccess
+                && !appModel.isAwaitingOtherProfilePIN)
                 || homeEntrance.map({ !$0.matches(appModel) || !appModel.allowsHomeContentAccess }) == true {
                 // The picker lives outside the shell identity. Don't construct
                 // the new viewer's tabs/model while a profile gate owns entry.
@@ -197,6 +198,8 @@ public struct PlozziOSRootView: View {
                     onNotificationPresentationDismissed: { notificationDismissals.remove($0) },
                     systemColorScheme: systemColorScheme
                 )
+                .allowsHitTesting(!showingProfileSwitcher)
+                .accessibilityHidden(showingProfileSwitcher)
             }
         }
         .onChange(of: appModel.isOfflineMode) { _, _ in
