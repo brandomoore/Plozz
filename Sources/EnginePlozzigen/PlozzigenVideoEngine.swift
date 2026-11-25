@@ -412,9 +412,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         switch (route, delivery) {
         case (.software, .decoded): return true
         case (.loopback, .streamCopy), (.loopback, .bridged):
-            // Shaping follows track switches. Don't arm it on a title where a
-            // later selection could otherwise stream-copy spatial audio.
-            return !tracks.contains { $0.isAtmos && $0.codec.lowercased() == "eac3" }
+            // isAtmos == false is not a negative JOC verdict. Shaping survives
+            // track switches, so an unprobed alternate matters just as much.
+            return !tracks.contains { $0.codec.lowercased() == "eac3" }
         default: return false
         }
     }
@@ -804,6 +804,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                             guard let self, self.outputLoadGeneration == outputGeneration, !Task.isCancelled else {
                                 throw CancellationError()
                             }
+                            // The new clip reopens with the disc's original (unboosted)
+                            // options. Discard even a still-debouncing remote press.
+                            self.resetVolumeBoost()
                             var selectionOptions = discOptions
                             if let clip {
                                 let opened = await Task.detached { selected.openDiscFile(clip.path) }.value
@@ -1710,6 +1713,34 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         volumeBoost = .off
     }
 
+    private var canEditVolumeBoost: Bool {
+        !outputLoadInProgress && discMenu?.isOpening != true && capabilities.contains(.volumeBoost)
+    }
+
+    nonisolated static func audioShapingRestoringDroppedAudio(
+        shaping: AudioShaping, delivery: AudioDelivery, isReady: Bool, state: PlaybackState
+    ) -> AudioShaping? {
+        guard isReady, state == .playing || state == .paused,
+              delivery == .droppedNoPipeline, shaping.compressor != nil else { return nil }
+        var restored = shaping
+        restored.compressor = nil
+        return restored
+    }
+
+    private func recoverDroppedBoostAudio() {
+        guard !outputLoadInProgress, discMenu?.isOpening != true,
+              let restored = Self.audioShapingRestoringDroppedAudio(
+                shaping: engine.audioShaping, delivery: engine.audioDelivery,
+                isReady: engine.isSessionReady, state: engine.state
+              ) else { return }
+        resetVolumeBoost()
+        // A dropped pipeline no longer advertises Boost. Undo the change
+        // directly, rather than requiring a user to find an unavailable row.
+        PlozzLog.playback.error("Volume boost dropped the audio pipeline; restoring unboosted audio")
+        engine.setAudioShaping(restored)
+        onTracksChanged?()
+    }
+
     nonisolated static func volumeBoostCompressor(_ boost: PlayerVolumeBoost) -> AudioShaping.Compressor? {
         // A unity ratio applies only makeup gain. Aether's shaping graph adds
         // the peak limiter after it; Off bypasses both stages.
@@ -1717,7 +1748,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     public func setVolumeBoost(_ boost: PlayerVolumeBoost) {
-        guard capabilities.contains(.volumeBoost), !outputLoadInProgress, volumeBoost != boost else { return }
+        guard canEditVolumeBoost, volumeBoost != boost else { return }
         volumeBoostCommit?.cancel()
         volumeBoost = boost
         // One playhead-preserving rebuild after a burst of remote presses.
@@ -1725,7 +1756,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled, let self else { return }
             self.volumeBoostCommit = nil
-            guard self.capabilities.contains(.volumeBoost), !self.outputLoadInProgress else {
+            guard self.canEditVolumeBoost else {
                 let applied = self.engine.audioShaping.compressor?.makeupGainDB ?? 0
                 self.volumeBoost = PlayerVolumeBoost.allCases.first { $0.gainDB == applied } ?? .off
                 self.onTracksChanged?()
@@ -2388,6 +2419,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     private func observeEngine() {
+        engine.$audioDelivery.combineLatest(engine.$isSessionReady, engine.$state)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.recoverDroppedBoostAudio() }
+            .store(in: &cancellables)
         engine.$hasFirstFrameReadyForDisplay
             .combineLatest(engine.$isSessionReady, engine.$playbackBackend)
             .receive(on: DispatchQueue.main)

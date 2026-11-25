@@ -579,9 +579,11 @@ session. On Apple TV, focus its Audio row and press left or right; on iPhone
 and iPad, choose a percentage in Audio. Percentages are added signal amplitude
 (100% doubles it), not device volume. Plozzigen applies gain before its peak
 limiter, and turns shaping off at Off. Rapid presses settle into one adjustment.
-Boost is offered only where the engine can rebuild at the playhead; it is
-hidden for player-managed audio and on remuxed titles with a selectable spatial
-stream that shaping would prevent from being copied.
+Boost is offered only where the engine can rebuild at the playhead. It is
+hidden for player-managed audio and on remuxed titles with any E-AC-3 track:
+the track can carry spatial audio even when its metadata doesn't say so.
+If the boosted pipeline drops audio, the player restores unboosted playback.
+Opening a new disc playlist or clip resets Boost to Off.
 
 On iPhone and iPad, VOD and Live TV share adaptive native `PlayerMoreMenuButton`
 controls. Portrait uses one ellipsis. Landscape shows Audio, Subtitles, the

@@ -12,6 +12,10 @@ final class AetherReleaseIntegrationTests: XCTestCase {
         let supports = PlozzigenVideoEngine.supportsVolumeBoost
         XCTAssertTrue(supports(.loopback, .streamCopy, [plain]))
         XCTAssertFalse(supports(.loopback, .streamCopy, [plain, spatial]))
+        let unprobed = TrackInfo(id: 3, name: "Alternate", codec: "eac3", language: "de", isDefault: false)
+        XCTAssertFalse(supports(.loopback, .streamCopy, [unprobed]))
+        XCTAssertFalse(supports(.loopback, .bridged, [plain, unprobed]))
+        XCTAssertTrue(supports(.loopback, .bridged, [plain]))
         XCTAssertTrue(supports(.software, .decoded, [spatial]))
         XCTAssertFalse(supports(.remoteBypass, .playerManaged, [plain]))
         XCTAssertFalse(supports(.software, .decoded, []))
@@ -22,6 +26,60 @@ final class AetherReleaseIntegrationTests: XCTestCase {
             XCTAssertEqual(compressor.ratio, 1)
             XCTAssertEqual(pow(10, compressor.makeupGainDB / 20), expected, accuracy: 0.00001)
         }
+    }
+
+    func testDroppedBoostRestoresUnboostedAudioOnceAndOnlyAfterTheRebuild() throws {
+        var shaping = AudioShaping()
+        shaping.compressor = PlozzigenVideoEngine.volumeBoostCompressor(.double)
+        shaping.lfeMixDB = -6
+        let recover = PlozzigenVideoEngine.audioShapingRestoringDroppedAudio
+        XCTAssertNil(recover(shaping, .none, true, .playing))
+        XCTAssertNil(recover(shaping, .bridged, true, .playing))
+        XCTAssertNil(recover(shaping, .droppedNoPipeline, false, .paused))
+        XCTAssertNil(recover(shaping, .droppedNoPipeline, true, .loading))
+        for state in [PlaybackState.playing, .paused] {
+            let restored = try XCTUnwrap(recover(shaping, .droppedNoPipeline, true, state))
+            XCTAssertFalse(restored.isActive)
+            XCTAssertEqual(restored.lfeMixDB, shaping.lfeMixDB)
+            XCTAssertNil(recover(restored, .droppedNoPipeline, true, state))
+        }
+    }
+
+    @MainActor
+    func testBoostedPipelineFailureRestoresOriginalAudioWhilePaused() async throws {
+        let url = try XCTUnwrap(Bundle.module.url(
+            forResource: "quiet-aac", withExtension: "mp4", subdirectory: "Fixtures"
+        ))
+        let engine = try PlozzigenVideoEngine()
+        defer {
+            engine.onTracksChanged = nil
+            AetherEngine.setForceAudioPipelineFailureForTesting(false)
+            engine.stop()
+        }
+        await engine.load(request: .init(item: .init(id: "quiet", title: "Quiet", kind: .movie), streamURL: url),
+                          startPosition: 0)
+        func wait(for condition: () -> Bool) async throws {
+            let deadline = ContinuousClock.now + .seconds(20)
+            while !condition(), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(25)) }
+            _ = try XCTUnwrap(condition() ? true : nil, "Timed out waiting for audio delivery.")
+        }
+        try await wait { engine.capabilities.contains(.volumeBoost) }
+        let original = try XCTUnwrap(engine.liveTelemetry?.audioDelivery)
+        engine.pause()
+        var sawDroppedAudio = false
+        engine.onTracksChanged = {
+            guard engine.liveTelemetry?.audioDelivery == .droppedNoPipeline else { return }
+            sawDroppedAudio = true
+            // Fail only the boosted build. The original track is still playable.
+            AetherEngine.setForceAudioPipelineFailureForTesting(false)
+        }
+        AetherEngine.setForceAudioPipelineFailureForTesting(true)
+        engine.setVolumeBoost(.double)
+        XCTAssertEqual(engine.volumeBoost, .double)
+        try await wait {
+            sawDroppedAudio && engine.volumeBoost == .off && engine.liveTelemetry?.audioDelivery == original
+        }
+        XCTAssertTrue(engine.isPaused)
     }
 
     func testMP4SubtitleNamesDoNotCollideWithGeneratedNativeRenditionSuffixes() throws {

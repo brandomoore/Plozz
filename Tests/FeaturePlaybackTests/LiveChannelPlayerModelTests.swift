@@ -19,6 +19,20 @@ private final class LiveChannelObservationChanges: @unchecked Sendable {
 
 @MainActor
 final class LiveChannelPlayerModelTests: XCTestCase {
+    func testVolumeBoostRollbackRefreshesLiveControlsWithoutChangingTracks() async {
+        let engine = LiveEngineSpy()
+        let model = LiveChannelPlayerModel(
+            engine: engine, streamURL: URL(string: "https://example.invalid/live.m3u8")!
+        )
+        defer { model.stop() }
+        await model.start()
+        model.setVolumeBoost(.double)
+        XCTAssertEqual(model.volumeBoost, .double)
+        engine.volumeBoost = .off
+        engine.onTracksChanged?()
+        XCTAssertEqual(model.volumeBoost, .off)
+    }
+
     func testNewChannelsRestoreThePlatformDefaultRatherThanThePreviousChannelZoom() async {
         let engine = LiveEngineSpy()
         let input = LiveChannelInput.stream(url: URL(string: "https://example.invalid/live.m3u8")!, httpHeaders: [:])
@@ -1969,6 +1983,8 @@ private struct LiveFullscreenHarness: View {
 
 @MainActor
 final class LiveEngineSpy: LiveChannelEngine {
+    var volumeBoost: PlayerVolumeBoost = .off
+    func setVolumeBoost(_ boost: PlayerVolumeBoost) { volumeBoost = boost }
     var supportsActivePictureAnalysis = false
     var probedSourceFacts: EngineProbedSourceFacts?
     var videoAspectRatio: Double?
