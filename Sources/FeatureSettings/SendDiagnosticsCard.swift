@@ -50,7 +50,6 @@ public struct MobileDiagnosticsSubmissionSection: View {
         } footer: {
             if !isConfigured { Text(SettingsCopy.diagnosticSharingUnavailable) }
             else if !sharingEnabled { Text(SettingsCopy.diagnosticSharingRequired) }
-            Text(SettingsCopy.diagnosticsMessagePrivacy)
         }
         .onChange(of: sharingEnabled) { status = nil }
     }
@@ -132,10 +131,10 @@ struct SendDiagnosticsCard: View {
         .onChange(of: sharingEnabled) { sendState = .idle }
     }
 
-    private var footer: LocalizedStringResource {
+    private var footer: LocalizedStringResource? {
         switch sendState {
         case .idle:
-            return SettingsCopy.diagnosticsMessagePrivacy
+            return nil
         case .sent:
             return "Diagnostics submitted for delivery. Thank you."
         case .failed:
