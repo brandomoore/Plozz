@@ -639,10 +639,8 @@ public struct RootView: View {
         LaunchView { startupLogoIntroCompleted = true }
     }
 
-    private var appContent: some View {
-        let _ = plozzPrintChanges { Self._printChanges() }
-        let requests = presentationRequests
-        return ZStack {
+    private var routedContent: some View {
+        ZStack {
             // After the intro, profile setup outranks the global session machine. Add-user auth
             // temporarily moves that machine to `.onboarding`, but setup must
             // remain mounted underneath so its exact NavigationStack path
@@ -902,6 +900,12 @@ public struct RootView: View {
             }
             }
         }
+    }
+
+    // Keep the route, appearance and lifecycle types bounded. Resolving them as one
+    // nested ModifiedContent type overflowed the main-thread stack at launch on tvOS.
+    private var setupContent: some View {
+        AnyView(routedContent)
         .modifier(AccountSetupOverlay(
             appState: appState, deviceColorScheme: systemColorScheme,
             presentationEnabled: !showsStartupLogo && !settingsCoverPresented,
@@ -950,6 +954,10 @@ public struct RootView: View {
             \.versionPickerAudioLanguage,
             appState.profileSettings.playbackModel.settings.audioLanguagePreference.explicitLanguageCode
         )
+    }
+
+    private var themedContent: some View {
+        AnyView(setupContent)
         // `dynamicTypeSize` is read here on purpose: PlozzMetrics samples its
         // typography once at construction, so this dependency is what makes the
         // whole table rebuild when the reader changes their text size. Without it
@@ -1026,6 +1034,12 @@ public struct RootView: View {
         // device scheme and `.system` can follow it (and switching away from a
         // forced scheme never gets stuck).
         .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)
+    }
+
+    private var appContent: some View {
+        let _ = plozzPrintChanges { Self._printChanges() }
+        let requests = presentationRequests
+        return AnyView(themedContent)
         .transientStatusOverlay(
             presenter: appState.transientStatusPresenter,
             palette: resolvedPalette
