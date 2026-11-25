@@ -100,12 +100,21 @@ public struct MediaRowScroll<Content: View>: View {
             LazyHStack(spacing: metrics.cardSpacing) {
                 content
             }
+            #if os(iOS)
+            .scrollTargetLayout()
+            #else
             .padding(.leading, leadingInset)
             .padding(.trailing, trailingInset)
+            #endif
             // Callers cancel this clearance with the shared rail offsets in layout,
             // while focused artwork and shadows retain room to draw.
             .padding(.vertical, metrics.railShadowClearance)
         }
+        #if os(iOS)
+        .contentMargins(.leading, leadingInset, for: .scrollContent)
+        .contentMargins(.trailing, trailingInset, for: .scrollContent)
+        .scrollTargetBehavior(.viewAligned(limitBehavior: .never))
+        #endif
         .scrollClipDisabled()
     }
 }

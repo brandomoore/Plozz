@@ -34,12 +34,14 @@ struct PlozziOSHomeSkeletonRail: View {
     var body: some View {
         PlozziOSHomeRailLayout(
             isContinueWatching: style == .landscape && (isContinueWatching || showsSeriesArtwork)
-        ) { rail(metrics: $0) }
-            .environment(\.plozzShimmerEnabled, isVisible)
-            .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
+        ) { metrics in
+            PlozziOSRailViewport { viewport in rail(metrics: metrics, viewport: viewport) }
+        }
+        .environment(\.plozzShimmerEnabled, isVisible)
+        .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
     }
 
-    private func rail(metrics: PlozzMetrics) -> some View {
+    private func rail(metrics: PlozzMetrics, viewport: CGFloat) -> some View {
         PlozziOSMediaSection(
             title: title, artworkInset: !isLibraryRow && cardStyle == .framed ? metrics.cardInset : 0,
             reservesBrowseSpace: !isLibraryRow
@@ -58,8 +60,9 @@ struct PlozziOSHomeSkeletonRail: View {
                         if isLibraryRow {
                             PlozziOSHomeLibraryCard(
                                 library: nil, artworkSource: nil,
-                                width: metrics.usesDesktopSizing ? metrics.landscapeWidth
-                                    : metrics.density.iOSHomeLibraryWidth(horizontalSizeClass: horizontalSizeClass)
+                                width: PlozziOSMediaLayout.libraryWidth(
+                                    in: viewport, metrics: metrics, sizeClass: horizontalSizeClass, cardStyle: cardStyle
+                                )
                             )
                             .environment(\.plozzCardCaptionSettings, CardCaptionSettings(showsLabels: showsCaption))
                         } else {

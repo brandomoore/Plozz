@@ -274,12 +274,11 @@ registry.
   recommendations, related titles, extras, episodes, and cast derive widths from
   their actual content viewport. `DesktopMediaRailLayout` chooses a whole-card
   count below density-scaled width limits, then distributes the width while
-  preserving a gap-sized trailing peek. Featured rows use the same inset and
+  preserving a quarter of the next picture at the trailing edge. Featured rows use the same inset and
   heading style, with 4:5 cards; they do not inherit the fixed mobile width.
   Loading and loaded rows share this geometry. Profile density and Dynamic Type
   still apply. Hero actions keep their original native large control size and
   48-point minimum in both glass and reduced-effects presentations.
-  iPhone/iPad and TV retain their existing sizes.
 
 - **Mac hero paging controls** sit at the left/right midpoint only when the
   carousel has multiple titles. Native buttons use explicit hover recognition

@@ -93,6 +93,11 @@ struct PlayerEpisodeNativeRow: UIViewRepresentable {
         }
 
         func update(_ value: PlayerEpisodeNativeRow, environment: EnvironmentValues) {
+            if configuration?.layout.viewportWidth == 0, value.layout.viewportWidth > 0 {
+                // The first bounds measurement can arrive just after the
+                // initial scroll. Reposition using the fitted, not nominal, pitch.
+                initialPositionApplied = false
+            }
             let presentationChanged = self.environment.locale != environment.locale
                 || self.environment.displayScale != environment.displayScale
                 || self.environment.colorScheme != environment.colorScheme
@@ -114,7 +119,6 @@ struct PlayerEpisodeNativeRow: UIViewRepresentable {
             collection.semanticContentAttribute = environment.layoutDirection == .rightToLeft
                 ? .forceRightToLeft : .forceLeftToRight
             let size = CGSize(width: value.layout.cardWidth, height: value.layout.rowHeight)
-            layout.peekInset = value.layout.episodePeekInset
             if layout.itemSize != size || layout.minimumLineSpacing != value.layout.columnSpacing {
                 layout.itemSize = size
                 layout.minimumLineSpacing = value.layout.columnSpacing
@@ -154,7 +158,7 @@ struct PlayerEpisodeNativeRow: UIViewRepresentable {
         }
 
         private func permitsFocus(_ id: NativeEpisodeElement.ID) -> Bool {
-            // A preceding peek is visible but must not win entry over the current episode.
+            // Nearby cards must not win entry over the current episode.
             guard focusedID == nil else { return true }
             let entry = requestedFocus.flatMap { dataSource?.itemIdentifier(for: $0) }
                 ?? lastFocusedID ?? configuration?.initialID.map(NativeEpisodeElement.ID.episode)
@@ -585,7 +589,6 @@ final class PlayerEpisodeNativeCell: UICollectionViewCell {
 private final class EpisodeCollectionLayout: UICollectionViewFlowLayout {
     var preservedOffset: CGPoint?
     var focusTarget: IndexPath?
-    var peekInset: CGFloat = 0
     override var flipsHorizontallyInOppositeLayoutDirection: Bool { true }
 
     override func targetContentOffset(forProposedContentOffset proposedContentOffset: CGPoint) -> CGPoint {
@@ -607,9 +610,9 @@ private final class EpisodeCollectionLayout: UICollectionViewFlowLayout {
         guard pitch > 0 else { return proposed }
         let maximum = max(0, collectionViewContentSize.width - collectionView.bounds.width)
         // A nearest-slot snap alone can leave the focused card clipped at the trailing edge.
-        let lower = min(maximum, max(0, ceil((frame.maxX - collectionView.bounds.width + peekInset) / pitch) * pitch - peekInset))
-        let upper = min(maximum, max(0, floor((frame.minX + peekInset) / pitch) * pitch - peekInset))
-        let slot = ((proposed.x + peekInset) / pitch).rounded() * pitch - peekInset
+        let lower = min(maximum, max(0, ceil((frame.maxX - collectionView.bounds.width) / pitch) * pitch))
+        let upper = min(maximum, max(0, frame.minX))
+        let slot = proposed.x >= maximum ? maximum : (proposed.x / pitch).rounded() * pitch
         let target = min(upper, max(lower, slot))
         return CGPoint(x: target, y: proposed.y)
     }

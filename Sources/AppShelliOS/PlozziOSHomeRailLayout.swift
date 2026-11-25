@@ -116,14 +116,13 @@ private struct PlozziOSHomeRowFootprint: View {
                     if isLibraryRow {
                         PlozziOSHomeLibraryCard(
                             library: nil, artworkSource: nil,
-                            width: metrics.usesDesktopSizing ? metrics.landscapeWidth
-                                : metrics.density.iOSHomeLibraryWidth(horizontalSizeClass: sizeClass)
+                            width: PlozziOSMediaLayout.libraryWidth(
+                                in: viewportWidth, metrics: metrics, sizeClass: sizeClass, cardStyle: cardStyle
+                            )
                         )
                         .environment(\.plozzCardCaptionSettings, captions)
                     } else if isLiveTV {
-                        Color.clear.frame(height: metrics.cardSlotWidth(
-                            for: .landscape, cardStyle: cardStyle
-                        ) * 9 / 16)
+                        Color.clear.frame(height: metrics.landscapeWidth * 9 / 16)
                     } else {
                         SkeletonCardView(
                             style: style == .landscape ? .landscape : .poster,

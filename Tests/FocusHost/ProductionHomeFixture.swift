@@ -143,6 +143,7 @@ struct NativeSidebarDetailFixture: View {
 }
 
 struct ProductionHomeFixture: View {
+    @Environment(\.dynamicTypeSize) private var systemTypeSize
     @State private var fixture: ProductionHomeState?
     @State private var path = NavigationPath()
     @State private var libraryPath = NavigationPath()
@@ -418,6 +419,11 @@ struct ProductionHomeFixture: View {
         .environment(\.gradientBackgroundsEnabled, !ProcessInfo.processInfo.arguments.contains("--gradient-off"))
         .environment(\.themePalette, ProcessInfo.processInfo.arguments.contains("--gradient-black") ? .pureBlack : .dark)
         .environment(\.plozzCardStyle, ProcessInfo.processInfo.arguments.contains("--framed-cards") ? .framed : .borderless)
+        .environment(\.plozzMetrics, PlozzMetrics(density: fixture?.density.density ?? .standard, dynamicTypeSize: systemTypeSize))
+        .environment(\.plozzContinueWatchingPlaybackDetails, fixture?.visibility.continueWatchingPlaybackDetails ?? .default)
+        .environment(\.plozzContinueWatchingPresentation, ContinueWatchingPresentation(
+            visibility: fixture?.visibility.visibility ?? .default, isShowcase: false
+        ))
         .onReceive(NotificationCenter.default.publisher(for: UIFocusSystem.didUpdateNotification)) { notification in
             if ProcessInfo.processInfo.arguments.contains("--return-focus-trace"),
                let context = notification.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey]
@@ -1346,6 +1352,7 @@ private actor ProductionHomeReadCounter {
 
 @MainActor
 private final class ProductionHomeState {
+    let density = UIDensitySettingsModel(store: UIDensitySettingsStore(namespace: "ProductionHomeFixture"))
     let model: HomeViewModel
     let search: SearchViewModel
     let library: LibraryBrowseViewModel
@@ -1372,6 +1379,9 @@ private final class ProductionHomeState {
         return resident.map(String.init).joined(separator: ",")
     }
     private init(poster: URL, backdrop: URL, logo: URL, trailerURL: URL?) {
+        let requestedDensity = ProcessInfo.processInfo.arguments.first { $0.hasPrefix("--cw-density=") }
+            .flatMap { UIDensity(rawValue: String($0.dropFirst("--cw-density=".count))) }
+        density.density = requestedDensity ?? .standard
         self.trailerURL = trailerURL
         let provider = ProductionHomeProvider(poster: poster, backdrop: backdrop, logo: logo)
         self.provider = provider
@@ -1384,6 +1394,9 @@ private final class ProductionHomeState {
             userID: "fixture", userName: "Fixture", deviceID: "fixture"
         )
         let visibility = self.visibility
+        visibility.setContinueWatchingPlaybackDetails(
+            ProcessInfo.processInfo.arguments.contains("--five-continue-watching") ? .progressOnly : .default
+        )
         visibility.setContinueWatchingShowsSeriesArtwork(
             !ProcessInfo.processInfo.arguments.contains("--episode-home-artwork")
         )
@@ -1779,7 +1792,10 @@ private struct ProductionHomeProvider: MediaProvider, WatchlistProviding {
         if isOffline { throw AppError.serverUnreachable }
         if ProcessInfo.processInfo.arguments.contains("--empty-home-resume") { return [] }
         try await holdForSlowLoad()
-        let items = Array((0..<rowCount).prefix(limit).map(movie))
+        let count = ProcessInfo.processInfo.arguments.first { $0.hasPrefix("--continue-watching-count=") }
+            .flatMap { Int($0.dropFirst("--continue-watching-count=".count)) }
+            ?? (ProcessInfo.processInfo.arguments.contains("--five-continue-watching") ? 5 : rowCount)
+        let items = Array((0..<count).prefix(limit).map(movie))
         if ProcessInfo.processInfo.arguments.contains("--showcase-schedule-fixture") {
             let now = Date()
             for item in items {

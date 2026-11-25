@@ -21,6 +21,7 @@ public struct FeaturedMediaRowPresentation<Cards: View>: View {
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzRowTitleTightening) private var titleTightening
+    @Environment(\.mediaRowHeaderTrailingInset) private var pageTrailingInset
     @Environment(\.themePalette) private var palette
 
     public init(
@@ -55,19 +56,26 @@ public struct FeaturedMediaRowPresentation<Cards: View>: View {
     }
 
     private var cardSpacing: CGFloat {
-        metrics.usesDesktopSizing ? metrics.cardSpacing : (television ? 32 : 16)
+        metrics.usesDesktopSizing ? metrics.cardSpacing : featuredGeometry.spacing
+    }
+
+    private var fittedViewportWidth: CGFloat {
+        #if os(tvOS)
+        sizingViewportWidth ?? viewportWidth
+        #else
+        viewportWidth
+        #endif
+    }
+
+    private var featuredGeometry: (size: CGSize, spacing: CGFloat) {
+        FeaturedCardLayout.rail(viewportWidth: fittedViewportWidth, television: television)
     }
 
     private var size: CGSize {
-        #if os(tvOS)
-        let viewportWidth = sizingViewportWidth ?? self.viewportWidth
-        #endif
         if metrics.usesDesktopSizing {
-            return DesktopMediaRailLayout.featuredSize(in: viewportWidth, metrics: metrics)
+            return DesktopMediaRailLayout.featuredSize(in: fittedViewportWidth, metrics: metrics)
         }
-        return FeaturedCardLayout.size(
-            viewportWidth: viewportWidth - (television ? navigationInset : 0), television: television
-        )
+        return featuredGeometry.size
     }
 
     public var body: some View {
@@ -92,8 +100,7 @@ public struct FeaturedMediaRowPresentation<Cards: View>: View {
             if isLoading {
                 ScrollView(.horizontal) {
                     HStack(spacing: cardSpacing) {
-                        ForEach(0..<(metrics.usesDesktopSizing
-                            ? max(3, Int(ceil(viewportWidth / (size.width + cardSpacing))) + 1) : 3), id: \.self) { _ in
+                        ForEach(0..<max(2, Int(ceil(fittedViewportWidth / (size.width + cardSpacing))) + 1), id: \.self) { _ in
                             RoundedRectangle(cornerRadius: 24)
                                 .fill(palette.fill)
                                 .frame(width: size.width, height: size.height)
@@ -102,6 +109,11 @@ public struct FeaturedMediaRowPresentation<Cards: View>: View {
                     .padding(.vertical, television ? metrics.railShadowClearance : 4)
                 }
                 .contentMargins(.horizontal, inset, for: .scrollContent)
+                #if os(tvOS)
+                .safeAreaPadding(.leading, navigationInset)
+                .ignoresSafeArea(.container, edges: .trailing)
+                #endif
+                .mediaRailViewportWidth($viewportWidth, horizontalContentMargins: 2 * inset)
                 .scrollDisabled(true)
                 .shimmering()
                 .accessibilityHidden(true)
@@ -109,7 +121,6 @@ public struct FeaturedMediaRowPresentation<Cards: View>: View {
                 rail.environment(\.homeRowEditAction, nil)
             }
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
     }
 
     @ViewBuilder private var rail: some View {
@@ -128,7 +139,8 @@ public struct FeaturedMediaRowPresentation<Cards: View>: View {
             LazyHStack(spacing: cardSpacing) { cards(size) }
                 .scrollTargetLayout()
                 #if os(tvOS)
-                .padding(.horizontal, inset)
+                .padding(.leading, inset)
+                .padding(.trailing, max(inset + pageTrailingInset, metrics.railShadowClearance))
                 #endif
                 .padding(.vertical, television ? metrics.railShadowClearance : 4)
         }
@@ -138,9 +150,11 @@ public struct FeaturedMediaRowPresentation<Cards: View>: View {
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
         #if os(tvOS)
+        .ignoresSafeArea(.container, edges: .trailing)
         .modifier(HomeRowPreviewScrollViewport())
         .padding(.vertical, metrics.railClearanceOffset(for: 24))
         #endif
+        .mediaRailViewportWidth($viewportWidth)
         #if os(iOS)
         .scrollTargetBehavior(.viewAligned)
         .scrollPosition(id: $selectedID, anchor: .leading)

@@ -657,8 +657,8 @@ struct UpcomingCaptureFixture: View {
     private func posterMetrics(viewport: CGFloat, inset: CGFloat, compact: Bool) -> PlozzMetrics {
         let metrics = PlozzMetrics.touch(density: .standard)
         guard compact else { return metrics }
-        return PlozziOSHomeRailLayout<EmptyView>.posterMetrics(
-            in: viewport, inset: inset, metrics: metrics, cardStyle: .borderless
+        return PlozziOSPosterGridLayout.compactAgendaMetrics(
+            viewport: viewport, inset: inset, metrics: metrics, cardStyle: .borderless
         )
     }
     #endif

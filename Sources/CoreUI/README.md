@@ -68,9 +68,12 @@ with `browsingRow`; existing collection-detail `onSeeAll` headers elsewhere keep
 their behavior. Passing `nil` opts into Home browsing without showing an action
 or falling back to the old header action. Browse actions carry no media identity
 or context-menu actions.
-Pinned-sidebar rail parking clamps both native targets and idle corrections to
-the scrollable content bounds. A partial final slot must not overscroll: UIKit
-would clamp it when returning from a page, then parking would shift it again.
+Horizontal card rails fit a whole number of cards plus one quarter of the next
+visible card. Density and text size select the number of cards; they must not
+scale away the quarter-card preview. At the end of the content the last card
+is fully visible instead. Pinned-sidebar parking treats the trailing boundary
+as a valid stop for native targets and idle corrections, even when it lies
+less than half a card beyond the previous whole slot.
 Full-bleed media rows retain the consumed trailing safe area as content padding,
 so the final card's native focus lift fits on screen without overscrolling.
 This changes the scrollable tail, not the viewport or portrait density.
@@ -203,7 +206,11 @@ not presented-frame timing; see [diagnostic interpretation](../../docs/performan
 `PlozzMetrics.desktop` supplies artwork width limits for the iOS-on-Mac shell
 without scaling touch controls, captions, or overlays with the artwork.
 `fittingDesktopRail` resolves those limits against the content viewport, leaving
-a gap-sized preview of the next card at every width. Page containers publish
+a quarter of the next picture at every width. The iPhone and iPad rails
+also choose a whole-card count before fitting the artwork; frame insets
+and gaps do not count toward the preview. Native view alignment keeps the
+same leading inset between swipes and leaves the final card reachable.
+Page containers publish
 the resolved metrics through `plozzDesktopMediaRailLayout`; Featured rows use
 the same fitting policy for their 4:5 cards.
 Poster breakpoints preserve eight full cards plus a ninth-card preview around

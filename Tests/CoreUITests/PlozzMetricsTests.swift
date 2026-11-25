@@ -75,26 +75,74 @@ final class PlozzMetricsTests: XCTestCase {
     func testPortraitRowsKeepTheSameVisibleFractionWithEitherNavigation() {
         for density in UIDensity.allCases {
             let metrics = PlozzMetrics(density: density)
-            let count = PlozzTheme.Metrics.portraitRowVisibleCards / CGFloat(density.scale)
             for cardStyle in CardStyle.allCases {
                 for viewportWidth: CGFloat in [1536, 1776, 1840] {
                     for leadingInset: CGFloat in [0, 32] {
                         let slot = metrics.portraitRowSlotWidth(
                             viewportWidth: viewportWidth, leadingInset: leadingInset, cardStyle: cardStyle
                         )
-                        let margin = cardStyle == .borderless ? metrics.borderlessCardSideMargin : 0
-                        let lastCardStart = leadingInset + floor(count) * (slot + metrics.cardSpacing)
+                        let margin = cardStyle == .borderless ? metrics.borderlessCardSideMargin : metrics.cardInset
+                        let artworkLeading = leadingInset + (cardStyle == .framed ? metrics.cardInset : 0)
+                        let whole = floor((viewportWidth - artworkLeading) / (slot + metrics.cardSpacing))
+                        if density == .standard { XCTAssertEqual(whole, 6) }
+                        let lastCardStart = artworkLeading + whole * (slot + metrics.cardSpacing)
                         XCTAssertEqual(
                             (viewportWidth - lastCardStart) / (slot - 2 * margin),
-                            count - floor(count), accuracy: 0.0001
+                            0.25, accuracy: 0.0001
                         )
                     }
+
                 }
             }
         }
         XCTAssertEqual(PlozzTheme.Metrics.portraitRowVisibleCards, 6.25)
         XCTAssertEqual(PlozzMetrics.standard.libraryPosterColumns.count, 6)
         XCTAssertEqual(PlozzMetrics.standard.posterWidth, 280)
+    }
+
+    func testLandscapeRowPeekAcrossCombinedDensityAndTextSizes() {
+        for density in UIDensity.allCases {
+            for textSize in [DynamicTypeSize.large, .xxxLarge, .accessibility5] {
+                let base = PlozzMetrics(density: density, dynamicTypeSize: textSize)
+                for style in CardStyle.allCases {
+                    for series in [false, true] {
+                        for width: CGFloat in [1536, 1776, 1840] {
+                            let leading: CGFloat = 32
+                            let metrics = base.fittingLandscapeRow(
+                                viewportWidth: width, leadingInset: leading, cardStyle: style, showsSeriesArtwork: series
+                            )
+                            let slot = metrics.cardSlotWidth(for: .landscape, cardStyle: style, showsSeriesArtwork: series)
+                            let pitch = slot + metrics.cardSpacing
+                            let available = width - leading - (style == .framed ? metrics.cardInset : 0)
+                            let count = floor(available / pitch)
+                            let surface = slot - 2 * (style == .borderless ? metrics.borderlessCardSideMargin : metrics.cardInset)
+                            XCTAssertGreaterThanOrEqual(count, 1)
+                            XCTAssertEqual((available - count * pitch) / surface, 0.25, accuracy: 0.0001)
+                            if series, base.continueWatchingWidth > (base.landscapeWidth * ContinueWatchingCardShape.widthScale).rounded() {
+                                XCTAssertGreaterThanOrEqual(metrics.continueWatchingWidth + 0.001, base.continueWatchingWidth)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func testIncreasingDensityDoesNotShrinkPinnedContinueWatchingArtwork() {
+        let widths = UIDensity.allCases.map {
+            PlozzMetrics(density: $0).fittingLandscapeRow(
+                viewportWidth: 1776, leadingInset: 0, cardStyle: .borderless, showsSeriesArtwork: true
+            ).continueWatchingWidth
+        }
+        XCTAssertEqual(widths, widths.sorted())
+    }
+
+    func testRailCanParkAtAPartialFinalSlotWithoutLosingTheLeadingStop() {
+        XCTAssertEqual(RowSlotTargets.slot(for: 0, pitch: 366, maximum: 105), 0)
+        XCTAssertEqual(RowSlotTargets.slot(for: 102, pitch: 366, maximum: 105), 105)
+        XCTAssertEqual(RowSlotTargets.slot(for: 550, pitch: 400, maximum: 550), 550)
+        XCTAssertEqual(RowSlotTargets.slot(for: 601, pitch: 400, maximum: 550), 550)
+        XCTAssertEqual(RowSlotTargets.slot(for: 402, pitch: 400, maximum: 550), 400)
     }
 
     func testPortraitRowSizingPreservesDensityAndUnmeasuredFallback() {

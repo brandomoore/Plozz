@@ -125,6 +125,7 @@ struct HomeSkeletonRowView: View {
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.themePalette) private var palette
     @Environment(\.plozzCardStyle) private var profileCardStyle
+    @Environment(\.plozzCardFocusStyle) private var focusStyle
 
     private static let fallbackWidth: CGFloat = 1920
     private var measuredWidth: CGFloat {
@@ -133,6 +134,15 @@ struct HomeSkeletonRowView: View {
 
     var body: some View {
         let kind = row.kind
+        let style = kind == .libraries && focusStyle.usesSystemEffect ? CardStyle.borderless : profileCardStyle
+        let leading = PlozzTheme.Metrics.screenPadding + navigationContentInset
+        let rowMetrics = cardStyle(for: kind) == .landscape
+            ? metrics.fittingLandscapeRow(viewportWidth: measuredWidth, leadingInset: leading,
+                                          cardStyle: style, showsSeriesArtwork: usesSeriesArtwork(kind))
+            : metrics
+        let width = cardStyle(for: kind) == .poster
+            ? metrics.portraitRowSlotWidth(viewportWidth: measuredWidth, leadingInset: leading, cardStyle: style)
+            : rowMetrics.cardSlotWidth(for: .landscape, cardStyle: style, showsSeriesArtwork: usesSeriesArtwork(kind))
         VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
             // Reserve the *exact* height of MediaRowView's title — a hidden Text in
             // the real (density-scaled) header font — with the placeholder pill
@@ -160,37 +170,31 @@ struct HomeSkeletonRowView: View {
             // row 1:1.
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: metrics.cardSpacing) {
-                    ForEach(0..<cardCount(for: row), id: \.self) { _ in
+                    ForEach(0..<cardCount(slot: width, leadingInset: leading), id: \.self) { _ in
                         SkeletonCardView(
                             style: cardStyle(for: kind),
                             showsCaption: showsCaption(for: kind),
                             showsSeriesArtwork: usesSeriesArtwork(kind)
                         )
-                        .frame(width: cardWidth(for: kind))
+                        .environment(\.plozzMetrics, rowMetrics)
+                        .environment(\.plozzCardStyle, style)
+                        .frame(width: width)
                     }
                 }
                 .padding(
                     .leading,
-                    metrics.cardRowLeadingPadding(PlozzTheme.Metrics.screenPadding, cardStyle: profileCardStyle)
-                        + navigationContentInset
+                    metrics.cardRowLeadingPadding(leading, cardStyle: style)
                 )
                 .padding(.trailing, PlozzTheme.Metrics.screenPadding)
                 .padding(.top, metrics.railTopPadding)
                 .padding(.bottom, metrics.railVerticalPadding)
             }
             .scrollClipDisabled()
+            .ignoresSafeArea(.container, edges: .trailing)
+            .mediaRailViewportWidth($availableWidth)
             .scrollDisabled(true)
         }
         .allowsHitTesting(false)
-        .background {
-            GeometryReader { proxy in
-                Color.clear
-                    .onAppear { availableWidth = proxy.size.width }
-                    .onChange(of: proxy.size.width) { _, width in
-                        availableWidth = width
-                    }
-            }
-        }
     }
 
     private func showsCaption(for kind: HomeRowKind) -> Bool {
@@ -210,26 +214,6 @@ struct HomeSkeletonRowView: View {
         }
     }
 
-    /// The layout slot reserved for each skeleton card — must equal
-    /// `MediaRowView.cardSlotWidth` so the placeholder cards sit at the *exact*
-    /// same pitch as the real row. A poster's glass equals `posterWidth`; a
-    /// landscape card's glass is `landscapeWidth + 2 * cardInset`
-    /// (`landscapeCardSlotWidth`), so pinning to the bare `landscapeWidth` would
-    /// make the placeholders 32 pt too narrow and bunch them closer than the real
-    /// Continue Watching / Libraries cards.
-    ///
-    /// A series-artwork Continue Watching card is narrower still (it stands
-    /// taller instead — see ``ContinueWatchingCardShape``), so it has to be asked
-    /// for by name or the row visibly re-pitches the moment content lands.
-    private func cardWidth(for kind: HomeRowKind) -> CGFloat {
-        guard cardStyle(for: kind) == .landscape else { return metrics.posterWidth }
-        return metrics.cardSlotWidth(
-            for: .landscape,
-            cardStyle: .framed,
-            showsSeriesArtwork: usesSeriesArtwork(kind)
-        )
-    }
-
     /// Whether this row's real cards will carry show art with a logo over it —
     /// which is a different card *shape*, not just different contents.
     private func usesSeriesArtwork(_ kind: HomeRowKind) -> Bool {
@@ -242,23 +226,10 @@ struct HomeSkeletonRowView: View {
     /// items) shows just three instead of a screen full that then collapses, while
     /// a full row still fills the viewport. `count == 0` means "unknown" (first
     /// launch), so we fall back to filling the screen.
-    private func cardCount(for row: HomeRowLayout) -> Int {
-        let fits = fittingCardCount(for: row.kind)
+    private func cardCount(slot: CGFloat, leadingInset: CGFloat) -> Int {
+        let usable = max(0, measuredWidth - leadingInset)
+        let fits = max(1, Int(ceil((usable + metrics.cardSpacing) / (slot + metrics.cardSpacing))))
         return row.count > 0 ? min(row.count, fits) : fits
-    }
-
-    /// The number of cards of `kind`'s size that fill the measured viewport, plus
-    /// one that peeks in from the trailing edge — matching how a real, scrollable
-    /// `MediaRowView` looks at rest. Derived from the card slot pitch
-    /// (`cardWidth + cardSpacing`) and the row's leading screen inset, so it tracks
-    /// the display-density setting automatically instead of hardcoding a count.
-    private func fittingCardCount(for kind: HomeRowKind) -> Int {
-        let slot = cardWidth(for: kind)
-        guard slot > 0 else { return 1 }
-        let pitch = slot + metrics.cardSpacing
-        let usable = max(measuredWidth - PlozzTheme.Metrics.screenPadding, 0)
-        let fit = Int(ceil((usable + metrics.cardSpacing) / pitch))
-        return max(fit + 1, 1)
     }
 }
 

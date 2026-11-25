@@ -104,6 +104,17 @@ public enum PlozziOSMediaRailLayout {
         metrics.usesDesktopSizing ? metrics.cardSpacing : visibleSpacing
     }
 
+    /// Standalone tiles (cast, libraries, episode stills) fill their slot;
+    /// unlike poster cards they have no invisible slot margins.
+    public static func tileWidth(
+        viewport: CGFloat, leadingInset: CGFloat, preferred: CGFloat, spacing: CGFloat
+    ) -> CGFloat {
+        let available = viewport - leadingInset
+        guard available > spacing else { return preferred }
+        let count = MediaRailLayout.wholeCards(available: available, preferredSlot: preferred, spacing: spacing)
+        return MediaRailLayout.slotWidth(available: available, count: count, spacing: spacing)
+    }
+
     public static func artworkAlignedInset(_ pageInset: CGFloat, metrics: PlozzMetrics, cardStyle: CardStyle) -> CGFloat {
         pageInset - (cardStyle == .framed ? metrics.cardInset : metrics.borderlessCardSideMargin)
     }
@@ -127,6 +138,19 @@ public struct PlozziOSPosterGridLayout {
     public let columns: Int
     public let metrics: PlozzMetrics
     public let spacing: CGFloat
+
+    /// The compact agenda's existing preferred size selects whole grid columns.
+    /// Do not use a horizontal rail's scroll/peek breakpoints to lay out a grid.
+    public static func compactAgendaMetrics(
+        viewport: CGFloat, inset: CGFloat, metrics: PlozzMetrics, cardStyle: CardStyle
+    ) -> PlozzMetrics {
+        if metrics.usesDesktopSizing { return metrics.fittingDesktopRail(in: viewport, cardStyle: cardStyle) }
+        guard viewport > 0 else { return metrics }
+        let gap = PlozziOSMediaRailLayout.visibleSpacing + (cardStyle == .framed ? 2 * metrics.cardInset : 0)
+        let columns = max(viewport < 375 ? 2 : 3, floor((viewport - inset + gap) / 164))
+        let preferred = (viewport - inset - columns * gap) / (columns + 0.28)
+        return metrics.scalingPosters(by: max(44, preferred * metrics.scale) / metrics.posterWidth)
+    }
 
     public init(contentWidth: CGFloat, metrics: PlozzMetrics, cardStyle: CardStyle) {
         spacing = PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
@@ -233,30 +257,49 @@ public extension EnvironmentValues {
     }
 }
 
+public struct PlozziOSRailViewport<Content: View>: View {
+    @Environment(\.plozziOSHomeViewportWidth) private var viewportWidth
+    @State private var width: CGFloat = 0
+    @ViewBuilder let content: (CGFloat) -> Content
+
+    public init(@ViewBuilder content: @escaping (CGFloat) -> Content) { self.content = content }
+
+    public var body: some View {
+        if viewportWidth > 0 {
+            content(viewportWidth)
+        } else {
+            content(width)
+                .environment(\.plozziOSHomeViewportWidth, width)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        }
+    }
+}
+
 public struct PlozziOSHomeRailLayout<Content: View>: View {
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @Environment(\.plozziOSHomeViewportWidth) private var viewportWidth
-    @State private var width: CGFloat = 0
+    private let pageInset: CGFloat?
     private let isContinueWatching: Bool
     private let content: (PlozzMetrics) -> Content
 
-    public init(isContinueWatching: Bool = false, @ViewBuilder content: @escaping (PlozzMetrics) -> Content) {
+    public init(
+        pageInset: CGFloat? = nil, isContinueWatching: Bool = false,
+        @ViewBuilder content: @escaping (PlozzMetrics) -> Content
+    ) {
+        self.pageInset = pageInset
         self.isContinueWatching = isContinueWatching
         self.content = content
     }
 
     public var body: some View {
-        let resolved = Self.posterMetrics(
-            in: viewportWidth > 0 ? viewportWidth : width,
-            inset: PlozziOSMediaRailLayout.pageInset(for: sizeClass),
-            metrics: metrics, cardStyle: cardStyle,
-            isContinueWatching: isContinueWatching && UIDevice.current.userInterfaceIdiom == .pad
-        )
-        content(resolved)
-            .environment(\.plozzMetrics, resolved)
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        PlozziOSRailViewport { width in
+            let resolved = Self.posterMetrics(
+                in: width, inset: pageInset ?? PlozziOSMediaRailLayout.pageInset(for: sizeClass),
+                metrics: metrics, cardStyle: cardStyle, isContinueWatching: isContinueWatching
+            )
+            content(resolved).environment(\.plozzMetrics, resolved)
+        }
     }
 
     public static func posterMetrics(
@@ -266,23 +309,29 @@ public struct PlozziOSHomeRailLayout<Content: View>: View {
         if metrics.usesDesktopSizing {
             return metrics.fittingDesktopRail(in: width, cardStyle: cardStyle)
         }
-        guard width > 0 else { return metrics }
-        let gap = PlozziOSMediaRailLayout.visibleSpacing + (cardStyle == .framed ? 2 * metrics.cardInset : 0)
-        // Phones show complete pictures plus a 28% preview; wider windows add columns.
-        let count = max(width < 375 ? 2 : 3, floor((width - inset + gap) / 164))
-        let standardWidth = (width - inset - count * gap) / (count + 0.28)
-        let artworkWidth = max(44, standardWidth * CGFloat(metrics.density.scale))
-        let resolved = metrics.scalingPosters(by: artworkWidth / metrics.posterWidth)
+        let padding = cardStyle == .framed ? metrics.cardInset : metrics.borderlessCardSideMargin
+        // The frame starts before the keyline; the painted picture starts on it.
+        let available = width - inset
+        let spacing = PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
+        guard available.isFinite, available > spacing else { return metrics }
+        let artworkGap = spacing + 2 * padding
+        // Retain the standard two-/three-poster phone breakpoints. Apply
+        // density and text growth to the count, never to the fitted width.
+        let standardCount = max(width < 375 ? 2 : 3, floor((available + PlozziOSMediaRailLayout.visibleSpacing) / 164))
+        let preferredScale = max(metrics.scale, metrics.cardTitleFontSize / 15)
+        let count = max(1, Int((standardCount / preferredScale).rounded()))
+        func artworkWidth(for count: Int) -> CGFloat {
+            MediaRailLayout.slotWidth(available: available, count: count, spacing: artworkGap)
+        }
+        let landscapeCount = MediaRailLayout.wholeCards(
+            available: available, preferredSlot: max(metrics.landscapeWidth, 14 * metrics.cardTitleFontSize),
+            spacing: artworkGap
+        )
+        let resolved = metrics.sizingPosters(width: artworkWidth(for: count))
+            .sizingLandscape(width: artworkWidth(for: landscapeCount))
         guard isContinueWatching else { return resolved }
-        let frameInset = cardStyle == .framed ? metrics.cardInset : 0
-        let leadingInset = inset - frameInset
-        let posterStride = resolved.posterWidth + gap
-        // Align the next card's visible edge with the unchanged poster rails,
-        // rather than exposing a fraction of the much wider landscape card.
-        let peek = (width - leadingInset).truncatingRemainder(dividingBy: posterStride)
         return resolved.fittingContinueWatchingRail(
-            in: width, leadingInset: leadingInset, peek: peek,
-            spacing: PlozziOSMediaRailLayout.visibleSpacing, cardStyle: cardStyle
+            in: width, leadingInset: inset, spacing: spacing, cardStyle: cardStyle
         )
     }
 }
@@ -313,7 +362,9 @@ public struct PlozziOSMediaRailScroll<Content: View>: View {
                 alignment: .top,
                 spacing: PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
             ) { content }
+            .scrollTargetLayout()
         }
+        .scrollTargetBehavior(.viewAligned(limitBehavior: .never))
         .loadingMoreOnScroll(onLoadMore, trailingPlaceholderWidth: trailingPlaceholderWidth)
         .contentMargins(
             .horizontal,
@@ -324,8 +375,8 @@ public struct PlozziOSMediaRailScroll<Content: View>: View {
             for: .scrollContent
         )
         .plozziOSMediaRailClearance()
-        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { old, new in
-            if old != new { onNavigationInteraction() }
+        .onScrollPhaseChange { _, phase in
+            if phase == .interacting || phase == .idle { onNavigationInteraction() }
         }
     }
 }

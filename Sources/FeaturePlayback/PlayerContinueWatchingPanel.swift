@@ -27,10 +27,13 @@ struct PlayerContinueWatchingPanel: View {
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: metrics.columnSpacing) { cards }
+                        .scrollTargetLayout()
                         .frame(height: metrics.cardHeight, alignment: .top)
                         .padding(.trailing, metrics.contentPadding)
                 }
-                .scrollClipDisabled()
+                .fittingSpecialtyMediaRail(spacing: metrics.columnSpacing)
+                .scrollTargetBehavior(.viewAligned)
+                .playerMediaRailClip(clearance: metrics.contentPadding)
                 .frame(height: metrics.cardHeight, alignment: .top)
             }
         }
@@ -60,6 +63,7 @@ struct PlayerContinueWatchingCard: View {
     @Environment(\.plozzCardCaptionSettings) private var captions
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.playerControlForeground) private var foreground
+    @Environment(\.specialtyMediaRailViewport) private var viewport
 
     private var showsCaptions: Bool { presentation.showsCaptions(captions) }
     private var slot: PlayerControls.FocusSlot { .continueWatching(item.stablePresentationID) }
@@ -92,7 +96,7 @@ struct PlayerContinueWatchingCard: View {
                 } else {
                     let layout = PlayerMediaArtworkLayout(
                         height: metrics.cardHeight, inset: inset, cornerRadius: cornerRadius,
-                        aspectRatio: aspectRatio
+                        aspectRatio: aspectRatio, viewport: viewport
                     )
                     layout {
                         artwork(cornerRadius: layout.thumbnailShape.cornerSize.width)

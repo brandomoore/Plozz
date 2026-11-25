@@ -163,7 +163,13 @@ public struct PinnedSidebarLeadingFade<Content: View>: View {
                     .padding(.trailing, -verticalOverhang)
                 }
         } else {
+            #if os(tvOS)
+            // No feather outside the pinned sidebar, but the same card pitches
+            // must preserve the continuation cue after native focus scrolls.
+            content.modifier(RowSlotParking(pitch: cardPitch))
+            #else
             content
+            #endif
         }
     }
 }
@@ -202,7 +208,7 @@ private struct RowSlotParking: ViewModifier {
 }
 
 /// Moves a scroll's target onto the nearest card-slot boundary.
-private struct RowSlotTargets: ScrollTargetBehavior {
+struct RowSlotTargets: ScrollTargetBehavior {
     let pitch: CGFloat
 
     func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
@@ -212,11 +218,14 @@ private struct RowSlotTargets: ScrollTargetBehavior {
         )
     }
 
-    /// The nearest whole-card slot, capped at the trailing content boundary.
+    /// The trailing boundary is itself a stop, even when less than half a
+    /// card remains. Rounding only to full pitches can undo the focus scroll.
     static func slot(for position: CGFloat, pitch: CGFloat, maximum: CGFloat) -> CGFloat {
-        // The last card need not end on a whole slot. Overshooting makes UIKit
-        // clamp on return, then parking scrolls the row out of bounds again.
-        min(max(0, maximum), max(0, (position / pitch).rounded()) * pitch)
+        let end = max(0, maximum)
+        let offset = min(max(0, position), end)
+        let lower = (offset / pitch).rounded(.down) * pitch
+        let upper = min(lower + pitch, end)
+        return offset - lower < upper - offset ? lower : upper
     }
 }
 

@@ -3153,7 +3153,9 @@ private struct PlozziOSFeaturedRow: View {
                         )
                     }
                 }
+                .scrollTargetLayout()
             }
+            .scrollTargetBehavior(.viewAligned(limitBehavior: .never))
             .contentMargins(
                 .horizontal,
                 PlozziOSMediaRailLayout.artworkAlignedInset(
@@ -3382,7 +3384,7 @@ struct PlozziOSHomeRowView: View {
                 )
             } else if row.kind == .libraries, row.loadingPlaceholderCount == 0 {
                 PlozziOSMediaSection(title: row.displayName) {
-                    libraryRow
+                    PlozziOSRailViewport { viewport in libraryRow(viewport: viewport) }
                 }
             } else if row.items.isEmpty {
                 // A row that exists but hasn't resolved its items yet: show the
@@ -3448,7 +3450,7 @@ struct PlozziOSHomeRowView: View {
         )
     }
 
-    private var libraryRow: some View {
+    private func libraryRow(viewport: CGFloat) -> some View {
         ScrollView(.horizontal) {
             LazyHStack(spacing: PlozziOSMediaRailLayout.visibleGap(metrics: metrics)) {
                 ForEach(row.libraries) { library in
@@ -3468,17 +3470,17 @@ struct PlozziOSHomeRowView: View {
                             PlozziOSHomeLibraryCard(
                                 library: library,
                                 artworkSource: viewModel.libraryArtworkSource(for: library),
-                                width: metrics.usesDesktopSizing ? metrics.landscapeWidth : appModel.settings.density.density
-                                    .iOSHomeLibraryWidth(
-                                        horizontalSizeClass: horizontalSizeClass,
-                                        isRunningOnMac: metrics.usesDesktopSizing
-                                    )
+                                width: PlozziOSMediaLayout.libraryWidth(
+                                    in: viewport, metrics: metrics, sizeClass: horizontalSizeClass, cardStyle: artworkStyle
+                                )
                             )
                         }
                         .buttonStyle(.plain)
                     }
                 }
+                .scrollTargetLayout()
             }
+            .scrollTargetBehavior(.viewAligned(limitBehavior: .never))
         }
         .contentMargins(
             .horizontal,
@@ -3656,11 +3658,9 @@ struct PlozziOSHomeMediaRail: View {
                 ForEach(liveChannels) { channel in
                     HomeLiveTVCard(
                         channel: channel,
-                        width: metrics.cardSlotWidth(
-                            for: .landscape, cardStyle: cardStyle,
-                            showsSeriesArtwork: showsSeriesArtwork
-                        )
+                        width: metrics.landscapeWidth
                     )
+                    .padding(.horizontal, cardStyle == .framed ? metrics.cardInset : metrics.borderlessCardSideMargin)
                 }
             }
         }

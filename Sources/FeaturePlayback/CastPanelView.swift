@@ -95,6 +95,11 @@ struct CastPanelView: View {
     /// The stage's own size, so a card's frame can be expressed as a fraction.
     @State private var panelSize: CGSize = .zero
 
+    private var faceWidth: CGFloat {
+        MediaRailViewport(width: panelSize.width, spacing: metrics.columnSpacing)
+            .slot(preferred: metrics.castCardWidth, sideMargin: metrics.castHeadshotSideSpace, rounding: .up)
+    }
+
     /// Ties the row's card to the detail it becomes. Without it the drill-in was
     /// two unrelated events — a row vanishing and a panel appearing — which left
     /// the viewer to work out for themselves that the panel was about the face
@@ -318,7 +323,7 @@ struct CastPanelView: View {
         // the reported focus scale is deliberately not applied.
         let collapsed = openedCardFrame ?? CGRect(
             x: 0, y: 0,
-            width: metrics.castCardWidth,
+            width: faceWidth,
             height: metrics.cardHeight
         )
         let radius = isExpanded
@@ -484,6 +489,7 @@ struct CastPanelView: View {
                     Button { openDetail(person, at: index) } label: {
                         CastFaceCard(
                             person: person,
+                            width: faceWidth,
                             focused: focus == .castMember(index)
                         )
                     }
@@ -501,7 +507,7 @@ struct CastPanelView: View {
                         pressScale: 1,
                         mediaGlass: true
                     ))
-                    .frame(width: metrics.castCardWidth, height: metrics.cardHeight)
+                    .frame(width: faceWidth, height: metrics.cardHeight)
                     // The source card is not faded with the row — it is
                     // switched off outright, the instant the pane exists.
                     //
@@ -535,6 +541,7 @@ struct CastPanelView: View {
                     }
                 }
             }
+            .scrollTargetLayout()
             .frame(height: metrics.cardHeight)
             // No leading inset: the first card is a panel-level element, so its
             // edge is the panel's edge — flush with the Info tab above it. An
@@ -549,10 +556,8 @@ struct CastPanelView: View {
         // Re-entry must keep the existing viewport, not center the return card
         // again. Directional scrolling resumes once that card owns native focus.
         .scrollDisabled(detailPerson != nil || restoringToIndex != nil)
-        // The row runs the full width of the card. Clipping at the content inset
-        // left the first and last cards visibly sliced while scrolling; the inset
-        // above still holds them off the edge at rest.
-        .scrollClipDisabled()
+        .scrollTargetBehavior(.viewAligned)
+        .playerMediaRailClip(clearance: metrics.contentPadding)
     }
 }
 
@@ -565,6 +570,7 @@ private struct CastFaceCard: View {
     @Environment(\.playerControlForeground) private var foreground
     @Environment(\.playerCardMetrics) private var metrics
     let person: MediaPerson
+    let width: CGFloat
     let focused: Bool
 
     /// The labels' own inset, which is narrower — they may run closer to the
@@ -577,7 +583,7 @@ private struct CastFaceCard: View {
     var body: some View {
         VStack(spacing: 12) {
             avatar
-                .frame(width: metrics.castHeadshot, height: metrics.castHeadshot)
+                .frame(width: headshot, height: headshot)
                 .clipShape(Circle())
                 // The photo reports where it actually IS, rather than the drill
                 // reconstructing it from this card's internal constants.
@@ -627,10 +633,12 @@ private struct CastFaceCard: View {
         }
         .padding(.vertical, metrics.castVerticalInset)
         .padding(.horizontal, Self.inset)
-        .frame(width: metrics.castCardWidth)
+        .frame(width: width)
         .frame(maxHeight: .infinity)
         // Surface, lift and shadow all come from PlozzCardButtonStyle.
     }
+
+    private var headshot: CGFloat { max(1, width - 2 * metrics.castHeadshotSideSpace) }
 
     @ViewBuilder
     private var avatar: some View {
@@ -1303,8 +1311,12 @@ private struct CastCreditsRow: View {
     /// poster permanently to accommodate a state one of them is in briefly is a
     /// bad trade; the lift is allowed to overflow instead, into the card's own
     /// padding, which is 24pt and swallows it whole.
-    private var posterHeight: CGFloat { metrics.contentHeight }
-    private var posterWidth: CGFloat { (posterHeight * 2 / 3).rounded() }
+    @State private var viewportWidth: CGFloat = 0
+    private var posterHeight: CGFloat { min(metrics.contentHeight, posterWidth * 1.5) }
+    private var posterWidth: CGFloat {
+        MediaRailViewport(width: viewportWidth - Self.fade, spacing: 14)
+            .slot(preferred: (metrics.contentHeight * 2 / 3).rounded(), rounding: .up)
+    }
     /// Card-edge inset for the not-in-library mark, proportional to the poster so
     /// it isn't jammed into the corner of a card this small.
     private var markInset: CGFloat { max(6, posterWidth * 0.035) }
@@ -1337,6 +1349,7 @@ private struct CastCreditsRow: View {
             HStack(spacing: 14) {
                 content
             }
+            .scrollTargetLayout()
         }
         // Margins the width of the fade, so scrolling to a poster parks it just
         // INSIDE the feathered edge instead of underneath it. Without them the
@@ -1345,7 +1358,9 @@ private struct CastCreditsRow: View {
         // the lift.
         // Its own exact height too, so a ScrollView (whose ideal height is its
         // content's) can never report the focused poster's grown size.
-        .frame(height: posterHeight)
+        .frame(height: metrics.contentHeight)
+        .mediaRailViewportWidth($viewportWidth, horizontalContentMargins: 2 * Self.fade)
+        .scrollTargetBehavior(.viewAligned)
         .contentMargins(.horizontal, Self.fade, for: .scrollContent)
         // The scroll view's own clip is off on tvOS ONLY, where the mask below
         // does all the clipping instead — because there the two axes want

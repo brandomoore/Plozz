@@ -364,20 +364,22 @@ private struct MusicRow<Content: View>: View {
 
     var body: some View {
         #if os(iOS)
+        let spacing = PlozziOSMediaRailLayout.visibleGap(metrics: metrics)
+        let inset = PlozziOSMediaRailLayout.pageInset(for: sizeClass, usesDesktopSizing: metrics.usesDesktopSizing)
         PlozziOSMediaSection(title: Text(title)) {
             ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: PlozziOSMediaRailLayout.visibleGap(metrics: metrics)) {
+                LazyHStack(alignment: .top, spacing: spacing) {
                     content()
                 }
+                .scrollTargetLayout()
             }
-            .contentMargins(
-                .horizontal,
-                PlozziOSMediaRailLayout.pageInset(for: sizeClass, usesDesktopSizing: metrics.usesDesktopSizing),
-                for: .scrollContent
-            )
+            .contentMargins(.horizontal, inset, for: .scrollContent)
+            .fittingSpecialtyMediaRail(leadingInset: inset, spacing: spacing)
+            .scrollTargetBehavior(.viewAligned)
             .plozziOSMediaRailClearance()
         }
         #else
+        let trailingInset = max(MusicLayout.screenPadding, metrics.railShadowClearance)
         VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
             HStack(spacing: 24) {
                 Text(title)
@@ -405,13 +407,19 @@ private struct MusicRow<Content: View>: View {
                     LazyHStack(alignment: .top, spacing: MusicLayout.isMobile ? 12 : metrics.cardSpacing) {
                         content()
                     }
-                    .padding(.horizontal, MusicLayout.screenPadding)
+                    .scrollTargetLayout()
                     // Reserve space for focus growth without changing row spacing.
                     .padding(.vertical, MusicLayout.isMobile ? 0 : metrics.railShadowClearance)
                 }
+                .contentMargins(.leading, MusicLayout.screenPadding, for: .scrollContent)
+                .contentMargins(.trailing, trailingInset, for: .scrollContent)
                 #if os(tvOS)
                 .scrollClipDisabled(focusStyle.usesSystemEffect)
+                .ignoresSafeArea(.container, edges: .trailing)
                 #endif
+                .fittingSpecialtyMediaRail(leadingInset: MusicLayout.screenPadding, spacing: metrics.cardSpacing,
+                                           horizontalContentMargins: MusicLayout.screenPadding + trailingInset)
+                .scrollTargetBehavior(.viewAligned)
                 // Match the shared rails: a tight `railTopPadding`-based gap above the
                 // cards (not the wide `railVerticalPadding` used below the row), so the
                 // section header hugs the cards instead of floating far above them.

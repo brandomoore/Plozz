@@ -73,12 +73,17 @@ enum MediaRowEpisodeEntryPolicy {
     }
 }
 
+extension EnvironmentValues {
+    @Entry var episodeColumnArtworkSize: CGSize = EpisodeColumnCard.artworkSize
+}
+
 struct EpisodeRowEntryPlaceholder: View {
     var phase: MediaRowEpisodeEntry.Phase = .loading
     var showsStatus = false
     var isFocused = false
     var nativeFocus: PlozzCardFocus.Binding?
     var onSelect: () -> Void = {}
+    @Environment(\.episodeColumnArtworkSize) private var artworkSize
     @Environment(\.themePalette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.plozzCardFocusStyle) private var focusStyle
@@ -110,22 +115,22 @@ struct EpisodeRowEntryPlaceholder: View {
                                 Text("Unable to load episodes")
                             }
                         } else {
-                            Capsule().fill(palette.fill).frame(width: 250, height: 20 * textScale)
+                            Capsule().fill(palette.fill).frame(width: 0.52 * artworkSize.width, height: 20 * textScale)
                         }
                     }
                     .font(.system(size: PlozzTypography.episodeTitle.scaled(by: textScale).pointSize, weight: .semibold))
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                     .frame(height: PlozzTypography.episodeTitle.scaled(by: textScale).pointSize * 1.25, alignment: .leading)
-                    Capsule().fill(palette.fill).frame(width: 440, height: 15 * textScale)
-                    Capsule().fill(palette.fill).frame(width: 390, height: 15 * textScale)
+                    Capsule().fill(palette.fill).frame(width: 0.92 * artworkSize.width, height: 15 * textScale)
+                    Capsule().fill(palette.fill).frame(width: 0.81 * artworkSize.width, height: 15 * textScale)
                     Group {
                         if showsStatus && phase == .failed {
                             Label("Retry", systemImage: "arrow.clockwise")
                                 .font(.system(size: PlozzTypography.episodeDescription.scaled(by: textScale).pointSize))
                                 .foregroundStyle(palette.secondaryText)
                         } else {
-                            Capsule().fill(palette.fill).frame(width: 310, height: 15 * textScale)
+                            Capsule().fill(palette.fill).frame(width: 0.65 * artworkSize.width, height: 15 * textScale)
                         }
                     }
                     .frame(height: 24 * textScale, alignment: .leading)
@@ -140,7 +145,7 @@ struct EpisodeRowEntryPlaceholder: View {
                 )
             }
         }
-        .frame(width: EpisodeColumnCard.artworkSize.width, alignment: .leading)
+        .frame(width: artworkSize.width, alignment: .leading)
         .padding(.trailing, EpisodeColumnCard.trailingSpacing)
         .compositingGroup()
         .plozzCardFocusTransition(isFocused: isFocused, animates: !reduceMotion)
@@ -152,12 +157,12 @@ struct EpisodeRowEntryPlaceholder: View {
         if focusStyle.usesSystemEffect, let nativeFocus {
             NativeTVPoster(
                 image: nil, treatment: .original,
-                aspectRatio: EpisodeColumnCard.artworkSize.width / EpisodeColumnCard.artworkSize.height,
-                fallbackWidth: EpisodeColumnCard.artworkSize.width,
+                aspectRatio: artworkSize.width / artworkSize.height,
+                fallbackWidth: artworkSize.width,
                 title: nil, subtitle: nil, overlay: EmptyView(), focus: nativeFocus, action: onSelect
             )
             .focused(nativeFocus.focusState)
-            .frame(width: EpisodeColumnCard.artworkSize.width, height: EpisodeColumnCard.artworkSize.height)
+            .frame(width: artworkSize.width, height: artworkSize.height)
         } else {
             customArtwork
         }
@@ -169,7 +174,7 @@ struct EpisodeRowEntryPlaceholder: View {
     private var customArtwork: some View {
         RoundedRectangle(cornerRadius: metrics.landscapeCardCornerRadius)
             .fill(palette.cardOpaqueSurface)
-            .frame(width: EpisodeColumnCard.artworkSize.width, height: EpisodeColumnCard.artworkSize.height)
+            .frame(width: artworkSize.width, height: artworkSize.height)
             .plozzMediaEdge(cornerRadius: metrics.landscapeCardCornerRadius)
             .plozzFocusHalo(
                 cornerRadius: metrics.landscapeCardCornerRadius,

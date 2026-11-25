@@ -5,22 +5,44 @@ import CoreModels
 import UIKit
 #endif
 
+public enum MediaRailLayout {
+    public static let peekFraction: CGFloat = 0.25
+
+    /// Measure from the leading edge of the first visible card surface. The
+    /// peek is a fraction of the next surface, not of its padded layout slot.
+    public static func slotWidth(
+        available: CGFloat, count: Int, spacing: CGFloat, sideMargin: CGFloat = 0
+    ) -> CGFloat {
+        let whole = CGFloat(max(1, count))
+        return max(1, (available - whole * spacing + peekFraction * 2 * sideMargin) / (whole + peekFraction))
+    }
+
+    /// At larger text sizes, prefer fewer columns over squeezing their content.
+    public static func wholeCards(
+        available: CGFloat, preferredSlot: CGFloat, spacing: CGFloat, sideMargin: CGFloat = 0,
+        rounding: FloatingPointRoundingRule = .toNearestOrAwayFromZero
+    ) -> Int {
+        guard available.isFinite, preferredSlot > 0, preferredSlot + spacing > 0 else { return 1 }
+        let peek = peekFraction * (preferredSlot - 2 * sideMargin)
+        return max(1, Int(((available - peek) / (preferredSlot + spacing)).rounded(rounding)))
+    }
+}
+
 public enum DesktopMediaRailLayout {
     public static let pageInset: CGFloat = 52
     public static let posterMaximum: CGFloat = 212
     public static let landscapeMaximum: CGFloat = 360
     public static let castMaximum: CGFloat = 160
 
-    /// Fit complete cards and one gap-sized preview, rather than clipping a
-    /// fixed-width rail at an arbitrary point in its final card.
+    /// Fit complete cards and a quarter of the next card within the width limit.
     public static func width(
         in viewportWidth: CGFloat, maximum: CGFloat,
         leadingInset: CGFloat = pageInset, spacing: CGFloat
     ) -> CGFloat {
         guard viewportWidth.isFinite, viewportWidth > leadingInset + 2 * spacing else { return maximum }
-        let available = viewportWidth - leadingInset - spacing
-        let count = max(1, ceil(available / (maximum + spacing)))
-        return available / count - spacing
+        let available = viewportWidth - leadingInset
+        let count = MediaRailLayout.wholeCards(available: available, preferredSlot: maximum, spacing: spacing, rounding: .up)
+        return MediaRailLayout.slotWidth(available: available, count: count, spacing: spacing)
     }
 
     public static func featuredSize(in viewportWidth: CGFloat, metrics: PlozzMetrics) -> CGSize {
@@ -316,13 +338,39 @@ public struct PlozzMetrics: Equatable, Sendable {
         viewportWidth: CGFloat, leadingInset: CGFloat, cardStyle: CardStyle
     ) -> CGFloat {
         guard viewportWidth > 0 else { return posterWidth }
-        let visibleCards = PlozzTheme.Metrics.portraitRowVisibleCards / CGFloat(density.scale)
-        let wholeCards = floor(visibleCards)
-        let partialCard = visibleCards - wholeCards
-        let sideMargin = cardStyle == .borderless ? borderlessCardSideMargin : 0
-        return max(1, (
-            viewportWidth - leadingInset - wholeCards * cardSpacing + partialCard * 2 * sideMargin
-        ) / visibleCards)
+        let wholeCards = Int(((PlozzTheme.Metrics.portraitRowVisibleCards / CGFloat(density.scale))
+            - MediaRailLayout.peekFraction).rounded())
+        let sideMargin = cardStyle == .borderless ? borderlessCardSideMargin : cardInset
+        let artworkLeading = leadingInset + (cardStyle == .framed ? cardInset : 0)
+        return MediaRailLayout.slotWidth(
+            available: viewportWidth - artworkLeading, count: wholeCards, spacing: cardSpacing, sideMargin: sideMargin
+        )
+    }
+
+    public func fittingLandscapeRow(
+        viewportWidth: CGFloat, leadingInset: CGFloat, cardStyle: CardStyle, showsSeriesArtwork: Bool
+    ) -> Self {
+        guard viewportWidth > leadingInset else { return self }
+        let available = viewportWidth - leadingInset - (cardStyle == .framed ? cardInset : 0)
+        let size = artworkSize(for: .landscape, showsSeriesArtwork: showsSeriesArtwork)
+        let inset = cardStyle == .framed ? cardInset : borderlessCardSideMargin
+        let enlargedText = showsSeriesArtwork
+            && continueWatchingWidth > (landscapeWidth * ContinueWatchingCardShape.widthScale).rounded()
+        // Rounding up at larger sizes can make Huge artwork smaller than Large:
+        // the same number of cards would have to share the row with wider gaps.
+        let count = MediaRailLayout.wholeCards(
+            available: available, preferredSlot: size.width + 2 * inset, spacing: cardSpacing, sideMargin: inset,
+            rounding: enlargedText || scale > 1 ? .down : .toNearestOrAwayFromZero
+        )
+        let width = MediaRailLayout.slotWidth(available: available, count: count, spacing: cardSpacing, sideMargin: inset) - 2 * inset
+        var result = self
+        if showsSeriesArtwork {
+            result.continueWatchingWidth = max(1, width)
+        } else {
+            result.landscapeWidth = max(1, width)
+            result.landscapeHeight = result.landscapeWidth * size.height / size.width
+        }
+        return result
     }
 
     /// These metrics with portrait posters scaled by `factor`, for a surface
@@ -341,14 +389,21 @@ public struct PlozzMetrics: Equatable, Sendable {
         return metrics
     }
 
+    public func sizingLandscape(width: CGFloat) -> Self {
+        var metrics = self
+        metrics.landscapeWidth = width
+        metrics.landscapeHeight = width * landscapeHeight / landscapeWidth
+        return metrics
+    }
+
     public func fittingContinueWatchingRail(
-        in viewportWidth: CGFloat, leadingInset: CGFloat, peek: CGFloat,
+        in viewportWidth: CGFloat, leadingInset: CGFloat,
         spacing: CGFloat, cardStyle: CardStyle
     ) -> Self {
         guard !usesDesktopSizing, viewportWidth.isFinite, viewportWidth > 0 else { return self }
-        let frameInset = cardStyle == .framed ? cardInset : 0
-        let available = viewportWidth - leadingInset - peek
-        let strideOverhead = spacing + 2 * frameInset
+        let margin = cardStyle == .framed ? cardInset : borderlessCardSideMargin
+        let available = viewportWidth - leadingInset
+        let strideOverhead = spacing + 2 * margin
         // Narrow windows retain two cards; wider windows approach a 220-point
         // minimum before adding columns. Density and text growth can reduce the count.
         let standardColumns = min(4, max(2, floor(available / (220 + strideOverhead))))
@@ -356,7 +411,9 @@ public struct PlozzMetrics: Equatable, Sendable {
         let standardWidth = (standardLandscapeWidth * ContinueWatchingCardShape.widthScale).rounded()
         let sizeScale = continueWatchingTargetWidth / standardWidth
         let columns = max(1, floor(standardColumns / sizeScale))
-        let artworkWidth = max(44, available / columns - strideOverhead)
+        let artworkWidth = max(1, MediaRailLayout.slotWidth(
+            available: available, count: Int(columns), spacing: spacing, sideMargin: margin
+        ) - 2 * margin)
         var result = self
         result.continueWatchingWidth = artworkWidth
         result.landscapeWidth = artworkWidth
@@ -470,20 +527,27 @@ public struct PlozzMetrics: Equatable, Sendable {
     public func fittingDesktopRail(in viewportWidth: CGFloat, cardStyle: CardStyle) -> Self {
         guard usesDesktopSizing, viewportWidth.isFinite, viewportWidth > 0 else { return self }
         var result = self
-        let frameInset = cardStyle == .framed ? cardInset : 0
-        func artworkWidth(_ target: CGFloat, inset: CGFloat) -> CGFloat {
-            DesktopMediaRailLayout.width(
-                in: viewportWidth, maximum: target + 2 * inset,
-                leadingInset: DesktopMediaRailLayout.pageInset - inset,
-                spacing: cardSpacing
-            ) - 2 * inset
+        let margin = cardStyle == .framed ? cardInset : borderlessCardSideMargin
+        let available = viewportWidth - DesktopMediaRailLayout.pageInset
+        func artworkWidth(_ target: CGFloat, inset: CGFloat, spacing: CGFloat, protectText: Bool = false) -> CGFloat {
+            let count = MediaRailLayout.wholeCards(
+                available: available, preferredSlot: target + 2 * inset, spacing: spacing, sideMargin: inset,
+                rounding: protectText ? .down : .up
+            )
+            return max(1, MediaRailLayout.slotWidth(
+                available: available, count: count, spacing: spacing, sideMargin: inset
+            ) - 2 * inset)
         }
-        result.posterWidth = artworkWidth(DesktopMediaRailLayout.posterMaximum * scale, inset: frameInset)
+        let spacing = cardStyle == .framed ? cardSpacing : max(0, cardSpacing - 2 * margin)
+        result.posterWidth = artworkWidth(DesktopMediaRailLayout.posterMaximum * scale, inset: margin, spacing: spacing)
         result.posterHeight = result.posterWidth * 1.5
-        result.landscapeWidth = artworkWidth(DesktopMediaRailLayout.landscapeMaximum * scale, inset: frameInset)
+        let target = DesktopMediaRailLayout.landscapeMaximum * scale
+        result.landscapeWidth = artworkWidth(target, inset: margin, spacing: spacing)
         result.landscapeHeight = result.landscapeWidth * 9 / 16
-        result.continueWatchingWidth = artworkWidth(continueWatchingTargetWidth, inset: frameInset)
-        result.castTileDiameter = artworkWidth(DesktopMediaRailLayout.castMaximum * scale, inset: 0)
+        result.continueWatchingWidth = artworkWidth(
+            continueWatchingTargetWidth, inset: margin, spacing: spacing, protectText: continueWatchingTargetWidth > target.rounded()
+        )
+        result.castTileDiameter = artworkWidth(DesktopMediaRailLayout.castMaximum * scale, inset: 0, spacing: cardSpacing)
         return result
     }
 

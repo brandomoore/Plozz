@@ -2,6 +2,122 @@ import XCTest
 
 @MainActor
 final class ProductionHomeNavigationTests: XCTestCase {
+    func testPinnedContinueWatchingSmallLastCardKeepsFocusLiftVisible() throws {
+        try checkContinueWatchingEnd(density: "compact")
+    }
+
+    func testPinnedContinueWatchingDefaultLastCardKeepsFocusLiftVisible() throws {
+        try checkContinueWatchingEnd(density: "standard")
+    }
+
+    func testPinnedContinueWatchingLongRowKeepsQuarterPeekAndFocusLiftVisible() throws {
+        for density in ["micro", "extraCompact", "compact", "standard", "spacious", "extraLarge"] {
+            try checkContinueWatchingEnd(density: density, count: 12)
+        }
+    }
+
+    private func checkContinueWatchingEnd(density: String, count: Int = 5) throws {
+        #if targetEnvironment(simulator)
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = [
+            "--production-home-fixture", "--pinned-home", "--five-continue-watching", "--cw-density=\(density)",
+            "--continue-watching-action-probe", "--continue-watching-use-default",
+            "-AppleLanguages", "(en)", "-AppleLocale", "en_US"
+        ]
+        if count != 5 { app.launchArguments.append("--continue-watching-count=\(count)") }
+        app.launch()
+        defer { app.terminate() }
+        func settle(_ item: XCUIElement) -> CGRect {
+            var previous = CGRect.null
+            var changed = Date()
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in
+                    guard item.exists, item.hasFocus else { return false }
+                    let frame = item.frame
+                    if frame != previous { previous = frame; changed = Date() }
+                    return Date().timeIntervalSince(changed) > 0.7
+                }, object: nil
+            )], timeout: 10), .completed, app.debugDescription)
+            return item.frame
+        }
+        _ = settle(app.buttons["home-hero-action-row"])
+        XCUIRemote.shared.press(.down)
+        let first = app.buttons["Fixture movie 0"].firstMatch
+        let firstFrame = settle(first)
+        let firstPaint = try focusedBlueArtwork(firstFrame, app: app, name: "\(density)-entry")
+        let lift = firstPaint.maxX - firstFrame.maxX
+        XCTAssertGreaterThan(lift, 5, "The reference must contain the rendered native focus lift.")
+        if count > 5 {
+            let partial = (1..<count).map { app.buttons["Fixture movie \($0)"].firstMatch }
+                .filter(\.exists).map(\.frame)
+                .first { $0.minX < app.frame.maxX && $0.maxX > app.frame.maxX }
+            let frame = try XCTUnwrap(partial, "Enough cards must leave a partially visible next card.")
+            XCTAssertEqual((app.frame.maxX - frame.minX) / frame.width, 0.25, accuracy: 0.02,
+                           "The unfocused card's visible fraction must not change with display density.")
+        }
+        for index in 1..<count {
+            XCUIRemote.shared.press(.right)
+            _ = settle(app.buttons["Fixture movie \(index)"].firstMatch)
+        }
+        let last = app.buttons["Fixture movie \(count - 1)"].firstMatch
+        func assertVisible(_ step: String) throws {
+            let frame = settle(last)
+            let paint = try focusedBlueArtwork(frame, app: app, name: "\(density)-\(step)")
+            XCTAssertTrue(last.hasFocus)
+            XCTAssertEqual(paint.maxX - frame.maxX, lift, accuracy: 3,
+                           "The entire right focus lift must render, not merely receive focus.")
+            XCTAssertGreaterThan(app.frame.maxX - paint.maxX, 3,
+                                 "The artwork and its surrounding focus rim must clear the screen edge.")
+        }
+        try assertVisible("last")
+        XCUIRemote.shared.press(.left)
+        _ = settle(app.buttons["Fixture movie \(count - 2)"].firstMatch)
+        XCUIRemote.shared.press(.right)
+        try assertVisible("return")
+        #else
+        throw XCTSkip("Uses an owned simulator with local fixture data.")
+        #endif
+    }
+
+    /// The fixture's blue backdrop has a continuous scanline above the title.
+    /// Measure rendered lift against a fully visible peer, not an assumed scale.
+    private func focusedBlueArtwork(_ frame: CGRect, app: XCUIApplication, name: String) throws -> CGRect {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let tree = XCTAttachment(string: app.debugDescription)
+        tree.name = "\(name)-tree"
+        tree.lifetime = .keepAlways
+        add(tree)
+        let image = try XCTUnwrap(screenshot.image.cgImage)
+        let scale = CGFloat(image.width) / app.frame.width
+        let y = Int((frame.minY + frame.height * 0.27 - app.frame.minY) * scale)
+        let scanline = try XCTUnwrap(image.cropping(to: CGRect(x: 0, y: y, width: image.width, height: 1)))
+        var pixels = [UInt8](repeating: 0, count: image.width * 4)
+        try pixels.withUnsafeMutableBytes {
+            let context = try XCTUnwrap(CGContext(
+                data: $0.baseAddress, width: image.width, height: 1, bitsPerComponent: 8,
+                bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(scanline, in: CGRect(x: 0, y: 0, width: image.width, height: 1))
+        }
+        func isBlue(_ x: Int) -> Bool {
+            let i = x * 4
+            return Int(pixels[i + 2]) - Int(pixels[i]) > 60 && Int(pixels[i + 2]) - Int(pixels[i + 1]) > 25
+        }
+        let center = min(image.width - 1, max(0, Int((frame.midX - app.frame.minX) * scale)))
+        XCTAssertTrue(isBlue(center), "The focused fixture artwork must be loaded.")
+        var left = center, right = center
+        while left > 0, isBlue(left - 1) { left -= 1 }
+        while right + 1 < image.width, isBlue(right + 1) { right += 1 }
+        return CGRect(x: CGFloat(left) / scale + app.frame.minX, y: frame.minY,
+                      width: CGFloat(right + 1 - left) / scale, height: frame.height)
+    }
+
     func testSelectingHomeAgainReturnsToTopAcrossNavigationStylesAndLayouts() throws {
         continueAfterFailure = false
         for navigation in ["--native-sidebar-home", "--pinned-home", "--top-bar-home"] {

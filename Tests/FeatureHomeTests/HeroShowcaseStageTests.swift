@@ -860,6 +860,15 @@ final class HeroShowcaseStageTests: XCTestCase {
         }
     }
 
+    func testNativeRowViewportReachesDisplayWithoutMovingItsLeadingKeyline() {
+        let bounds = CGRect(x: 0, y: 24, width: 1640, height: 1000)
+        let window = CGRect(x: -200, y: 0, width: 1920, height: 1080)
+        let ltr = HeroShowcaseStage.Controller.rowFrame(in: bounds, window: window, direction: .leftToRight)
+        let rtl = HeroShowcaseStage.Controller.rowFrame(in: bounds, window: window, direction: .rightToLeft)
+        XCTAssertEqual(ltr, CGRect(x: bounds.minX, y: 24, width: 1720, height: 1000))
+        XCTAssertEqual(rtl, CGRect(x: window.minX, y: 24, width: 1840, height: 1000))
+    }
+
     func testRowsCannotTakeInitialFocusAndBoundaryInputOnlyChangesTheTopEdge() {
         let stage = HeroShowcaseStage.Controller(
             state: HeroShowcaseState(), hero: AnyView(Color.clear),

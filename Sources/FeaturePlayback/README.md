@@ -2541,13 +2541,12 @@ collection owns directional focus and realizes cells throughout held Left/Right
 input. Stable episode IDs and layout offset adjustments preserve the focused cell
 and its exact viewport position when earlier seasons or retry rows arrive,
 including during native focus transitions and in RTL. Native scroll targets use
-complete card slots constrained to fully reveal the focused cell, with an initial 24pt
-peek of preceding artwork when available. The first episode retains its normal
-gutter. Entry targets the current/last-focused episode, not the partial previous
-card. Loading uses the same artwork dimensions, spacing, and peek offset, including
+complete card slots constrained to fully reveal the focused cell. A scrollable row
+opens on whole cards plus a quarter of the next still; the end reveals the final
+card fully. Entry targets the current/last-focused episode. Loading uses the same
+artwork dimensions and spacing, including
 right-to-left layout. Episode spacing uses the standard column gap without adding
 panel padding between cards (28pt between tvOS slots, 52pt between resting stills).
-Native focus can reveal more of the preceding card when making room for its lift.
 Mobile SwiftUI
 rows defer leading insertions until scrolling settles.
 tvOS resets artwork content when the row changes enabled state and when focus

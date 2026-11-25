@@ -2885,12 +2885,15 @@ struct LiveChannelOnNowPanel: View {
                     .accessibilityIdentifier("live-channel-on-now-\(item.channelID)")
                 }
             }
+            .scrollTargetLayout()
             // As the Cast row: flush with the panel's leading edge, and no
             // vertical inset, so each card is the full height of the Info card
             // it stands in for.
             .padding(.trailing, metrics.contentPadding)
         }
-        .scrollClipDisabled()
+        .fittingSpecialtyMediaRail(spacing: metrics.columnSpacing)
+        .scrollTargetBehavior(.viewAligned)
+        .playerMediaRailClip(clearance: metrics.contentPadding)
     }
 }
 
@@ -2926,6 +2929,7 @@ struct LiveChannelOnNowCard: View {
     @Environment(\.playerCardMetrics) private var metrics
     @Environment(\.playerControlForeground) private var foreground
     @Environment(\.isFocused) private var focused
+    @Environment(\.specialtyMediaRailViewport) private var viewport
 
     private static let spacing: CGFloat = 10
     #if os(tvOS)
@@ -2944,13 +2948,17 @@ struct LiveChannelOnNowCard: View {
     }
 
     /// Player insets and corners stay independent of browsing-card density.
-    private var artHeight: CGFloat {
+    private var maximumArtHeight: CGFloat {
         max(40, (metrics.cardHeight - inset * 2 - textHeight - Self.spacing).rounded())
     }
 
     private var artCornerRadius: CGFloat { max(8, metrics.panelCornerRadius - inset) }
 
-    private var artWidth: CGFloat { (artHeight * 16 / 9).rounded() }
+    private var artWidth: CGFloat {
+        let preferred = (maximumArtHeight * 16 / 9).rounded() + 2 * inset
+        return max(1, viewport.slot(preferred: preferred, sideMargin: inset, rounding: .up) - 2 * inset)
+    }
+    private var artHeight: CGFloat { artWidth * 9 / 16 }
 
     /// The programme leads and the channel it's on follows, as the guide lists
     /// them. A channel with no guide data, or whose guide only repeats its own

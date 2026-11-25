@@ -29,10 +29,13 @@ struct PlayerChapterPanel: View {
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(alignment: .top, spacing: metrics.columnSpacing) { chapters }
+                            .scrollTargetLayout()
                             .frame(height: metrics.cardHeight, alignment: .top)
                             .padding(.trailing, metrics.contentPadding)
                     }
-                    .scrollClipDisabled()
+                    .fittingSpecialtyMediaRail(spacing: metrics.columnSpacing)
+                    .scrollTargetBehavior(.viewAligned)
+                    .playerMediaRailClip(clearance: metrics.contentPadding)
                     .frame(height: metrics.cardHeight)
                 }
             }
@@ -78,6 +81,7 @@ private struct PlayerChapterButton: View {
     let action: () -> Void
     @Environment(\.playerCardMetrics) private var metrics
     @Environment(\.playerControlForeground) private var foreground
+    @Environment(\.specialtyMediaRailViewport) private var viewport
 
     private var isCurrent: Bool {
         let time = model.currentSeconds
@@ -152,7 +156,7 @@ private struct PlayerChapterButton: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         } else if showsArtwork {
             let layout = PlayerMediaArtworkLayout(
-                height: metrics.cardHeight, inset: contentInset, cornerRadius: cornerRadius
+                height: metrics.cardHeight, inset: contentInset, cornerRadius: cornerRadius, viewport: viewport
             )
             layout {
                 thumbnail
@@ -209,6 +213,7 @@ struct PlayerMediaArtworkLayout: Layout {
     let inset: CGFloat
     let cornerRadius: CGFloat
     var aspectRatio: CGFloat = 16 / 9
+    var viewport = MediaRailViewport()
     private let spacing: CGFloat = 8
 
     var thumbnailShape: RoundedRectangle {
@@ -224,11 +229,14 @@ struct PlayerMediaArtworkLayout: Layout {
         let hasCaption = subviews.count > 1
         let captionHeight = hasCaption ? subviews[1].sizeThatFits(.unspecified).height : 0
         let artworkHeight = max(0, height - inset * 2 - (hasCaption ? spacing : 0) - captionHeight)
-        return CGSize(width: artworkHeight * aspectRatio + inset * 2, height: height)
+        // The caption has already reserved its height. Use one more column
+        // rather than a taller image that would collide with a larger label.
+        let width = viewport.slot(preferred: artworkHeight * aspectRatio + inset * 2, sideMargin: inset, rounding: .up)
+        return CGSize(width: width, height: height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
-        let width = bounds.width - inset * 2
+        let width = max(1, bounds.width - inset * 2)
         subviews[0].place(
             at: CGPoint(x: bounds.minX + inset, y: bounds.minY + inset), anchor: .topLeading,
             proposal: ProposedViewSize(width: width, height: width / aspectRatio)

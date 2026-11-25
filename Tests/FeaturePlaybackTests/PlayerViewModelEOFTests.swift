@@ -1217,18 +1217,15 @@ final class PlayerViewModelEOFTests: XCTestCase {
             )
             #endif
             XCTAssertEqual(episodes.bottomInset, episodes.cardMetrics.cardInset)
-            XCTAssertEqual(episodes.previousArtworkPeek, 24)
             XCTAssertEqual(episodes.episodeOffset(for: 0), 0)
-            XCTAssertEqual(
-                episodes.cardWidth - episodes.cardMetrics.cardInset - episodes.episodeOffset(for: 1),
-                24, accuracy: 0.01
-            )
+            XCTAssertEqual(episodes.episodeOffset(for: 1), episodes.cardWidth + episodes.columnSpacing)
             XCTAssertEqual(
                 episodes.imageHeight + episodes.titleHeight + episodes.cardMetrics.landscapeCaptionTopSpacing
                     + episodes.cardMetrics.cardInset + episodes.bottomInset,
                 episodes.rowHeight
             )
         }
+
         let portrait = PlayerSequenceLayout(
             metrics: .verticalNarrow, cardMetrics: .standard, contained: true,
             hasError: false
@@ -1249,6 +1246,24 @@ final class PlayerViewModelEOFTests: XCTestCase {
         XCTAssertGreaterThan(tvEpisodes.imageWidth, 365)
         XCTAssertEqual(tvEpisodes.columnSpacing, 28)
         XCTAssertEqual(tvEpisodes.columnSpacing + tvEpisodes.cardMetrics.cardInset * 2, 52)
+    }
+
+    func testHorizontalEpisodeAndPlaylistRailsFitAQuarterStillWithoutTakingCaptionSpace() {
+        for width: CGFloat in [393, 668, 1024, 1640, 1920] {
+            for metrics in [PlayerCardMetrics.tv, .horizontalWide, .horizontalNarrow] {
+                for contained in [true, false] {
+                    let layout = PlayerSequenceLayout(metrics: metrics, cardMetrics: .standard, contained: contained,
+                                                      hasError: false, viewportWidth: width)
+                    let pitch = layout.cardWidth + layout.columnSpacing
+                    let available = width - layout.cardMetrics.cardInset
+                    let lastLeading = floor(available / pitch) * pitch
+                    XCTAssertEqual((available - lastLeading) / layout.imageWidth, 0.25, accuracy: 0.0001)
+                    XCTAssertLessThanOrEqual(layout.imageHeight + layout.titleHeight + layout.cardMetrics.cardInset
+                                             + layout.bottomInset + layout.cardMetrics.landscapeCaptionTopSpacing,
+                                             layout.rowHeight + 0.01)
+                }
+            }
+        }
     }
 
     func testMobileWakeIntentCoversStartupAndBufferingButRespectsPause() async {

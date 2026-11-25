@@ -3766,10 +3766,12 @@ struct PlozziOSInlineEpisodeRail: View {
         // Shared guardrail (CoreUI): the placeholder always reserves the rail's real
         // height, and is only painted when the viewer asked for the change. A local
         // copy of this rule is how the page ended up reflowing when cards arrived.
-        PlozzReservedPlaceholder(isPending: isLoading, revealsPlaceholder: showsSkeleton) {
-            PlozziOSInlineEpisodeSkeletonRail()
-        } content: {
-            railContent
+        PlozziOSRailViewport { _ in
+            PlozzReservedPlaceholder(isPending: isLoading, revealsPlaceholder: showsSkeleton) {
+                PlozziOSInlineEpisodeSkeletonRail()
+            } content: {
+                railContent
+            }
         }
     }
 
@@ -3851,6 +3853,7 @@ private struct PlozziOSInlineEpisodeSkeletonRail: View {
 }
 
 private struct PlozziOSInlineEpisodeSkeleton: View {
+    @Environment(\.plozziOSHomeViewportWidth) private var viewportWidth
     @Environment(\.plozzCardCaptionSettings) private var captionSettings
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.plozzCardStyle) private var cardStyle
@@ -3904,11 +3907,14 @@ private struct PlozziOSInlineEpisodeSkeleton: View {
     }
 
     private var cardWidth: CGFloat {
-        PlozziOSMediaLayout.episodeWidth(metrics: metrics, sizeClass: horizontalSizeClass)
+        PlozziOSMediaLayout.episodeWidth(
+            metrics: metrics, sizeClass: horizontalSizeClass, viewport: viewportWidth, cardStyle: cardStyle
+        )
     }
 }
 
 struct PlozziOSInlineEpisodeEntry: View {
+    @Environment(\.plozziOSHomeViewportWidth) private var viewportWidth
     @ScaledMetric(relativeTo: .subheadline) private var overviewFontSize: CGFloat = 15
     @Environment(\.plozzCardCaptionSettings) private var captionSettings
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -4061,7 +4067,9 @@ struct PlozziOSInlineEpisodeEntry: View {
     }
 
     private var cardWidth: CGFloat {
-        PlozziOSMediaLayout.episodeWidth(metrics: metrics, sizeClass: horizontalSizeClass)
+        PlozziOSMediaLayout.episodeWidth(
+            metrics: metrics, sizeClass: horizontalSizeClass, viewport: viewportWidth, cardStyle: cardStyle
+        )
     }
 
     private var episodeArtwork: some View {
@@ -4238,11 +4246,11 @@ struct PlozziOSCastSection: View {
         let pageInset = PlozziOSPageLayout.horizontalInset(
             for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing
         )
-        let tileDiameter = metrics.usesDesktopSizing ? metrics.castTileDiameter : metrics.posterWidth
         let spacing = metrics.usesDesktopSizing
             ? PlozziOSMediaRailLayout.visibleGap(metrics: metrics)
             : metrics.cardSlotWidth(for: .poster, cardStyle: cardStyle) - metrics.posterWidth
                 + PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
+        let tileDiameter = metrics.usesDesktopSizing ? metrics.castTileDiameter : metrics.posterWidth
         return PlozziOSMediaSection(
             title: credits.contains { !$0.crewRoles.isEmpty } ? Text("Cast & Crew") : Text("Cast"),
             horizontalInset: pageInset
@@ -4306,7 +4314,9 @@ struct PlozziOSCastSection: View {
                         .disabled(openPerson == nil)
                     }
                 }
+                .scrollTargetLayout()
             }
+            .scrollTargetBehavior(.viewAligned(limitBehavior: .never))
             .contentMargins(
                 .horizontal,
                 pageInset,

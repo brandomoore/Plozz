@@ -1,6 +1,9 @@
 import CoreModels
 import CoreUI
 import SwiftUI
+#if os(iOS)
+@testable import AppShelliOS
+#endif
 
 struct DetailInformationFixture: View {
     @State private var selectedPerson = ""
@@ -267,8 +270,19 @@ struct DetailInformationFixture: View {
                     if Self.example == nil && !singleValue && layoutCase == nil {
                         Text(selectedPerson)
                             .accessibilityIdentifier("selected-cast-person")
-                        CastRowView(people: cast, leadingInset: 24)
-                            .environment(\.mediaPersonNavigator, { person in selectedPerson = person.name })
+                        #if os(iOS)
+                        if ProcessInfo.processInfo.arguments.contains("--mobile-cast-swipe") {
+                            PlozziOSCastSection(people: cast, sourceAccountID: "fixture")
+                                .environment(\.mediaPersonSourceNavigator, { person, _ in selectedPerson = person.name })
+                                .environment(\.plozzMetrics, .touch(density: .standard))
+                                .environment(\.layoutDirection, ProcessInfo.processInfo.arguments.contains("--rail-rtl")
+                                             ? .rightToLeft : .leftToRight)
+                        } else {
+                            castRow
+                        }
+                        #else
+                        castRow
+                        #endif
                     }
                     DetailInformationSections(
                         item: item, horizontalInset: horizontalInset,
@@ -325,6 +339,11 @@ struct DetailInformationFixture: View {
 
     private var palette: ThemePalette {
         ProcessInfo.processInfo.arguments.contains("--detail-layout-light") ? .light : .dark
+    }
+
+    private var castRow: some View {
+        CastRowView(people: cast, leadingInset: 24)
+            .environment(\.mediaPersonNavigator, { person in selectedPerson = person.name })
     }
 
     private var horizontalInset: CGFloat {

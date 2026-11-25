@@ -5,7 +5,6 @@ import SwiftUI
 
 struct PlozziOSExtrasSection: View {
     @Environment(\.plozzCardStyle) private var cardStyle
-    @Environment(\.plozzMetrics) private var metrics
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let state: LoadState<[MediaExtra]>
@@ -16,7 +15,9 @@ struct PlozziOSExtrasSection: View {
     @State private var showsLoadingPlaceholders = false
 
     var body: some View {
-        content
+        PlozziOSHomeRailLayout(pageInset: inset) { metrics in
+            content(cardWidth: metrics.cardSlotWidth(for: .landscape, cardStyle: cardStyle))
+        }
             // Crossfade when the extras arrive; the section is inserted into the
             // page after the hero, so an appearance-driven fade can finish offscreen.
             .transition(.opacity)
@@ -32,7 +33,7 @@ struct PlozziOSExtrasSection: View {
     }
 
     @ViewBuilder
-    private var content: some View {
+    private func content(cardWidth: CGFloat) -> some View {
         switch state {
         case .loaded(let extras) where !extras.isEmpty:
             PlozziOSExtrasRail(
@@ -54,9 +55,6 @@ struct PlozziOSExtrasSection: View {
         }
     }
 
-    private var cardWidth: CGFloat {
-        metrics.cardSlotWidth(for: .landscape, cardStyle: cardStyle)
-    }
 }
 
 private struct PlozziOSExtrasRail: View {
@@ -96,7 +94,9 @@ private struct PlozziOSExtrasRail: View {
                         .buttonStyle(.plain)
                     }
                 }
+                .scrollTargetLayout()
             }
+            .scrollTargetBehavior(.viewAligned(limitBehavior: .never))
             .contentMargins(
                 .horizontal,
                 PlozziOSMediaRailLayout.artworkAlignedInset(inset, metrics: metrics, cardStyle: cardStyle),

@@ -251,7 +251,7 @@ public struct MediaRowView: View {
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     #if os(tvOS)
     @Environment(\.mediaRowHeaderTrailingInset) private var pageTrailingSafeInset
-    @State private var portraitViewportWidth: CGFloat = 0
+    @State private var rowViewportWidth: CGFloat = 0
     @Environment(\.mediaRowSizingViewportWidth) private var sizingViewportWidth
     @State private var trailingSafeInset: CGFloat = 0
     #endif
@@ -635,7 +635,7 @@ public struct MediaRowView: View {
                     isActive: pinnedSidebarActive,
                     inset: navigationContentInset,
                     verticalOverhang: layoutMetrics.railShadowClearance,
-                    cardPitch: presentation == .episodeColumn ? nil : cardSlotWidth + layoutMetrics.cardSpacing
+                    cardPitch: cardSlotWidth + layoutMetrics.cardSpacing
                 ) {
                     ScrollViewReader { proxy in
                         MediaRowScroll(
@@ -693,13 +693,13 @@ public struct MediaRowView: View {
                             * (cardSlotWidth + layoutMetrics.cardSpacing)
                     )
                     #if os(tvOS)
-                    .ignoresSafeArea(.container, edges: presentation == .poster ? .trailing : [])
+                    .ignoresSafeArea(.container, edges: .trailing)
                     // This width already excludes the navigation safe area.
                     // Observe size only; scrolling must not invalidate the row.
                     .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                        presentation == .poster ? geometry.containerSize.width : 0
+                        geometry.containerSize.width
                     } action: { _, width in
-                        portraitViewportWidth = width
+                        rowViewportWidth = width
                     }
                     #endif
                     #if os(tvOS)
@@ -725,7 +725,7 @@ public struct MediaRowView: View {
                     }
                     #if os(tvOS)
                     .onGeometryChange(for: CGFloat.self) { geometry in
-                        presentation == .poster ? geometry.safeAreaInsets.trailing : 0
+                        geometry.safeAreaInsets.trailing
                     } action: { _, inset in
                         trailingSafeInset = inset
                     }
@@ -888,6 +888,8 @@ public struct MediaRowView: View {
                         }
                     }
                 }
+                .environment(\.episodeColumnArtworkSize, episodeColumnArtworkSize)
+                .environment(\.plozzMetrics, layoutMetrics)
                 .task(id: seriesArtworkPrefetchIdentity) {
                     activity.seriesArtworkPrefetch.cancelAll()
                     guard showsSeriesArtwork, !items.isEmpty else { return }
@@ -1091,7 +1093,7 @@ public struct MediaRowView: View {
         case .poster:
             #if os(tvOS)
             return metrics.portraitRowSlotWidth(
-                viewportWidth: sizingViewportWidth ?? portraitViewportWidth,
+                viewportWidth: sizingViewportWidth ?? rowViewportWidth,
                 leadingInset: leadingInset,
                 cardStyle: cardStyle
             )
@@ -1099,14 +1101,32 @@ public struct MediaRowView: View {
             return metrics.posterWidth
             #endif
         case .landscape:
+            #if os(tvOS)
+            return layoutMetrics.cardSlotWidth(for: .landscape, cardStyle: cardStyle, showsSeriesArtwork: showsSeriesArtwork)
+            #else
             return metrics.cardSlotWidth(
                 for: .landscape,
                 cardStyle: .framed,
                 showsSeriesArtwork: showsSeriesArtwork
             )
+            #endif
         case .episodeColumn:
-            return EpisodeColumnCard.slotWidth
+            return episodeColumnArtworkSize.width + EpisodeColumnCard.trailingSpacing
         }
+    }
+
+    private var episodeColumnArtworkSize: CGSize {
+        let original = EpisodeColumnCard.artworkSize
+        #if os(tvOS)
+        let available = (sizingViewportWidth ?? rowViewportWidth) - leadingInset
+        guard presentation == .episodeColumn, available > 0 else { return original }
+        let gap = layoutMetrics.cardSpacing + EpisodeColumnCard.trailingSpacing
+        let count = MediaRailLayout.wholeCards(available: available, preferredSlot: original.width, spacing: gap)
+        let width = MediaRailLayout.slotWidth(available: available, count: count, spacing: gap)
+        return CGSize(width: width, height: width * original.height / original.width)
+        #else
+        return original
+        #endif
     }
 
     private var loadingPlaceholder: some View {
@@ -1158,7 +1178,15 @@ public struct MediaRowView: View {
     }
 
     private var layoutMetrics: PlozzMetrics {
-        presentation == .episodeColumn ? .standard : metrics
+        #if os(tvOS)
+        if presentation == .landscape {
+            return metrics.fittingLandscapeRow(
+                viewportWidth: sizingViewportWidth ?? rowViewportWidth, leadingInset: leadingInset,
+                cardStyle: cardStyle, showsSeriesArtwork: showsSeriesArtwork
+            )
+        }
+        #endif
+        return presentation == .episodeColumn ? .standard : metrics
     }
 
     private var artworkStyle: PosterCardView.Style {

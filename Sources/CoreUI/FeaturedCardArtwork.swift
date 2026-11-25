@@ -14,14 +14,23 @@ public enum FeaturedCardLayout {
         return scrimStops.last!.opacity
     }
 
+    public static func rail(viewportWidth: CGFloat, television: Bool) -> (size: CGSize, spacing: CGFloat) {
+        let available = max(1, viewportWidth - (television ? PlozzTheme.Metrics.screenPadding : 20))
+        let spacing: CGFloat = television ? 32 : 16
+        let count = MediaRailLayout.wholeCards(
+            available: available, preferredSlot: television ? 540 : 360, spacing: spacing
+        )
+        let width = MediaRailLayout.slotWidth(available: available, count: count, spacing: spacing)
+        guard television else { return (CGSize(width: width, height: width * 1.125), spacing) }
+        // Native 4:5 clips need integral bounds. Absorb their rounding in the
+        // gutters instead of rounding away some of the quarter-card reveal.
+        let aligned = max(4, (width / 4).rounded(.down) * 4)
+        let gap = (available - aligned * (CGFloat(count) + MediaRailLayout.peekFraction)) / CGFloat(count)
+        return (CGSize(width: aligned, height: aligned * 1.25), max(0, gap))
+    }
+
     public static func size(viewportWidth: CGFloat, television: Bool) -> CGSize {
-        let width = television
-            ? min(560, max(280, (viewportWidth - 96) / 3.15))
-            : min(440, max(220, viewportWidth - 48))
-        guard television else { return CGSize(width: width, height: width * 1.125) }
-        // Preserve the 4:5 ratio without fractional native clip bounds, even on 2x displays.
-        let alignedWidth = (width / 4).rounded(.up) * 4
-        return CGSize(width: alignedWidth, height: alignedWidth * 1.25)
+        rail(viewportWidth: viewportWidth, television: television).size
     }
 }
 

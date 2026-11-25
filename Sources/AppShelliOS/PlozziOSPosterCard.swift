@@ -12,8 +12,43 @@ enum PlozziOSMediaLayout {
             : .touch(density: density, dynamicTypeSize: dynamicTypeSize)
     }
 
-    static func episodeWidth(metrics: PlozzMetrics, sizeClass: UserInterfaceSizeClass?) -> CGFloat {
-        metrics.usesDesktopSizing ? metrics.landscapeWidth : (sizeClass == .regular ? 360 : 300)
+    static func episodeWidth(
+        metrics: PlozzMetrics, sizeClass: UserInterfaceSizeClass?,
+        viewport: CGFloat = 0, cardStyle: CardStyle = .borderless
+    ) -> CGFloat {
+        let preferred: CGFloat = metrics.usesDesktopSizing ? metrics.landscapeWidth : (sizeClass == .regular ? 360 : 300)
+        guard viewport > 0 else { return preferred }
+        return framedTileArtworkWidth(
+            viewport: viewport, metrics: metrics, sizeClass: sizeClass, cardStyle: cardStyle,
+            preferred: metrics.usesDesktopSizing ? DesktopMediaRailLayout.landscapeMaximum * metrics.scale
+                : preferred * metrics.scale
+        )
+    }
+
+    static func libraryWidth(
+        in viewport: CGFloat, metrics: PlozzMetrics, sizeClass: UserInterfaceSizeClass?, cardStyle: CardStyle
+    ) -> CGFloat {
+        framedTileArtworkWidth(
+            viewport: viewport, metrics: metrics, sizeClass: sizeClass, cardStyle: cardStyle,
+            preferred: metrics.density.iOSHomeLibraryWidth(
+                horizontalSizeClass: sizeClass, isRunningOnMac: metrics.usesDesktopSizing
+            )
+        )
+    }
+
+    private static func framedTileArtworkWidth(
+        viewport: CGFloat, metrics: PlozzMetrics, sizeClass: UserInterfaceSizeClass?, cardStyle: CardStyle,
+        preferred: CGFloat
+    ) -> CGFloat {
+        let frame = cardStyle == .framed ? metrics.cardInset : 0
+        let inset = PlozziOSMediaRailLayout.pageInset(for: sizeClass, usesDesktopSizing: metrics.usesDesktopSizing)
+            + (metrics.usesDesktopSizing ? 0 : frame)
+        let target = max(preferred, 14 * metrics.cardTitleFontSize)
+        let gap = PlozziOSMediaRailLayout.visibleGap(metrics: metrics) + 2 * frame
+        // Desktop tiles retain the same maximum as other landscape cards.
+        return metrics.usesDesktopSizing
+            ? DesktopMediaRailLayout.width(in: viewport, maximum: target, leadingInset: inset, spacing: gap)
+            : PlozziOSMediaRailLayout.tileWidth(viewport: viewport, leadingInset: inset, preferred: target, spacing: gap)
     }
 }
 

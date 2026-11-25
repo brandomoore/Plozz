@@ -1083,8 +1083,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                                    "The first poster artwork must share the heading's leading keyline.")
                     XCTAssertLessThan(first.count, 210, "Wide windows add columns instead of oversized posters.")
                     for run in full { XCTAssertEqual(run.count, first.count, accuracy: 1) }
-                    XCTAssertGreaterThan(Double(peek.count) / Double(first.count), 0.20)
-                    XCTAssertLessThan(Double(peek.count) / Double(first.count), 0.42)
+                    XCTAssertEqual(CGFloat(peek.count), CGFloat(first.count) / 4, accuracy: 1.5)
                     XCTAssertEqual(peek.upperBound, Int(width), "The next poster must peek at the physical rail edge.")
                 }
             }
@@ -1096,11 +1095,12 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         let original = app.settings.cardStyle.captions
         defer { app.settings.cardStyle.captions = original }
         app.settings.cardStyle.captions = CardCaptionSettings(showsLabels: false)
-        let artwork = try await posterArtwork()
+        let artwork = try await posterArtwork(size: CGSize(width: 6, height: 9))
         let request = URLRequest(url: artwork)
         let response = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache?.cachedResponse(for: request))
-        URLCache.shared.storeCachedResponse(response, for: request)
-        defer { URLCache.shared.removeCachedResponse(for: request) }
+        // Cast uses the system AsyncImage, not ArtworkImageCache. Give it the
+        // same pixels without depending on the system URL cache or a network.
+        let headshot = try XCTUnwrap(URL(string: "data:image/png;base64,\(response.data.base64EncodedString())"))
         let items = (0..<12).map {
             MediaItem(id: "detail-size-\($0)", title: "Title \($0)", kind: .movie, posterURL: artwork)
         }
@@ -1108,12 +1108,12 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
             RelatedEntry(related: RelatedTitle(title: $0.title, kind: .movie, source: .tmdb), libraryItem: $0)
         }
         let people = (0..<12).map {
-            MediaPerson(id: "person-\($0)", name: "Person \($0)", kind: $0 == 0 ? "Director" : "Actor", imageURL: artwork)
+            MediaPerson(id: "person-\($0)", name: "Person \($0)", kind: $0 == 0 ? "Director" : "Actor", imageURL: headshot)
         }
         for style in [CardStyle.borderless, .framed] {
-            try await withWindow { window, host in
-                host.safeAreaRegions = []
-                for width: CGFloat in [390, 440, 834] {
+            for width: CGFloat in [390, 440, 834] {
+                try await withWindow { window, host in
+                    host.safeAreaRegions = []
                     let sizeClass: UserInterfaceSizeClass = width < 600 ? .compact : .regular
                     let inset = PlozziOSPageLayout.horizontalInset(for: sizeClass)
                     window.frame.size = CGSize(width: width, height: 1400)
@@ -1138,13 +1138,19 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                     try await settle(window)
                     let deadline = ContinuousClock.now + .seconds(5)
                     while ContinuousClock.now < deadline {
-                        if try posterRuns(snapshot(window), axis: .vertical, at: inset + 45).count == 3 { break }
+                        let frame = snapshot(window)
+                        let rows = try posterRuns(frame, axis: .vertical, at: inset + 45)
+                        // The three leading images can be ready while the last
+                        // visible AsyncImage is still drawing its gray placeholder.
+                        if rows.count == 3, try rows.allSatisfy({ row in
+                            try posterRuns(frame, at: CGFloat(row.lowerBound + row.count / 2)).last?.upperBound == Int(width)
+                        }) { break }
                         try await Task.sleep(for: .milliseconds(100))
                     }
                     let image = snapshot(window, name: "home-related-cast-sizing-\(Int(width))-\(style)")
                     let rows = try posterRuns(image, axis: .vertical, at: inset + 45)
                     XCTAssertEqual(rows.count, 3, "All three production rails must paint their artwork.")
-                    guard rows.count == 3 else { continue }
+                    guard rows.count == 3 else { return }
                     let home = try posterRuns(image, at: CGFloat(rows[0].lowerBound + rows[0].count / 2))
                     let first = try XCTUnwrap(home.first)
                     XCTAssertEqual(CGFloat(first.lowerBound), inset, accuracy: 2)
@@ -1153,8 +1159,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                         XCTAssertEqual(card.count, first.count, accuracy: 1, "The leading posters must be complete.")
                     }
                     let peek = try XCTUnwrap(home.last)
-                    XCTAssertGreaterThan(Double(peek.count) / Double(first.count), 0.20)
-                    XCTAssertLessThan(Double(peek.count) / Double(first.count), 0.42)
+                    XCTAssertEqual(CGFloat(peek.count), CGFloat(first.count) / 4, accuracy: 1.5)
                     XCTAssertEqual(home.last?.upperBound, Int(width))
                     for row in rows.dropFirst() {
                         let cards = try posterRuns(image, at: CGFloat(row.lowerBound + row.count / 2))
@@ -1232,7 +1237,7 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         }
     }
 
-    func testHomeCaptionPreferenceAndSkeletonMatchWithoutChangingLandscapeSizes() async throws {
+    func testHomeCaptionPreferenceAndSkeletonMatchWithoutChangingTypography() async throws {
         let app = PlozziOSAppModel()
         let original = app.settings.cardStyle.captions
         defer { app.settings.cardStyle.captions = original }
@@ -1275,7 +1280,8 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
         for density in UIDensity.allCases {
             let base = PlozzMetrics.touch(density: density)
             let small = PlozziOSHomeRailLayout<EmptyView>.posterMetrics(in: 390, inset: 22, metrics: base, cardStyle: .borderless)
-            XCTAssertEqual(small.landscapeWidth, base.landscapeWidth)
+            XCTAssertEqual(small.landscapeHeight / small.landscapeWidth,
+                           base.landscapeHeight / base.landscapeWidth, accuracy: 0.001)
             XCTAssertEqual(small.continueWatchingWidth, base.continueWatchingWidth)
             XCTAssertEqual(small.cardTitleFontSize, base.cardTitleFontSize)
         }
@@ -1434,6 +1440,9 @@ final class MobileHomeAndMultiviewPresentationTests: XCTestCase {
                             let cards = try posterRuns(image, at: CGFloat(second.lowerBound + second.count / 2))
                             XCTAssertGreaterThanOrEqual(cards.count, 2)
                             if cards.count >= 2 {
+                                let peek = try XCTUnwrap(cards.last)
+                                XCTAssertEqual(peek.upperBound, Int(width))
+                                XCTAssertEqual(CGFloat(peek.count), CGFloat(cards[0].count) / 4, accuracy: 1.5)
                                 XCTAssertEqual(CGFloat(cards[1].lowerBound - cards[0].upperBound),
                                                12 + (cardStyle == .framed ? 2 * metrics.cardInset : 0), accuracy: 1)
                             }

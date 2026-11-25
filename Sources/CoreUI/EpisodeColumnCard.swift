@@ -27,6 +27,7 @@ public struct EpisodeColumnCard: View, Equatable {
     public static let artworkSize = CGSize(width: 480, height: 270)
     public static let trailingSpacing: CGFloat = 16
     public static let slotWidth = artworkSize.width + trailingSpacing
+    @Environment(\.episodeColumnArtworkSize) private var fittedArtworkSize
 
     private let item: MediaItem
     private let spoilerSettings: SpoilerSettings
@@ -85,7 +86,7 @@ public struct EpisodeColumnCard: View, Equatable {
     public var body: some View {
         let _ = plozzTraceBodyChanges { Self._printChanges() }
         cardContent
-        .frame(width: Self.artworkSize.width, alignment: .leading)
+        .frame(width: fittedArtworkSize.width, alignment: .leading)
         .padding(.trailing, Self.trailingSpacing)
         .focusableCard(
             isFocused: $isFocused,
@@ -136,7 +137,7 @@ public struct EpisodeColumnCard: View, Equatable {
                 lineCount: 3,
                 fontSize: PlozzTypography.episodeDescription.scaled(by: textScale).pointSize,
                 lineSpacing: PlozzTypography.episodeDescription.scaled(by: textScale).lineSpacing,
-                maxWidth: Self.artworkSize.width
+                maxWidth: fittedArtworkSize.width
             )
             .opacity(showsSynopsis ? 1 : 0)
             .animation(
@@ -203,7 +204,7 @@ public struct EpisodeColumnCard: View, Equatable {
 
     private var customEpisodeArtwork: some View {
         realArtwork
-            .frame(width: Self.artworkSize.width, height: Self.artworkSize.height)
+            .frame(width: fittedArtworkSize.width, height: fittedArtworkSize.height)
             .background { if presentation.isUpcoming { palette.cardSurface } }
             .overlay { episodeOverlays }
             .plozzCardArtworkClip(RoundedRectangle(cornerRadius: metrics.landscapeCardCornerRadius, style: .continuous))
@@ -261,8 +262,8 @@ public struct EpisodeColumnCard: View, Equatable {
             : (presentation.artworkTreatment == .blurred ? .blurred : .original)
         return NativeTVPoster(
             image: nativeArtwork.image, treatment: treatment,
-            aspectRatio: Self.artworkSize.width / Self.artworkSize.height,
-            fallbackWidth: Self.artworkSize.width, title: nil, subtitle: nil,
+            aspectRatio: fittedArtworkSize.width / fittedArtworkSize.height,
+            fallbackWidth: fittedArtworkSize.width, title: nil, subtitle: nil,
             overlay: ZStack {
                 if captionsHidden && nativeArtwork.image == nil { neutralPlaceholder }
                 episodeOverlayContent(scrimOutset: 40)
@@ -275,7 +276,7 @@ public struct EpisodeColumnCard: View, Equatable {
             focus: $isFocused, action: action
         )
         .focused($isFocused.focusState)
-        .frame(width: Self.artworkSize.width)
+        .frame(width: fittedArtworkSize.width)
         .background {
             FallbackAsyncImage(
                 references: source.references, variant: .landscapeCard,

@@ -32,6 +32,7 @@ public struct CastRowView: View {
 
     public var body: some View {
         if !credits.isEmpty {
+            let trailingInset = max(PlozzTheme.Metrics.screenPadding, metrics.circleFocusPadding)
             VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
                 if let title {
                     Text(title)
@@ -45,8 +46,7 @@ public struct CastRowView: View {
                             CastMemberCard(credit: credit, onFocusEntered: onFocusEntered)
                         }
                     }
-                    .padding(.leading, leadingInset)
-                    .padding(.trailing, PlozzTheme.Metrics.screenPadding)
+                    .scrollTargetLayout()
                     // Keep the rail clipping (no `scrollClipDisabled`) so the focus
                     // engine holds the first/last card at its inset, and reserve room
                     // *inside* the clip for the focused card's lift + shadow. The
@@ -54,6 +54,14 @@ public struct CastRowView: View {
                     // the row's height is unchanged — only the clip grows.
                     .padding(.vertical, metrics.railShadowClearance)
                 }
+                .contentMargins(.leading, leadingInset, for: .scrollContent)
+                .contentMargins(.trailing, trailingInset, for: .scrollContent)
+                #if os(tvOS)
+                .ignoresSafeArea(.container, edges: .trailing)
+                #endif
+                .fittingSpecialtyMediaRail(leadingInset: leadingInset, spacing: metrics.cardSpacing,
+                                           horizontalContentMargins: leadingInset + trailingInset)
+                .scrollTargetBehavior(.viewAligned(limitBehavior: .never))
                 .accessibilityIdentifier("detail-cast-rail")
                 .padding(.top, metrics.railClearanceOffset(for: PlozzTheme.Spacing.small))
                 .padding(.bottom, metrics.railClearanceOffset(for: PlozzTheme.Spacing.large))
@@ -71,6 +79,7 @@ private struct CastMemberCard: View {
     private var person: MediaPerson { credit.person }
 
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.specialtyMediaRailViewport) private var viewport
     @Environment(\.locale) private var locale
     /// Installed per navigation stack. When absent the tile stays inert, which is
     /// the right behaviour on surfaces that have nowhere to push a person to.
@@ -82,8 +91,9 @@ private struct CastMemberCard: View {
     private static let scale: CGFloat = 1.25
 
     var body: some View {
-        let diameter = metrics.castTileDiameter * Self.scale
-        let slot = diameter + metrics.circleFocusPadding * 2
+        let margin = metrics.circleFocusPadding
+        let slot = viewport.slot(preferred: metrics.castTileDiameter * Self.scale + 2 * margin, sideMargin: margin)
+        let diameter = max(1, slot - 2 * margin)
         CircularFocusTile(
             diameter: diameter,
             focusPadding: metrics.circleFocusPadding,
