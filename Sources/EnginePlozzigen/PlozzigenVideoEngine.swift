@@ -1241,6 +1241,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             audioBridgeMode: losslessAudioEnabled ? .lossless : .surroundCompat
         )
         options.objectAudioRendering = .off
+        options.readsContainerAttachmentsAtOpen = true
         options.preferDualLayerDolbyVision = false
         let convertsFEL = dolbyVisionFELConversion && AppReleaseChannel.current.isBeta
             && AEEngine.OptionalComponent.dolbyVisionFelCurves.isBuiltIn
@@ -1302,6 +1303,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             nativeRemoteHLSIngestFallback: true
         )
         options.foldsDolbyVisionFEL = false
+        options.readsContainerAttachmentsAtOpen = true
         options.dolbyVisionHandling = .profile7MELOnly
         applyVideoUpscaling(videoUpscaling, to: &options)
         return options

@@ -386,7 +386,9 @@ final class AetherReleaseIntegrationTests: XCTestCase {
     }
 
     func testResolvedEngineAndSourceCreditIdentifyPinnedReleaseIntegration() throws {
-        XCTAssertEqual(AetherEngine.version, "7.72.1")
+        XCTAssertEqual(AetherEngine.version, "7.75.0")
+        XCTAssertTrue(PlozzigenVideoEngine.onDemandLoadOptions().readsContainerAttachmentsAtOpen)
+        XCTAssertTrue(PlozzigenVideoEngine.liveLoadOptions(httpHeaders: [:]).readsContainerAttachmentsAtOpen)
         let credit = try XCTUnwrap(PlozzAttributions.entries.first { $0.title == "AetherEngine" })
         // The metadata guard compares the exact revision with Package.resolved.
         XCTAssertNotNil(credit.detail.range(
