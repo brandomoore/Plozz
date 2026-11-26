@@ -10,9 +10,14 @@ import Network
 actor IPTVPlaybackProxy {
     private let listener: NWListener
     private let origin: URL
+    private let originPortal: URL?
+    private let alternateOrigins: [IPTVStreamDelivery.AlternateOrigin]
+    private let portalPool: IPTVPortalPool?
+    private var activeOrigin: URL
     private let headers: [String: String]
     private let formatHint: MediaFormatHint
     private let http: IPTVHTTP
+    private let ownsHTTP: Bool
     private let isLive: Bool
     private let uptime: @Sendable () -> TimeInterval
     private let diagnostic: PlaybackFailureAttempt?
@@ -40,19 +45,33 @@ actor IPTVPlaybackProxy {
     init(
         origin: URL, headers: [String: String], formatHint: MediaFormatHint = .init(),
         configuration: URLSessionConfiguration? = nil,
+        sharedHTTP: IPTVHTTP? = nil,
+        originPortal: URL? = nil,
+        alternateOrigins: [IPTVStreamDelivery.AlternateOrigin] = [],
+        portalPool: IPTVPortalPool? = nil,
         sensitiveValues: [String] = [], content: PlaybackFailureDiagnostic.Content = .live,
         diagnostics: PlaybackFailureDiagnostics = .shared,
         uptime: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) throws {
         self.origin = origin
+        self.originPortal = originPortal
+        self.alternateOrigins = alternateOrigins
+        self.portalPool = portalPool
+        self.activeOrigin = origin
         self.headers = headers
         self.formatHint = formatHint
         isLive = content == .live
         self.uptime = uptime
-        http = IPTVHTTP(
-            configuration: configuration, resourceTimeout: 86_400,
-            sensitiveValues: sensitiveValues, redirectScope: .playback
-        )
+        if let sharedHTTP {
+            http = sharedHTTP
+            ownsHTTP = false
+        } else {
+            http = IPTVHTTP(
+                configuration: configuration, resourceTimeout: 86_400,
+                sensitiveValues: sensitiveValues, redirectScope: .playback
+            )
+            ownsHTTP = true
+        }
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         listener = try NWListener(using: parameters)
@@ -104,7 +123,7 @@ actor IPTVPlaybackProxy {
         livePlaylistURL = nil
         listener.newConnectionHandler = nil
         listener.cancel()
-        http.cancel()
+        if ownsHTTP { http.cancel() }
         if let playbackURL { PlaybackDeliveryFailure.unregister(loopbackURL: playbackURL) }
         let waiting = rootWaiters
         rootWaiters.removeAll()
@@ -428,8 +447,17 @@ actor IPTVPlaybackProxy {
         url: URL, forwardedHeaders: [String: String], method: String,
         evidence: IPTVPlaybackResponseEvidence
     ) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
-        func fetch(_ target: URL) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
-            let scoped = IPTVCredential.sameOrigin(origin, target) ? headers : [:]
+        let failoverTimeout: TimeInterval = 8
+        func scopedHeaders(for target: URL) -> [String: String] {
+            if IPTVCredential.sameOrigin(activeOrigin, target)
+                || IPTVCredential.sameOrigin(origin, target)
+                || alternateOrigins.contains(where: { IPTVCredential.sameOrigin($0.url, target) }) {
+                return headers
+            }
+            return [:]
+        }
+        func fetch(_ target: URL, timeout: TimeInterval? = nil) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
+            let scoped = scopedHeaders(for: target)
             diagnosticSequence = min(1_000_000, diagnosticSequence + 1)
             var request = PlaybackDeliveryEvidence.Request(
                 sequence: diagnosticSequence, resource: url == origin ? .root : .child,
@@ -440,12 +468,77 @@ actor IPTVPlaybackProxy {
             )
             request.rangeRequested = forwardedHeaders.keys.contains { $0.lowercased() == "range" }
             evidence.begin(request, delivery: deliveryFailure)
+            let currentOrigin = activeOrigin
             return try await http.bytes(
-                url: target, headers: scoped.merging(forwardedHeaders) { _, forwarded in forwarded }, method: method,
+                url: target, headers: scoped.merging(forwardedHeaders) { _, forwarded in forwarded },
+                method: method, timeout: timeout,
                 receivedResponse: { response in
-                    evidence.record(response: response, target: target, origin: self.origin)
+                    evidence.record(response: response, target: target, origin: currentOrigin)
                 }
             )
+        }
+        if url == origin, !alternateOrigins.isEmpty {
+            let redirectedLive = isLive ? livePlaylistURL : nil
+            struct Attempt {
+                let portal: URL?
+                let url: URL
+                let isRedirectedLive: Bool
+            }
+            var attempts: [Attempt] = []
+            var seenURLs = Set<URL>()
+            if let redirectedLive {
+                attempts.append(.init(portal: originPortal, url: redirectedLive, isRedirectedLive: true))
+                seenURLs.insert(redirectedLive)
+            }
+            if seenURLs.insert(activeOrigin).inserted {
+                let activePortal = activeOrigin == origin
+                    ? originPortal
+                    : alternateOrigins.first(where: { $0.url == activeOrigin })?.portal
+                attempts.append(.init(portal: activePortal, url: activeOrigin, isRedirectedLive: false))
+            }
+            for alternate in alternateOrigins where seenURLs.insert(alternate.url).inserted {
+                attempts.append(.init(portal: alternate.portal, url: alternate.url, isRedirectedLive: false))
+            }
+            var didFailOver = false
+            for (index, attempt) in attempts.enumerated() {
+                let isLast = index == attempts.count - 1
+                let timeout: TimeInterval? = isLast ? nil : failoverTimeout
+                do {
+                    let result = try await fetch(attempt.url, timeout: timeout)
+                    if !attempt.isRedirectedLive {
+                        if attempt.url != activeOrigin {
+                            activeOrigin = attempt.url
+                            livePlaylistURL = nil
+                        }
+                    }
+                    if didFailOver, let portal = attempt.portal {
+                        await portalPool?.recordSuccess(portal)
+                        PlozzLog.playback.info("IPTV_PORTAL event=streamFailoverSucceeded")
+                        HandoffDiagnostics.emit("IPTV_PORTAL event=streamFailoverSucceeded")
+                    }
+                    return result
+                } catch {
+                    if attempt.isRedirectedLive, !Task.isCancelled, !(error is CancellationError),
+                       let status = evidence.snapshot.status, [401, 403, 404, 410].contains(status) {
+                        evidence.finish(outcome: .upstreamFailure, receivedBytes: 0)
+                        livePlaylistURL = nil
+                        evidence.reset()
+                        PlozzLog.playback.debug("Renewing expired IPTV live delivery")
+                        continue
+                    }
+                    guard !isLast, !Task.isCancelled, !(error is CancellationError),
+                          IPTVPortalPool.shouldFailOver(after: error, httpStatus: evidence.snapshot.status) else {
+                        throw error
+                    }
+                    if let portal = attempt.portal {
+                        await portalPool?.recordFailure(portal)
+                    }
+                    didFailOver = true
+                    evidence.finish(outcome: .upstreamFailure, receivedBytes: 0)
+                    evidence.reset()
+                    PlozzLog.playback.info("IPTV_PORTAL event=streamFailoverRetrying")
+                }
+            }
         }
         let target = isLive && url == origin ? livePlaylistURL ?? url : url
         do {

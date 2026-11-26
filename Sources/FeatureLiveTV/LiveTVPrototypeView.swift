@@ -1029,6 +1029,12 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         .task(id: catalogActivation.taskID(reloadRequest: reloadRequest)) {
             await reloadCatalog()
         }
+        .task(id: LiveTVConnectionWarmupKey(
+            active: isActive, preloads: preloadsCatalog, authorization: serverAuthorizationID,
+            accounts: serverChoices.map(\.id)
+        )) {
+            await warmServerConnections()
+        }
         .task(id: preview.pendingRequest) {
             await preparePendingPreview()
         }
@@ -1046,6 +1052,29 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             while isActive && !Task.isCancelled {
                 model.synchronizeClock()
                 try? await Task.sleep(for: .seconds(30))
+            }
+        }
+    }
+
+    private struct LiveTVConnectionWarmupKey: Equatable {
+        let active: Bool
+        let preloads: Bool
+        let authorization: String
+        let accounts: [String]
+    }
+
+    private func warmServerConnections() async {
+        guard (isActive || preloadsCatalog), isProfileAuthorized(), !serverChoices.isEmpty else { return }
+        let disabledAccountIDs = Set(imports.configuration.servers.filter { !$0.isEnabled }.map(\.accountID))
+        let providers = serverChoices
+            .filter { !disabledAccountIDs.contains($0.id) }
+            .compactMap { serverProviderResolver($0.id)?.provider }
+        guard !providers.isEmpty else { return }
+        await withTaskGroup(of: Void.self) { group in
+            for provider in providers {
+                group.addTask(priority: .utility) {
+                    await provider.warmLiveTVConnection()
+                }
             }
         }
     }

@@ -1001,6 +1001,7 @@ struct LiveTVServerSourceDetails: View {
     @State private var confirmsRemoval = false
     @SettingsPageDismiss private var dismiss
     @Environment(LiveTVGuidePreparationModel.self) private var guidePreparation: LiveTVGuidePreparationModel?
+    @Environment(LiveTVAlternateAddressesModel.self) private var alternateAddresses: LiveTVAlternateAddressesModel?
 
     var body: some View {
         if let source = model.configuration.servers.first(where: { $0.id == sourceID }) {
@@ -1028,6 +1029,21 @@ struct LiveTVServerSourceDetails: View {
                         })
                     }
                     .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                }
+                if let alternateAddresses, let alternates = alternateAddresses.alternateAddresses(accountID: source.accountID) {
+                    SettingsSectionGroup {
+                        SettingsPageLink {
+                            LiveTVAlternateAddressesPage(model: alternateAddresses, accountID: source.accountID, sourceName: source.name)
+                        } label: {
+                            SettingsRowLabel(icon: "network", title: "Backup server addresses", trailing: {
+                                Text("\(alternates.count)").settingsRowSecondary()
+                                LiveTVSourceChevron()
+                            })
+                        }
+                        .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                        .accessibilityIdentifier("live-tv-alternate-addresses-\(source.id)")
+                        .settingsSearchAnchor("live-source-alternate-addresses")
+                    }
                 }
                 if let status = imports?.serverSources.first(where: { $0.id == sourceID }) {
                     SettingsSectionGroup("Live TV status") {

@@ -249,6 +249,26 @@ private struct IPTVAddressField: View {
 private struct IPTVAdvancedFields: View {
     @Bindable var model: IPTVAuthViewModel
     var body: some View {
+        if model.mode == .xtream {
+            SettingsSectionGroup("Backup server addresses") {
+                ForEach($model.alternateAddresses) { $alternate in
+                    IPTVAddressField(title: "Backup server URL", value: $alternate.address)
+                    Button(role: .destructive) { [id = alternate.id] in
+                        model.alternateAddresses.removeAll { $0.id == id }
+                    } label: {
+                        Text("Remove server address").frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(SettingsFormButtonStyle())
+                }
+                Button(action: model.addAlternateAddress) {
+                    Label("Add server address", systemImage: "plus").frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(SettingsFormButtonStyle())
+                .disabled(model.alternateAddresses.count >= IPTVCredential.maximumAlternateAddresses)
+            } footer: {
+                Text("Add extra portal URLs from your provider. Plozz automatically uses the fastest reachable server and fails over if one goes down.")
+            }
+        }
         SettingsSectionGroup("Program guides") {
             ForEach($model.additionalGuides) { $guide in
                 IPTVAddressField(title: "Additional guide URL", value: $guide.address)

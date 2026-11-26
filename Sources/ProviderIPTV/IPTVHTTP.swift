@@ -70,8 +70,46 @@ final class IPTVHTTP: Sendable {
         if invalidate { session.invalidateAndCancel() }
     }
 
+    /// Lightweight `HEAD` reachability and RTT probe on this pooled session so the
+    /// underlying TCP/TLS keep-alive socket stays warm for subsequent playback requests.
+    /// Returns the HTTP status code without treating 3xx/401/403/404/405 as errors.
+    func probeHead(
+        url: URL, headers: [String: String], timeout: TimeInterval = 3.0
+    ) async throws -> Int {
+        try Task.checkCancellation()
+        guard LiveTVPlaylistSource.isSupportedURL(url) else { throw IPTVError.invalidAddress }
+        try IPTVCredential.validate(headers: headers)
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = timeout
+        request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+        let id = UUID()
+        let task = try lifecycle.withLock { state in
+            guard !state.closed else { throw CancellationError() }
+            let task = RequestTask { [session, request] in
+                try Task.checkCancellation()
+                let result = try await session.bytes(for: request)
+                result.0.task.cancel()
+                if Task.isCancelled { throw CancellationError() }
+                return result
+            }
+            state.starting[id] = task
+            return task
+        }
+        defer { finishStarting(id) }
+        let (_, response) = try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        guard let http = response as? HTTPURLResponse else { throw IPTVError.malformed }
+        return http.statusCode
+    }
+
     func bytes(
         url: URL, headers: [String: String], method: String = "GET",
+        timeout: TimeInterval? = nil,
         guideRequest: Bool = false,
         guideCache: XMLTVGuideCacheMetadata? = nil,
         receivedResponse: (@Sendable (HTTPURLResponse) -> Void)? = nil
@@ -81,6 +119,7 @@ final class IPTVHTTP: Sendable {
         try IPTVCredential.validate(headers: headers)
         var request = URLRequest(url: url)
         request.httpMethod = method
+        if let timeout { request.timeoutInterval = timeout }
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
         if let guideCache { request = guideCache.applying(to: request) }

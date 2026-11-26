@@ -32,8 +32,13 @@ public final class IPTVAuthViewModel {
         public let id = UUID()
         public var address = ""
     }
+    public struct AlternateAddress: Identifiable {
+        public let id = UUID()
+        public var address = ""
+    }
 
     public var mode: IPTVCredential.Mode = .playlist
+    public var alternateAddresses: [AlternateAddress] = []
     public var playlistFileURL: URL?
     public var address: String
     public var name: String
@@ -56,8 +61,8 @@ public final class IPTVAuthViewModel {
     private let reconnecting: UserSession?
     private let setupDiagnostics: IPTVSetupDiagnostics
     @ObservationIgnored private var diagnosticAttempt: IPTVSetupAttempt?
-    private var flow: Task<Void, Never>?
-    private var generation = UUID()
+    @ObservationIgnored private var flow: Task<Void, Never>?
+    @ObservationIgnored private var generation = UUID()
 
     public init(
         deviceID: String, address: String = "", name: String = "", guideAddress: String = "",
@@ -83,6 +88,7 @@ public final class IPTVAuthViewModel {
             do {
                 let credential = try IPTVCredential.decode(reconnecting.accessToken)
                 mode = credential.mode
+                alternateAddresses = credential.alternateAddresses.map { AlternateAddress(address: $0.absoluteString) }
                 self.address = credential.address.absoluteString
                 username = credential.username
                 password = credential.password
@@ -100,12 +106,14 @@ public final class IPTVAuthViewModel {
 
     public var hasAdvancedConfiguration: Bool {
         (mode == .playlist && authentication != .none)
+            || (mode == .xtream && !alternateAddresses.isEmpty)
             || (mode != .file && !headers.isEmpty)
             || !additionalGuides.isEmpty || !guideHeaders.isEmpty
     }
 
     public var usesHTTP: Bool {
         let addresses = (mode == .file ? [] : [address])
+            + (mode == .xtream ? alternateAddresses.map(\.address) : [])
             + [guideAddress] + additionalGuides.map(\.address)
         return addresses.contains { address in
             let url = URL(string: address.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -123,6 +131,7 @@ public final class IPTVAuthViewModel {
     public func addHeader() { headers.append(Header()) }
     public func addGuideHeader() { guideHeaders.append(Header()) }
     public func addGuide() { additionalGuides.append(Guide()) }
+    public func addAlternateAddress() { alternateAddresses.append(AlternateAddress()) }
 
     public func connect() {
         guard canConnect else { return }
@@ -241,10 +250,20 @@ public final class IPTVAuthViewModel {
                 ? "Basic " + Data((username + ":" + password).utf8).base64EncodedString()
                 : "Bearer " + token
         }
+        let parsedAlternates: [URL] = mode == .xtream ? try alternateAddresses.compactMap { entry -> URL? in
+            let text = entry.address.trimmingCharacters(in: .whitespacesAndNewlines)
+            if text.isEmpty { return nil }
+            guard let candidate = URL(string: text),
+                  let normalized = try? IPTVCredential.normalizedXtreamAddress(candidate) else {
+                throw IPTVError.invalidAddress
+            }
+            return normalized
+        } : []
         return try IPTVCredential(
             mode: mode, address: url, username: username, password: password,
             headers: values, guideURL: guide, additionalGuideURLs: extraGuides,
-            guideHeaders: try headerValues(guideHeaders)
+            guideHeaders: try headerValues(guideHeaders),
+            alternateAddresses: parsedAlternates
         )
     }
 

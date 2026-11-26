@@ -4,11 +4,25 @@ import CryptoKit
 import Foundation
 import os
 
+struct IPTVStreamDelivery: Sendable {
+    struct AlternateOrigin: Sendable, Equatable {
+        let portal: URL
+        let url: URL
+    }
+
+    let url: URL
+    let headers: [String: String]
+    let formatHint: MediaFormatHint
+    let originPortal: URL?
+    let alternateOrigins: [AlternateOrigin]
+}
+
 actor IPTVClient: ApplicationStorageParticipant {
     private static let playlistCatalogScope = "playlist-v5"
     private var cachedLineup: (stamp: LiveLineupStamp, entries: [IPTVLineupEntry])?
     private var cachedGuideLineup: SavedGuideLineup?
     let credential: IPTVCredential
+    let portalPool: IPTVPortalPool
     private let http: IPTVHTTP
     private let artworkSecrets: [String]
     let catalog: IPTVCatalog
@@ -82,9 +96,11 @@ actor IPTVClient: ApplicationStorageParticipant {
         progress: @escaping @Sendable (IPTVImportProgress) -> Void = { _ in }
     ) throws {
         self.credential = credential
+        portalPool = IPTVPortalPool(portals: credential.portalAddresses)
         self.storageLifecycle = storageLifecycle
-        artworkSecrets = IPTVRedirectPolicy.protectedValues(url: credential.address, headers: credential.headers)
-            + [credential.password].filter { !$0.isEmpty }
+        artworkSecrets = credential.portalAddresses.flatMap {
+            IPTVRedirectPolicy.protectedValues(url: $0, headers: credential.headers)
+        } + [credential.password].filter { !$0.isEmpty }
         self.progress = progress
         http = IPTVHTTP(configuration: configuration, sensitiveValues: [credential.password])
         let directory = directory ?? (credential.mode == .file
@@ -145,7 +161,9 @@ actor IPTVClient: ApplicationStorageParticipant {
             }
             return
         }
-        let response = try await object(url: endpoint())
+        let response = try await withPortalFailover(failOverOnNotFound: true) { portal in
+            try await self.object(url: try self.endpoint(portal: portal))
+        }
         let user = response.object("user_info")
         guard user.integer("auth") == 1 else { throw IPTVError.authentication }
         if let status = user.text("status"), status.lowercased() != "active" { throw IPTVError.expired }
@@ -155,6 +173,89 @@ actor IPTVClient: ApplicationStorageParticipant {
         let formats = user.array("allowed_output_formats").compactMap(\.text)
         liveExtension = formats.contains("m3u8") ? "m3u8" : "ts"
         authenticatedAt = Date()
+    }
+
+    /// Probes all configured portals in parallel using lightweight `HEAD` requests (0 stream
+    /// slots, avoids Xtream `player_api.php` anti-flood rate limiting) on the pooled playback
+    /// HTTP session to measure RTT, select the fastest healthy portal, and leave its TCP/TLS
+    /// keep-alive socket warm; then pre-authenticates Xtream once on the winning portal.
+    func warmPortals(using pooledHTTP: IPTVHTTP, timeout: TimeInterval = 3.0) async {
+        guard !isClosed else { return }
+        if credential.mode == .file { return }
+        let portals = credential.portalAddresses
+        guard !portals.isEmpty else { return }
+        let credential = self.credential
+        let results: [IPTVPortalPool.ProbeResult] = await withTaskGroup(
+            of: IPTVPortalPool.ProbeResult.self
+        ) { group in
+            for portal in portals {
+                group.addTask {
+                    let started = ContinuousClock.now
+                    do {
+                        let status = try await pooledHTTP.probeHead(
+                            url: portal, headers: credential.headers(for: portal), timeout: timeout
+                        )
+                        let elapsed = started.duration(to: .now).components
+                        let rtt = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
+                        if status == 408 || (500...599).contains(status) {
+                            return IPTVPortalPool.ProbeResult(
+                                portal: portal, rtt: nil, allowedOutputFormats: nil,
+                                failed: true, reason: "http\(status)"
+                            )
+                        }
+                        return IPTVPortalPool.ProbeResult(
+                            portal: portal, rtt: rtt, allowedOutputFormats: nil,
+                            failed: false, reason: "http\(status)"
+                        )
+                    } catch {
+                        if Task.isCancelled || error is CancellationError {
+                            return IPTVPortalPool.ProbeResult(
+                                portal: portal, rtt: nil, allowedOutputFormats: nil,
+                                failed: false, reason: "cancelled"
+                            )
+                        }
+                        let failed = IPTVPortalPool.shouldFailOver(after: error)
+                        let ns = error as NSError
+                        let tag = ns.domain == NSURLErrorDomain ? "url\(ns.code)" : "err"
+                        return IPTVPortalPool.ProbeResult(
+                            portal: portal, rtt: nil, allowedOutputFormats: nil,
+                            failed: failed, reason: tag
+                        )
+                    }
+                }
+            }
+            var collected: [IPTVPortalPool.ProbeResult] = []
+            for await result in group { collected.append(result) }
+            return collected
+        }
+        guard !Task.isCancelled, !isClosed else { return }
+        let winner = await portalPool.applyProbeResults(results)
+        if credential.mode == .xtream {
+            do {
+                let response = try await withPortalFailover(failOverOnNotFound: true) { portal in
+                    try await self.object(url: try self.endpoint(portal: portal), using: pooledHTTP)
+                }
+                let user = response.object("user_info")
+                if user.integer("auth") == 1 {
+                    let formats = user.array("allowed_output_formats").compactMap(\.text)
+                    liveExtension = formats.contains("m3u8") ? "m3u8" : "ts"
+                    authenticatedAt = Date()
+                }
+            } catch {
+                // Best-effort warmup: channel open will authenticate and surface any real error.
+            }
+        }
+        let activePortal = await portalPool.activePortal()
+        let healthyCount = results.filter { !$0.failed && $0.rtt != nil }.count
+        let activeIndex = portals.firstIndex(of: activePortal) ?? winner.flatMap { portals.firstIndex(of: $0) } ?? 0
+        let summary = portals.enumerated().map { idx, portal -> String in
+            guard let res = results.first(where: { $0.portal == portal }) else { return "\(idx):skip" }
+            if let rtt = res.rtt { return "\(idx):\(Int((rtt * 1_000).rounded()))ms" }
+            let suffix = res.reason.map { "(\($0))" } ?? ""
+            return res.failed ? "\(idx):fail\(suffix)" : "\(idx):na\(suffix)"
+        }.joined(separator: ",")
+        PlozzLog.networking.info("IPTV_PORTAL event=warm count=\(portals.count) healthy=\(healthyCount) active=\(activeIndex) rtt=\(summary)")
+        HandoffDiagnostics.emit("IPTV_PORTAL event=warm count=\(portals.count) healthy=\(healthyCount) active=\(activeIndex) rtt=\(summary)")
     }
 
     func ensureCatalog(_ library: String, force: Bool = false) async throws {
@@ -340,18 +441,27 @@ actor IPTVClient: ApplicationStorageParticipant {
                 diagnostic?.record(entries: count)
                 IPTVHTTP.performanceMetrics?.record(items: count)
             }
-            var parser = IPTVJSONArrayStream()
-            try await read(url: endpoint(action: action)) { data in
-                try catalog.checkImport(importID)
-                try parser.append(data) { bytes in
-                    let value = try JSONDecoder().decode(IPTVObject.self, from: bytes)
-                    try store(IPTVMapping.listEntry(value, library: library, categories: categories), into: .incoming)
-                    if value.text("name") == nil { unnamedCount += 1 }
-                    count += 1
-                    if count.isMultiple(of: 1_000) { progress(IPTVImportProgress(stage: stage, entries: count)) }
+            var attemptedImport = false
+            try await withPortalFailover { portal in
+                if attemptedImport {
+                    try self.catalog.execute("DELETE FROM incoming")
                 }
+                attemptedImport = true
+                count = 0
+                unnamedCount = 0
+                var parser = IPTVJSONArrayStream()
+                try await self.read(url: try self.endpoint(action: action, portal: portal)) { data in
+                    try self.catalog.checkImport(importID)
+                    try parser.append(data) { bytes in
+                        let value = try JSONDecoder().decode(IPTVObject.self, from: bytes)
+                        try self.store(IPTVMapping.listEntry(value, library: library, categories: categories), into: .incoming)
+                        if value.text("name") == nil { unnamedCount += 1 }
+                        count += 1
+                        if count.isMultiple(of: 1_000) { self.progress(IPTVImportProgress(stage: stage, entries: count)) }
+                    }
+                }
+                try parser.finish()
             }
-            try parser.finish()
             if unnamedCount > 0 {
                 PlozzLog.networking.info("IPTV catalogue contains \(unnamedCount) unnamed entries; using source IDs for display")
             }
@@ -370,18 +480,21 @@ actor IPTVClient: ApplicationStorageParticipant {
         let action = library == "movies" ? "get_vod_categories"
             : library == "series" ? "get_series_categories" : "get_live_categories"
         var result: [String: String] = [:]
-        var parser = IPTVJSONArrayStream()
         do {
-            try await read(url: endpoint(action: action)) { data in
-                try parser.append(data) { bytes in
-                    let value = try JSONDecoder().decode(IPTVObject.self, from: bytes)
-                    guard let id = value.text("category_id"), let name = value.text("category_name") else {
-                        throw IPTVError.malformed
+            try await withPortalFailover { portal in
+                result.removeAll(keepingCapacity: true)
+                var parser = IPTVJSONArrayStream()
+                try await self.read(url: try self.endpoint(action: action, portal: portal)) { data in
+                    try parser.append(data) { bytes in
+                        let value = try JSONDecoder().decode(IPTVObject.self, from: bytes)
+                        guard let id = value.text("category_id"), let name = value.text("category_name") else {
+                            throw IPTVError.malformed
+                        }
+                        result[id] = name
                     }
-                    result[id] = name
                 }
+                try parser.finish()
             }
-            try parser.finish()
         } catch AppError.notFound {
             PlozzLog.networking.info("IPTV provider does not expose category names")
         }
@@ -544,9 +657,11 @@ actor IPTVClient: ApplicationStorageParticipant {
         }
         if details, credential.mode == .xtream, let nativeID = record.streamID {
             if record.item.kind == .movie {
-                let data = try await object(url: endpoint(action: "get_vod_info", extra: [
-                    URLQueryItem(name: "vod_id", value: nativeID)
-                ]))
+                let data = try await withPortalFailover { portal in
+                    try await self.object(url: try self.endpoint(action: "get_vod_info", extra: [
+                        URLQueryItem(name: "vod_id", value: nativeID)
+                    ], portal: portal))
+                }
                 record = IPTVMapping.enrich(record, with: data.object("info"))
                 if let container = data.object("movie_data").text("container_extension") { record.container = container }
                 if let refresh { try await refresh.value }
@@ -562,9 +677,11 @@ actor IPTVClient: ApplicationStorageParticipant {
 
     private func loadSeries(_ series: IPTVRecord) async throws {
         guard let nativeID = series.streamID else { throw AppError.notFound }
-        let data = try await object(url: endpoint(action: "get_series_info", extra: [
-            URLQueryItem(name: "series_id", value: nativeID)
-        ]))
+        let data = try await withPortalFailover { portal in
+            try await self.object(url: try self.endpoint(action: "get_series_info", extra: [
+                URLQueryItem(name: "series_id", value: nativeID)
+            ], portal: portal))
+        }
         let episodes: IPTVObject
         switch data["episodes"] {
         case .object(let values): episodes = values
@@ -918,9 +1035,11 @@ actor IPTVClient: ApplicationStorageParticipant {
         catch { PlozzLog.networking.info("IPTV lineup copy was not prepared") }
     }
 
-    func delivery(_ id: String) async throws -> (url: URL, headers: [String: String], formatHint: MediaFormatHint) {
+    func delivery(_ id: String) async throws -> IPTVStreamDelivery {
         let record = try await record(id)
         let url: URL
+        var originPortal: URL?
+        var alternateOrigins: [IPTVStreamDelivery.AlternateOrigin] = []
         if let address = record.streamURL { url = address }
         else if let nativeID = record.streamID {
             if authenticatedAt.map({ Date().timeIntervalSince($0) > 300 }) != false { try await authenticate() }
@@ -929,15 +1048,26 @@ actor IPTVClient: ApplicationStorageParticipant {
             let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
             let parts = [group, credential.username, credential.password, nativeID + "." + fileExtension]
             let encoded = parts.compactMap { $0.addingPercentEncoding(withAllowedCharacters: allowed) }
-            guard encoded.count == parts.count,
-                  var components = URLComponents(url: try baseURL(), resolvingAgainstBaseURL: false) else {
-                throw IPTVError.malformed
-            }
-            let basePath = components.percentEncodedPath.split(separator: "/").joined(separator: "/")
+            guard encoded.count == parts.count else { throw IPTVError.malformed }
             let streamPath = encoded.joined(separator: "/")
-            components.percentEncodedPath = basePath.isEmpty ? "/\(streamPath)" : "/\(basePath)/\(streamPath)"
-            guard let result = components.url else { throw IPTVError.malformed }
-            url = result
+            func buildStreamURL(on portal: URL) throws -> URL {
+                guard var components = URLComponents(url: try Self.cleanBaseURL(portal), resolvingAgainstBaseURL: false) else {
+                    throw IPTVError.malformed
+                }
+                let basePath = components.percentEncodedPath.split(separator: "/").joined(separator: "/")
+                components.percentEncodedPath = basePath.isEmpty ? "/\(streamPath)" : "/\(basePath)/\(streamPath)"
+                guard let result = components.url else { throw IPTVError.malformed }
+                return result
+            }
+            let ordered = await portalPool.orderedPortals()
+            let primaryPortal = ordered[0]
+            originPortal = primaryPortal
+            url = try buildStreamURL(on: primaryPortal)
+            for backup in ordered.dropFirst() {
+                if let backupURL = try? buildStreamURL(on: backup) {
+                    alternateOrigins.append(.init(portal: backup, url: backupURL))
+                }
+            }
         } else { throw AppError.notFound }
         var headers = credential.headers(for: url)
         for (key, value) in record.headers {
@@ -954,7 +1084,10 @@ actor IPTVClient: ApplicationStorageParticipant {
                 container = output
             }
         }
-        return (url, headers, MediaFormatHint(container: container))
+        return IPTVStreamDelivery(
+            url: url, headers: headers, formatHint: MediaFormatHint(container: container),
+            originPortal: originPortal, alternateOrigins: alternateOrigins
+        )
     }
 
     func guideURLs() async throws -> [URL] {
@@ -1012,9 +1145,11 @@ actor IPTVClient: ApplicationStorageParticipant {
         let data: IPTVObject
         let responseMetadata = IPTVHTTP.ResponseMetadata()
         do {
-            data = try await object(url: endpoint(action: "get_simple_data_table", extra: [
-                URLQueryItem(name: "stream_id", value: nativeID)
-            ]), receivedResponse: { responseMetadata.received($0) })
+            data = try await withPortalFailover { portal in
+                try await self.object(url: try self.endpoint(action: "get_simple_data_table", extra: [
+                    URLQueryItem(name: "stream_id", value: nativeID)
+                ], portal: portal), receivedResponse: { responseMetadata.received($0) })
+            }
         } catch {
             if !Task.isCancelled { noteGuideOutcome(error, retryAfter: responseMetadata.retryAfter(for: error)) }
             throw error
@@ -1185,11 +1320,24 @@ actor IPTVClient: ApplicationStorageParticipant {
             IPTVGuideDiagnostics.request?.cacheHit(bytes: cachedGuide.data.count)
             return .document(XMLTVDownloadedDocument(data: cachedGuide.data, expiresAt: cachedGuide.expires, permitsPersistence: true))
         }
-        let (bytes, response) = try await http.bytes(
-            url: url, headers: credential.guideHeaders(for: url), guideRequest: true,
-            guideCache: previous,
-            receivedResponse: receivedResponse
-        )
+        let (bytes, response): (URLSession.AsyncBytes, HTTPURLResponse)
+        if credential.mode == .xtream, IPTVCredential.sameOrigin(credential.address, url),
+           await portalPool.hasAlternates {
+            (bytes, response) = try await withPortalFailover { portal in
+                let target = IPTVPortalPool.rewriting(url, from: self.credential.address, to: portal) ?? url
+                return try await self.http.bytes(
+                    url: target, headers: self.credential.guideHeaders(for: target), guideRequest: true,
+                    guideCache: previous,
+                    receivedResponse: receivedResponse
+                )
+            }
+        } else {
+            (bytes, response) = try await http.bytes(
+                url: url, headers: credential.guideHeaders(for: url), guideRequest: true,
+                guideCache: previous,
+                receivedResponse: receivedResponse
+            )
+        }
         defer { bytes.task.cancel() }
         let metadata = try XMLTVGuideCacheMetadata(response: response, previous: previous)
         if response.statusCode == 304 {
@@ -1379,8 +1527,34 @@ actor IPTVClient: ApplicationStorageParticipant {
         return result
     }
 
-    private func baseURL() throws -> URL {
-        var url = credential.address
+    private func withPortalFailover<T>(
+        failOverOnNotFound: Bool = false,
+        _ operation: (URL) async throws -> T
+    ) async throws -> T {
+        let candidates = await portalPool.orderedPortals()
+        for (offset, portal) in candidates.enumerated() {
+            let isLast = offset == candidates.count - 1
+            do {
+                let result = try await operation(portal)
+                await portalPool.recordSuccess(portal)
+                return result
+            } catch {
+                let canFailOver = IPTVPortalPool.shouldFailOver(after: error)
+                    || (failOverOnNotFound && error as? AppError == .notFound)
+                guard !isLast, !Task.isCancelled, !(error is CancellationError), canFailOver else {
+                    throw error
+                }
+                await portalPool.recordFailure(portal)
+                let fromIdx = await portalPool.index(of: portal) ?? offset
+                let toIdx = await portalPool.index(of: candidates[offset + 1]) ?? (offset + 1)
+                PlozzLog.networking.info("IPTV_PORTAL event=apiFailover from=\(fromIdx) to=\(toIdx)")
+            }
+        }
+        throw IPTVError.invalidAddress
+    }
+
+    private static func cleanBaseURL(_ portal: URL) throws -> URL {
+        var url = portal
         if url.pathExtension.lowercased() == "php" { url.deleteLastPathComponent() }
         guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { throw IPTVError.invalidAddress }
         parts.query = nil
@@ -1389,9 +1563,15 @@ actor IPTVClient: ApplicationStorageParticipant {
         return clean
     }
 
-    private func endpoint(file: String = "player_api.php", action: String? = nil,
-                          extra: [URLQueryItem] = []) throws -> URL {
-        let url = try baseURL().appendingPathComponent(file)
+    private func baseURL(portal: URL? = nil) throws -> URL {
+        try Self.cleanBaseURL(portal ?? credential.address)
+    }
+
+    private static func makeEndpoint(
+        credential: IPTVCredential, portal: URL,
+        file: String = "player_api.php", action: String? = nil, extra: [URLQueryItem] = []
+    ) throws -> URL {
+        let url = try cleanBaseURL(portal).appendingPathComponent(file)
         guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { throw IPTVError.invalidAddress }
         parts.queryItems = [
             URLQueryItem(name: "username", value: credential.username),
@@ -1403,11 +1583,19 @@ actor IPTVClient: ApplicationStorageParticipant {
         return result
     }
 
+    private func endpoint(file: String = "player_api.php", action: String? = nil,
+                          extra: [URLQueryItem] = [], portal: URL? = nil) throws -> URL {
+        try Self.makeEndpoint(
+            credential: credential, portal: portal ?? credential.address,
+            file: file, action: action, extra: extra
+        )
+    }
+
     private func object(
-        url: URL, receivedResponse: (@Sendable (HTTPURLResponse) -> Void)? = nil
+        url: URL, using httpOverride: IPTVHTTP? = nil, receivedResponse: (@Sendable (HTTPURLResponse) -> Void)? = nil
     ) async throws -> IPTVObject {
         var data = Data()
-        try await read(url: url, receivedResponse: receivedResponse) { bytes in
+        try await read(url: url, using: httpOverride, receivedResponse: receivedResponse) { bytes in
             guard data.count + bytes.count <= 16 * 1_024 * 1_024 else { throw IPTVError.oversizedRecord }
             data.append(bytes)
         }
@@ -1417,9 +1605,10 @@ actor IPTVClient: ApplicationStorageParticipant {
     }
 
     private func read(
-        url: URL, receivedResponse: (@Sendable (HTTPURLResponse) -> Void)? = nil, consume: (Data) throws -> Void
+        url: URL, using httpOverride: IPTVHTTP? = nil, receivedResponse: (@Sendable (HTTPURLResponse) -> Void)? = nil, consume: (Data) throws -> Void
     ) async throws {
-        let (bytes, _) = try await http.bytes(
+        let transport = httpOverride ?? http
+        let (bytes, _) = try await transport.bytes(
             url: url, headers: credential.headers(for: url), receivedResponse: receivedResponse
         )
         defer { bytes.task.cancel() }
