@@ -20,6 +20,13 @@ struct PlayerPresentationBackFixture: View {
             if dismissed {
                 Text(verbatim: "Player dismissed")
                     .accessibilityIdentifier("player-back-dismissed")
+                if ProcessInfo.processInfo.arguments.contains("--player-info-reopen") {
+                    Button("Reopen same video") {
+                        dismissed = false
+                        presented = true
+                    }
+                    .accessibilityIdentifier("player-info-reopen")
+                }
                 evidence
             } else {
                 Text(verbatim: "Preparing player")

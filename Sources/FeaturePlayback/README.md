@@ -2783,11 +2783,14 @@ the menus, keep measuring from a view in the same layout box — and verify the
 rendered frame rather than reasoning about it, because these boxes do not differ in
 any way you can see.
 
-**2. The bottom cluster is a fixed stage moved by ONE transform.** The Info card is a
-permanent stack member; "closed" is the whole cluster translated down so the card
-clears the screen (`infoCardLift`). Nothing is inserted and nothing reflows, which is
-what makes the reveal read as one object instead of parts arriving separately. The
-consequence: **any change to the cluster's height or margins moves the card**, and
+**2. The bottom cluster is a fixed stage moved by ONE transform.** The card's
+layout slot is permanent; its contents mount on the first opening and stay mounted
+when parked. "Closed" is the whole cluster translated down so the card clears the
+screen (`infoCardLift`). The first card must follow the slot's *in-flight* position,
+not appear immediately at its final position while the tab row passes through it.
+Verify the first Down from hidden controls after opening a video, a second Down
+in the same session, and the first Down after closing and reopening the player.
+The consequence: **any change to the cluster's height or margins moves the card**, and
 because it parks flush against the screen edge, a stray few points shows up as the
 card peeking into view. If the card peeks, something changed the cluster's layout —
 don't look at the card.
