@@ -8,16 +8,18 @@ public struct PINProfileTransition: Equatable {
     public let avatarSize: CGFloat
     public let nameFont: Font
     public let isSource: Bool
+    public let isIdentitySettled: Bool
 
     public init(
         profileID: String, namespace: Namespace.ID, avatarSize: CGFloat = 88,
-        nameFont: Font = .title2.weight(.bold), isSource: Bool = true
+        nameFont: Font = .title2.weight(.bold), isSource: Bool = true, isIdentitySettled: Bool = true
     ) {
         self.profileID = profileID
         self.namespace = namespace
         self.avatarSize = avatarSize
         self.nameFont = nameFont
         self.isSource = isSource
+        self.isIdentitySettled = isIdentitySettled
     }
 
     public var avatarID: String { "\(profileID).avatar" }
@@ -155,8 +157,14 @@ private struct PINProfileIdentity<Badge: View>: View {
                     .font(.subheadline)
                     .foregroundStyle(palette.secondaryText)
                     .accessibilityIdentifier("pin-entry-title")
+                    #if os(tvOS)
+                    .modifier(PINPromptEntrance(
+                        isReady: transition.isSource && transition.isIdentitySettled, reduceMotion: reduceMotion
+                    ))
+                    #else
                     .modifier(PINKeyEntrance(enabled: true, position: 0, reduceMotion: reduceMotion))
                     .opacity(transition.isSource ? 1 : 0)
+                    #endif
             } else {
                 Text(verbatim: " ").font(.subheadline).accessibilityHidden(true)
             }
@@ -195,6 +203,24 @@ private struct PINProfileIdentity<Badge: View>: View {
         #endif
     }
 }
+
+#if os(tvOS)
+private struct PINPromptEntrance: ViewModifier {
+    let isReady: Bool
+    let reduceMotion: Bool
+    @State private var hasAppeared = false
+
+    func body(content: Content) -> some View {
+        let visible = isReady && (reduceMotion || hasAppeared)
+        content
+            .opacity(visible ? 1 : 0)
+            .offset(y: visible || reduceMotion ? 0 : 8)
+            .animation(visible && !reduceMotion ? .easeOut(duration: 0.24) : nil, value: visible)
+            .accessibilityHidden(!visible)
+            .onAppear { hasAppeared = true }
+    }
+}
+#endif
 
 private struct PINProfileRequirementState: View {
     let availability: PINEntryAvailability

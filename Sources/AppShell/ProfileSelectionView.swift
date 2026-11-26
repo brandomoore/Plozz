@@ -32,7 +32,9 @@ struct ProfileSelectionView: View {
     private var handoffAnimation: Animation? { reduceMotion ? nil : .smooth(duration: 0.48) }
 
     private enum HandoffPhase {
-        case picker, clearing, moving, returning, revealing
+        case picker, clearing, moving, settled, returning, revealing
+
+        var pinOwnsIdentity: Bool { self == .moving || self == .settled }
     }
 
     private var presentsAuthorization: Bool {
@@ -142,11 +144,11 @@ struct ProfileSelectionView: View {
                     PINProfileTransition(
                         profileID: $0.id, namespace: profileIdentity, avatarSize: ProfilePickerView.avatarSize,
                         nameFont: ProfilePickerView.nameFont,
-                        isSource: handoffPhase == .moving
+                        isSource: handoffPhase.pinOwnsIdentity, isIdentitySettled: handoffPhase == .settled
                     )
                 })
-                .disabled(handoffPhase != .moving)
-                .accessibilityHidden(handoffPhase != .moving)
+                .disabled(!handoffPhase.pinOwnsIdentity)
+                .accessibilityHidden(!handoffPhase.pinOwnsIdentity)
                 .transition(.identity)
                 .zIndex(1)
             }
@@ -180,14 +182,19 @@ struct ProfileSelectionView: View {
         let requestID = UUID()
         handoffID = requestID
         if reduceMotion {
-            handoffPhase = .moving
+            handoffPhase = .settled
             return
         }
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2), completionCriteria: .removed) {
             handoffPhase = .clearing
         } completion: {
             guard handoffID == requestID, presentsAuthorization, handoffPhase == .clearing else { return }
-            withAnimation(handoffAnimation) { handoffPhase = .moving }
+            withAnimation(handoffAnimation, completionCriteria: .removed) {
+                handoffPhase = .moving
+            } completion: {
+                guard handoffID == requestID, presentsAuthorization, handoffPhase == .moving else { return }
+                handoffPhase = .settled
+            }
         }
     }
 
@@ -250,7 +257,7 @@ struct ProfileSelectionView: View {
             identityNamespace: profileIdentity,
             isCovered: handoffPhase != .picker && handoffPhase != .revealing,
             isClearingForHandoff: handoffPhase != .picker && handoffPhase != .revealing,
-            isIdentitySource: handoffPhase != .moving
+            isIdentitySource: !handoffPhase.pinOwnsIdentity
         )
         // tvOS Menu button: the picker is rendered as a top-level view (not a
         // sheet / NavigationStack push), so without this handler Menu falls

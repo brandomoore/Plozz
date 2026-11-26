@@ -15,10 +15,13 @@ struct ProfilePINTransitionFixture: View {
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
         let profiles = ProfilesModel(store: ProfileStore(defaults: defaults))
-        let usesPlex = ProcessInfo.processInfo.arguments.contains("--plex-pin")
+        let directPlex = ProcessInfo.processInfo.arguments.contains("--direct-plex-pin")
+        let usesPlex = directPlex || ProcessInfo.processInfo.arguments.contains("--plex-pin")
         var locked = profiles.add(name: "Locked viewer")
         locked.avatarEmoji = "🦊"
-        locked.replaceLock(with: ProfileLock.make(pin: "1111", iterations: 1))
+        if !directPlex {
+            locked.replaceLock(with: ProfileLock.make(pin: "1111", iterations: 1))
+        }
         if usesPlex {
             locked = locked.settingHomeUserBinding(
                 .init(homeUserID: "viewer", name: "Different server name", requiresPIN: true),
