@@ -2173,8 +2173,10 @@ percentage remains screen-relative. Captions already encoded into video pixels
 cannot be repositioned.
 
 During letterboxed HDR playback on Apple TV, ordinary bottom-of-screen dialogue
-reuses a transparent, cue-sized view. It draws only the styled subtitle, not
-the letterbox area, and takes up no space between lines.
+uses a fixed transparent drawing surface when the line fits below the picture.
+It requests a redraw of the old and new text bounds; UIKit can expand that area.
+A gap clears the old text without shaping or drawing glyphs. The renderer does
+not paint black bars or redraw a held line on clock ticks.
 
 Mobile on-demand subtitle settings include the existing subtitle-delay control
 directly, rather than a separate Playback Sync menu entry. Engines that support

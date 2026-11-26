@@ -206,7 +206,7 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
     }
 
     #if os(tvOS)
-    func testHDRDialogueRetainsTransparentCueSizedViewAcrossLinesAndGaps() async throws {
+    func testHDRDialogueRetainsFixedTransparentSurfaceAcrossLinesAndGaps() async throws {
         let scene = try await activeScene()
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
@@ -256,12 +256,14 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
             return !first.isNull && first.minY > video.maxY && abs(rendered.top.maxY - window.bounds.maxY) <= pixel
         }
         let line = try XCTUnwrap(textSurface(host.view))
-        XCTAssertTrue(!line.isOpaque && line.bounds.width < window.bounds.width)
+        let surface = line.convert(line.bounds, to: window)
+        XCTAssertTrue(!line.isOpaque && surface.width == window.bounds.width)
+        XCTAssertEqual(surface.minY, video.maxY, accuracy: 1)
         model.tick(2.5)
         try await waitUntil {
             let rendered = regions()
             return rendered.bottom.isNull && abs(rendered.top.maxY - window.bounds.maxY) <= pixel
-                && line.bounds.isEmpty
+                && textSurface(host.view) === line && line.convert(line.bounds, to: window) == surface
         }
         model.tick(4)
         var second = CGRect.null
@@ -270,7 +272,12 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
             return second.minY > video.maxY && second.height > first.height * 1.5 && !second.isNull
         }
         XCTAssertTrue(textSurface(host.view) === line)
+        XCTAssertTrue(line.convert(line.bounds, to: window) == surface)
         XCTAssertEqual(second.maxY, first.maxY, accuracy: pixel)
+        model.tick(1)
+        try await waitUntil { regions().bottom == first && textSurface(host.view) === line }
+        model.tick(4)
+        try await waitUntil { regions().bottom == second && textSurface(host.view) === line }
         controls.subtitleLayout.frame = CGRect(x: 0, y: video.maxY - 120, width: window.bounds.width, height: 260)
         try await waitUntil {
             let raised = regions().bottom
@@ -282,6 +289,7 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
         try await waitUntil {
             let rendered = regions()
             return rendered.bottom == second && abs(rendered.top.maxY - window.bounds.maxY) <= pixel
+                && (textSurface(host.view)?.bounds.width ?? window.bounds.width) < window.bounds.width
         }
     }
     #endif

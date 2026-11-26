@@ -550,7 +550,7 @@ public struct SubtitleOverlayView: View {
                    !secondaryActive, controlsFrames.isEmpty, controlsFrame == nil, rect.height > 0,
                    rect.maxY > 0, rect.maxY < geo.size.height,
                    primary.count <= 1, primary.allSatisfy({ !$0.isImage && !isSourcePositioned($0) }) {
-                    letterboxDialogue(in: geo.size)
+                    letterboxDialogue(in: geo.size, videoBottom: rect.maxY)
                 } else {
                     textLayer(in: geo.size, videoRect: rect, controls: controls)
                 }
@@ -595,14 +595,14 @@ public struct SubtitleOverlayView: View {
     // MARK: - Text cues (primary + secondary)
 
     #if os(tvOS)
-    private func letterboxDialogue(in size: CGSize) -> some View {
+    private func letterboxDialogue(in size: CGSize, videoBottom: CGFloat) -> some View {
         let text: SubtitleText
         if case let .text(active)? = primary.first?.body { text = active } else { text = SubtitleText("") }
         return LetterboxDialogueSurface(
             line: StyledCueText(text: text, fontSize: Self.baseFontSize * style.fontScale,
                                 fillColor: scaled(style.textColor), style: style, colorScale: lumaScale)
                 .renderedLine.configuration,
-            size: size, style: style
+            size: size, videoBottom: videoBottom, style: style
         )
         .frame(width: size.width, height: size.height)
     }
@@ -783,7 +783,7 @@ public struct SubtitleOverlayView: View {
 }
 
 #if os(tvOS)
-/// Keep the same transparent line view across cue replacements and silent gaps.
+/// Keep the transparent drawing surface stationary while dialogue fits below the picture.
 private struct LetterboxDialogueSurface: UIViewRepresentable {
     final class Surface: UIView {
         let line = SubtitleLineView()
@@ -798,22 +798,24 @@ private struct LetterboxDialogueSurface: UIViewRepresentable {
 
     let line: SubtitleLineView.Config
     let size: CGSize
+    let videoBottom: CGFloat
     let style: SubtitleStyle
 
     func makeUIView(context: Context) -> Surface { Surface(frame: .zero) }
 
     func updateUIView(_ surface: Surface, context: Context) {
-        let view = surface.line
-        view.configure(line)
         let screen = CGRect(origin: .zero, size: size)
-        let measured = line.text.isEmpty ? .zero : view.measure(maxWidth: size.width * 0.92)
+        let scale = context.environment.displayScale
+        let top = ceil(videoBottom * scale) / scale
+        let band = CGRect(x: 0, y: top, width: size.width, height: max(0, size.height - top))
         let layout = SubtitlePositionLayout(verticalPosition: style.verticalPosition, verticalAnchor: .bottom,
                                             spacing: 0, controlsFrames: [])
-        let ink = CGRect(x: screen.midX + style.horizontalOffset * (size.width * 0.25) - measured.width / 2,
-                         y: layout.blockOrigin(height: measured.height, in: screen),
-                         width: measured.width, height: measured.height)
         UIView.performWithoutAnimation {
-            view.frame = ink
+            surface.line.configureDialogue(line, in: band, maxWidth: size.width * 0.92) { measured in
+                CGRect(x: screen.midX + style.horizontalOffset * (size.width * 0.25) - measured.width / 2,
+                       y: layout.blockOrigin(height: measured.height, in: screen),
+                       width: measured.width, height: measured.height)
+            }
         }
     }
 }
