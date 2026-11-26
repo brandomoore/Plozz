@@ -289,27 +289,51 @@ final class LibraryPresentationTests: XCTestCase {
                 try await waitForHostedLayout(window)
                 _ = try self.capture(window, name: "collection-cover-\(Int(size.width))x\(Int(size.height))")
                 let image = try XCTUnwrap(self.capturedImage)
-                var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
-                try pixels.withUnsafeMutableBytes {
-                    let context = try XCTUnwrap(CGContext(
-                        data: $0.baseAddress, width: image.width, height: image.height,
-                        bitsPerComponent: 8, bytesPerRow: image.width * 4,
-                        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-                    ))
-                    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-                }
-                var leftEdge = 0, rightEdge = 0, artworkPixels = 0
-                for index in stride(from: 0, to: pixels.count, by: 4) {
-                    if pixels[index] > 150, pixels[index + 1] < 100, pixels[index + 2] > 150 { leftEdge += 1 }
-                    if pixels[index] < 100, pixels[index + 1] > 150, pixels[index + 2] < 100 { rightEdge += 1 }
-                    if pixels[index] > 180, pixels[index + 1] > 120, pixels[index + 1] < 170,
-                       pixels[index + 2] > 50, pixels[index + 2] < 100 { artworkPixels += 1 }
-                }
+                let (leftEdge, rightEdge, artworkPixels) = try self.artworkPixelCounts(in: image)
                 XCTAssertGreaterThan(artworkPixels, 1_000, "Custom-ratio artwork must load rather than being rejected.")
                 XCTAssertEqual(leftEdge, 0, "Filling the poster crops the wide cover's left edge.")
                 XCTAssertEqual(rightEdge, 0, "Filling the poster crops the wide cover's right edge.")
             }
         }
+    }
+
+    func testPersonalVideoPosterDisplaysBothEdgesOfItsWideServerThumbnail() async throws {
+        let url = try await seedArtwork(size: CGSize(width: 400, height: 225), edgeMarkers: true)
+        let item = MediaItem(id: UUID().uuidString, title: "Personal video", kind: .movie, isPersonalVideo: true, posterURL: url)
+        try await withPresentation(
+            PosterCardView(item: item) {}
+                .frame(width: 200)
+                .environment(\.plozzArtworkArea, .browse)
+                .environment(\.plozzArtworkSettings, .init(preference: .library)),
+            appModel: PlozziOSAppModel(), size: CGSize(width: 1024, height: 768), sizeClass: .regular
+        ) { window in
+            try await waitForHostedLayout(window)
+            let image = try self.captureImage(window, name: "personal-video-poster")
+            let (left, right, center) = try self.artworkPixelCounts(in: image)
+            XCTAssertGreaterThan(left, 200)
+            XCTAssertGreaterThan(right, 200)
+            XCTAssertGreaterThan(center, 200)
+        }
+    }
+
+    private func artworkPixelCounts(in image: CGImage) throws -> (left: Int, right: Int, center: Int) {
+        var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try pixels.withUnsafeMutableBytes {
+            let context = try XCTUnwrap(CGContext(
+                data: $0.baseAddress, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        var left = 0, right = 0, center = 0
+        for index in stride(from: 0, to: pixels.count, by: 4) {
+            if pixels[index] > 150, pixels[index + 1] < 100, pixels[index + 2] > 150 { left += 1 }
+            if pixels[index] < 100, pixels[index + 1] > 150, pixels[index + 2] < 100 { right += 1 }
+            if pixels[index] > 180, pixels[index + 1] > 120, pixels[index + 1] < 170,
+               pixels[index + 2] > 50, pixels[index + 2] < 100 { center += 1 }
+        }
+        return (left, right, center)
     }
 
     func testCollectionProgressKeepsCardsVisibleAndFailureOffersDetails() async throws {

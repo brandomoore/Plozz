@@ -229,6 +229,8 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// Explicit provider/presentation classification, never inferred from a title.
     public var isTrailer: Bool = false
     public var isExtra: Bool = false
+    /// A provider's personal video, not a catalog title with a similar name.
+    public var isPersonalVideo: Bool = false
     public var overview: String?
     /// Authenticated parent-series text for Home heroes, never an episode synopsis.
     public var seriesSynopsis: MediaSeriesSynopsis?
@@ -562,6 +564,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         kind: MediaItemKind,
         isTrailer: Bool = false,
         isExtra: Bool = false,
+        isPersonalVideo: Bool = false,
         watchlistAliasID: MediaAliasID? = nil,
         watchlistAddedAt: Date? = nil,
         fileBrowserContainerID: String? = nil,
@@ -644,6 +647,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         self.kind = kind
         self.isTrailer = isTrailer
         self.isExtra = isExtra || isTrailer
+        self.isPersonalVideo = isPersonalVideo
         self.overview = overview
         self.parentTitle = parentTitle
         self.seasonNumber = seasonNumber
@@ -680,7 +684,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         self.providerIDs = providerIDs
         self.discoverySources = HeroDiscoverySource.normalized(discoverySources)
         self.discoveryURLs = HeroDiscoverySource.validatedURLs(discoveryURLs)
-        self.allowsTitleBasedMetadataMatching = allowsTitleBasedMetadataMatching
+        self.allowsTitleBasedMetadataMatching = allowsTitleBasedMetadataMatching && !isPersonalVideo
         self.metadataProvenance = metadataProvenance
         self.artworkSelections = artworkSelections
         self.availability = availability
@@ -728,6 +732,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         case originalLanguage, seriesStatus, catalogSeasonCount, catalogEpisodeCount
         case isTrailer
         case isExtra
+        case isPersonalVideo
         case productionYear, releaseDate, officialRating, genres, people, studios, tags, taglines
         case librarySortValues
         case familyGuidance
@@ -772,6 +777,7 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
         kind = try container.decode(MediaItemKind.self, forKey: .kind)
         isTrailer = try container.decodeIfPresent(Bool.self, forKey: .isTrailer) ?? false
         isExtra = (try container.decodeIfPresent(Bool.self, forKey: .isExtra) ?? false) || isTrailer
+        isPersonalVideo = try container.decodeIfPresent(Bool.self, forKey: .isPersonalVideo) ?? false
         overview = try container.decodeIfPresent(String.self, forKey: .overview)
         seriesSynopsis = try container.decodeIfPresent(MediaSeriesSynopsis.self, forKey: .seriesSynopsis)
         parentTitle = try container.decodeIfPresent(String.self, forKey: .parentTitle)
@@ -972,7 +978,8 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     }
 
     public var supportsExternalArtworkLookup: Bool {
-        switch kind {
+        guard !isPersonalVideo else { return false }
+        return switch kind {
         case .folder: artworkLookupSubject?.isSupported == true
         case .collection, .unknown: false
         default: true

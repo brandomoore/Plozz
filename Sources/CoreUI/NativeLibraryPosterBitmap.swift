@@ -499,7 +499,7 @@ enum NativeLibraryPosterBitmap {
         }
 
         init(item: MediaItem?, spoilerSettings: SpoilerSettings, environment: EnvironmentValues) {
-            preservesArtwork = item.map { PosterCardPresentation.fitsContainerArtwork(for: $0.kind) } ?? false
+            preservesArtwork = item.map(PosterCardPresentation.fitsArtwork(for:)) ?? false
             playback = item.map(MediaPlaybackIndicatorState.init)
             symbol = item.map { .init(for: $0) } ?? .playback
             title = environment.plozzCardCaptionsHidden ? item.map {

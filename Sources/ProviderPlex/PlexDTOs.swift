@@ -100,6 +100,8 @@ struct PlexDirectory: Decodable {
     let key: String?
     let title: String?  // l10n:content — server-supplied library section title
     let type: String?          // "movie", "show", "artist", "photo"
+    let agent: String?
+    let scanner: String?
     let thumb: String?
     let art: String?
     let composite: String?
@@ -109,6 +111,18 @@ struct PlexDirectory: Decodable {
     /// The grouping's sort value — the first character (`"A"`…`"Z"`, `"#"`,
     /// `"1-9"`, …) on the `firstCharacter` facet.
     let titleSort: String?
+
+    static func isPersonalAgent(_ identifier: String) -> Bool {
+        identifier == "com.plexapp.agents.none" || identifier == "tv.plex.agents.none"
+    }
+
+    var usesPersonalVideoAgent: Bool {
+        guard type == "movie" else { return false }
+        if let agent, !agent.isEmpty {
+            return Self.isPersonalAgent(agent)
+        }
+        return scanner == "Plex Video Files" || scanner == "Plex Video Files Scanner"
+    }
 }
 
 /// A media item: movie, show, season, episode, …

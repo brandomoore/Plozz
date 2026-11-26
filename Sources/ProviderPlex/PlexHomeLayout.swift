@@ -107,7 +107,7 @@ extension PlexProvider {
             items: page.items.filter {
                 Self.isServerHomeVideo($0)
                     && (libraryID == nil || ($0.librarySectionID.map { String($0) == libraryID } ?? true))
-            }.map { map(metadata: $0).taggingLibrary(libraryID) },
+            }.map { map(metadata: $0, libraryID: libraryID) },
             nextOffset: page.nextOffset
         )
     }
@@ -238,7 +238,7 @@ extension PlexProvider {
                             results[section.id] = .success(ServerHomeRowContent(items: page.items.filter {
                                 Self.isServerHomeVideo($0)
                                     && ($0.librarySectionID.map { String($0) == libraryID } ?? true)
-                            }.map { map(metadata: $0).taggingLibrary(libraryID) }, browseID: key))
+                            }.map { map(metadata: $0, libraryID: libraryID) }, browseID: key))
                         }
                     } catch {
                         results[section.id] = .failure(Self.homeRequestError(error))
@@ -260,7 +260,7 @@ extension PlexProvider {
         Array((hub?.Metadata ?? []).filter {
             Self.isServerHomeVideo($0)
                 && ($0.librarySectionID.map { String($0) == libraryID } ?? true)
-        }.prefix(limit)).map { map(metadata: $0).taggingLibrary(libraryID) }
+        }.prefix(limit)).map { map(metadata: $0, libraryID: libraryID) }
     }
 
     private static func homeRequestError(_ error: Error) -> AppError {
@@ -368,6 +368,6 @@ extension PlexProvider {
     }
 
     private static func isServerHomeVideo(_ item: PlexMetadata) -> Bool {
-        ["movie", "show", "season", "episode", "clip"].contains(item.type ?? "")
+        ["movie", "show", "season", "episode", "clip", "video"].contains(item.type ?? "")
     }
 }

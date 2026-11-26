@@ -223,6 +223,10 @@ behavior and never export item identities or response bodies.
 
 Library cards use the item's `thumb` first. If absent, `Image.coverPoster` supplies
 the poster and `Image.snapshot` supplies an episode's still before the show poster fallback.
+For personal video libraries (Plex “Other Videos”), both poster and landscape cards
+use the video's own thumbnail, including a wide frame or a typed `snapshot`.
+These videos are not matched to catalog posters by title. A section can report
+`movie` for both personal videos and catalog movies; its display name is not used.
 Plex's selected `Image` entry with type `backgroundSquare` is retained as
 `.squareHero`, separately from posters, logos, and landscape backgrounds.
 Compact iPhone Home and detail heroes prefer it under Recommended or Library

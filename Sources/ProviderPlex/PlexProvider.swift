@@ -556,7 +556,7 @@ public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginPr
             // these — they only live in the per-section "full menu" — and they read
             // as noise (an actor/director the user has never heard of).
             guard !Self.isPersonHub(identifier: hub.hubIdentifier, context: hub.context, title: hub.title) else { return nil }
-            let items = (hub.Metadata ?? []).map(map(metadata:))
+            let items = (hub.Metadata ?? []).map { map(metadata: $0, libraryID: libraryID) }
             // Require enough items to justify a whole row — a near-empty shelf reads
             // as broken.
             guard items.count >= Self.minimumHubItems else { return nil }
@@ -605,7 +605,7 @@ public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginPr
             }
             let items = (hub.Metadata ?? []).filter {
                 $0.librarySectionID.map(String.init).map { $0 == libraryID } ?? true
-            }.map(map(metadata:))
+            }.map { map(metadata: $0, libraryID: libraryID) }
             guard !items.isEmpty else { return nil }
             return LibrarySection(
                 id: id, title: title, items: Array(items.prefix(max(1, limit))),
@@ -1027,7 +1027,7 @@ public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginPr
             if page.usesServerCollections(for: kind) {
                 try Self.validateCollectionPage(container, startIndex: page.startIndex)
             }
-            let items = (container.Metadata ?? []).map(map(metadata:))
+            let items = (container.Metadata ?? []).map { map(metadata: $0, libraryID: containerID) }
             let total = container.totalSize ?? container.size ?? (page.startIndex + items.count)
             PlozzLog.networking.info("Plex library browse: section=\(containerID) returned=\(items.count) total=\(total)")
             return MediaPage(items: items, startIndex: page.startIndex, totalCount: total)
@@ -2060,7 +2060,13 @@ public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginPr
     }
 
     func map(metadata dto: PlexMetadata) -> MediaItem {
+        map(metadata: dto, libraryID: nil)
+    }
+
+    func map(metadata dto: PlexMetadata, libraryID: String?) -> MediaItem {
         let kind = Self.kind(forItemType: dto.type)
+        let sectionID = dto.librarySectionID.map(String.init) ?? libraryID
+        let personalVideo = isPersonalVideo(dto, kind: kind, sectionID: sectionID)
         let isEpisode = kind == .episode
         // For an episode, the series title is the grandparent; otherwise the
         // immediate parent (e.g. a season's show, a movie has none).
@@ -2070,7 +2076,7 @@ public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginPr
         // the show here meant an episode never exposed its still at all — every
         // surface asking for `.episodeThumbnail` got series art instead. Jellyfin
         // maps this the same way (own primary image, series poster separately).
-        let posterPath = Self.posterPath(for: dto, kind: kind)
+        let posterPath = Self.posterPath(for: dto, kind: kind, personalVideo: personalVideo)
         let viewCount = dto.viewCount ?? 0
         let viewedLeafCount = dto.viewedLeafCount ?? 0
         let leafCount = dto.leafCount ?? 0
@@ -2118,6 +2124,7 @@ public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginPr
             kind: kind,
             isTrailer: Self.extraKind(for: dto) == .trailer,
             isExtra: dto.type == "clip" && (dto.extraType != nil || dto.subtype != nil),
+            isPersonalVideo: personalVideo,
             overview: dto.summary,
             parentTitle: parentTitle,
             // A season's own ordinal lives in `index`; an episode's season number
@@ -2167,7 +2174,7 @@ public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginPr
             providerIDs: Self.providerIDs(from: dto),
             artworkSelections: heroArtworkSelections(from: dto),
             mediaInfo: Self.sourceMetadata(from: dto),
-            libraryID: dto.librarySectionID.map(String.init),
+            libraryID: sectionID,
             edition: dto.editionTitle,
             versions: Self.versions(from: dto.Media, edition: dto.editionTitle),
             isFavorite: false,
@@ -2184,13 +2191,27 @@ public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginPr
         )
     }
 
-    private static func posterPath(for dto: PlexMetadata, kind: MediaItemKind) -> String? {
+    private func isPersonalVideo(_ dto: PlexMetadata, kind: MediaItemKind, sectionID: String?) -> Bool {
+        guard kind == .movie || kind == .video, dto.extraType == nil, dto.subtype == nil else { return false }
+        let guid = dto.guid?.lowercased() ?? ""
+        if let scheme = guid.range(of: "://"), PlexDirectory.isPersonalAgent(String(guid[..<scheme.lowerBound])) {
+            return true
+        }
+        if let personal = client.isPersonalVideoSection(sectionID) { return personal }
+        // A local GUID on a movie also occurs in ordinary unmatched movie libraries.
+        guard dto.Guid?.isEmpty != false else { return false }
+        return kind == .video && (guid.isEmpty || guid.hasPrefix("local://"))
+    }
+
+    private static func posterPath(for dto: PlexMetadata, kind: MediaItemKind, personalVideo: Bool = false) -> String? {
         if kind == .playlist, let composite = dto.composite, !composite.isEmpty { return composite }
         if let thumb = dto.thumb, !thumb.isEmpty { return thumb }
-        let imageType = kind == .episode ? "snapshot" : "coverposter"
-        if let path = dto.Image?.first(where: {
-            $0.type?.lowercased() == imageType && $0.url?.isEmpty == false
-        })?.url { return path }
+        let imageTypes = personalVideo ? ["snapshot", "coverposter"] : [kind == .episode ? "snapshot" : "coverposter"]
+        for imageType in imageTypes {
+            if let path = dto.Image?.first(where: {
+                $0.type?.lowercased() == imageType && $0.url?.isEmpty == false
+            })?.url { return path }
+        }
         return kind == .episode ? dto.grandparentThumb : nil
     }
 

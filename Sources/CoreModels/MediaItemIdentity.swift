@@ -104,7 +104,7 @@ public enum MediaItemIdentity {
     /// the viewer's library opened as a request page with no Play button
     /// (issue #33). Keep this predicate and `identities(for:)` in step.
     public static func hasStrongRetargetIdentity(_ item: MediaItem) -> Bool {
-        guard item.kind != .collection else { return false }
+        guard item.kind != .collection, !item.isPersonalVideo else { return false }
         let hasStrongExternal = strongExternalNamespaces.contains {
             item.providerIDs.providerID($0.namespace) != nil
         }
@@ -137,7 +137,7 @@ public enum MediaItemIdentity {
     public static func identities(for item: MediaItem) -> [MediaIdentity] {
         // A catalogue collection ID describes metadata, not a server/user's
         // chosen membership. Collections are never alternate title sources.
-        guard item.kind != .collection else { return [] }
+        guard item.kind != .collection, !item.isPersonalVideo else { return [] }
         var result: [MediaIdentity] = []
 
         // Alias- and punctuation-insensitive resolution (`providerID(_:)`) so a
