@@ -26,6 +26,18 @@ public enum MediaRailLayout {
         let peek = peekFraction * (preferredSlot - 2 * sideMargin)
         return max(1, Int(((available - peek) / (preferredSlot + spacing)).rounded(rounding)))
     }
+
+    static func fittingCount(
+        _ preferred: Int, available: CGFloat, spacing: CGFloat, sideMargin: CGFloat = 0,
+        maximumArtworkWidth: CGFloat?
+    ) -> Int {
+        guard let maximumArtworkWidth else { return preferred }
+        // Add a whole column rather than clamping the final width and losing the peek.
+        return max(preferred, wholeCards(
+            available: available, preferredSlot: maximumArtworkWidth + 2 * sideMargin,
+            spacing: spacing, sideMargin: sideMargin, rounding: .up
+        ))
+    }
 }
 
 public enum DesktopMediaRailLayout {
@@ -101,6 +113,31 @@ public struct PlozzMetrics: Equatable, Sendable {
     private let geometryScale: CGFloat
     /// Applies to the preferred artwork width *before* fitting whole TV cards, never to the fitted slot or gutters.
     let railTextWidthScale: CGFloat
+    private var railCardHeightLimit: CGFloat?
+    private var railCaptionHeight: CGFloat = 0
+
+    #if os(tvOS)
+    /// Resolve the vertical budget once at the page, not in each scrolling card.
+    public func fittingRailHeight(_ height: CGFloat, focusStyle: CardFocusStyle) -> Self {
+        var result = self
+        let heading = UIFont.systemFont(ofSize: sectionHeaderFontSize, weight: .bold).lineHeight.rounded(.up)
+        result.railCardHeightLimit = max(1, height - heading - sectionTitleSpacing - railTopPadding - railVerticalPadding)
+        let title = UIFont.systemFont(ofSize: cardTitleFontSize, weight: .semibold).lineHeight.rounded(.up)
+        let subtitle = UIFont.systemFont(ofSize: cardSubtitleFontSize).lineHeight.rounded(.up)
+        result.railCaptionHeight = title + subtitle + 4 + nativePosterCaptionSpacing
+            + (focusStyle.usesSystemEffect ? nativePosterCaptionFocusTravel : focusCaptionPush(for: focusStyle))
+        return result
+    }
+    #endif
+
+    func maximumRailArtworkWidth(aspect: CGFloat, cardStyle: CardStyle, showsCaption: Bool) -> CGFloat? {
+        railCardHeightLimit.map { limit in
+            let frame = cardStyle == .framed ? 2 * cardInset : 0
+            let caption = showsCaption ? railCaptionHeight
+                + (cardStyle == .framed ? max(posterCaptionInset, landscapeCaptionInset) : 0) : 0
+            return max(1, limit - frame - caption) * aspect
+        }
+    }
 
     // MARK: Card artwork sizes (scaled)
 
@@ -337,20 +374,26 @@ public struct PlozzMetrics: Equatable, Sendable {
     /// counting invisible side margins as artwork. The viewport already excludes
     /// navigation safe-area insets. Browse grids keep their own sizing.
     public func portraitRowSlotWidth(
-        viewportWidth: CGFloat, leadingInset: CGFloat, cardStyle: CardStyle
+        viewportWidth: CGFloat, leadingInset: CGFloat, cardStyle: CardStyle, showsCaption: Bool = true
     ) -> CGFloat {
         guard viewportWidth > 0 else { return posterWidth }
         let wholeCards = Int(((PlozzTheme.Metrics.portraitRowVisibleCards / (scale * railTextWidthScale))
             - MediaRailLayout.peekFraction).rounded())
         let sideMargin = cardStyle == .borderless ? borderlessCardSideMargin : cardInset
         let artworkLeading = leadingInset + (cardStyle == .framed ? cardInset : 0)
+        let available = viewportWidth - artworkLeading
+        let count = MediaRailLayout.fittingCount(
+            wholeCards, available: available, spacing: cardSpacing, sideMargin: sideMargin,
+            maximumArtworkWidth: maximumRailArtworkWidth(aspect: 2 / 3, cardStyle: cardStyle, showsCaption: showsCaption)
+        )
         return MediaRailLayout.slotWidth(
-            available: viewportWidth - artworkLeading, count: wholeCards, spacing: cardSpacing, sideMargin: sideMargin
+            available: available, count: count, spacing: cardSpacing, sideMargin: sideMargin
         )
     }
 
     public func fittingLandscapeRow(
-        viewportWidth: CGFloat, leadingInset: CGFloat, cardStyle: CardStyle, showsSeriesArtwork: Bool
+        viewportWidth: CGFloat, leadingInset: CGFloat, cardStyle: CardStyle, showsSeriesArtwork: Bool,
+        showsCaption: Bool = true
     ) -> Self {
         guard viewportWidth > leadingInset else { return self }
         let available = viewportWidth - leadingInset - (cardStyle == .framed ? cardInset : 0)
@@ -361,9 +404,15 @@ public struct PlozzMetrics: Equatable, Sendable {
             && continueWatchingWidth > (landscapeWidth * ContinueWatchingCardShape.widthScale).rounded()
         // Rounding up at larger sizes can make Huge artwork smaller than Large:
         // the same number of cards would have to share the row with wider gaps.
-        let count = MediaRailLayout.wholeCards(
+        let preferred = MediaRailLayout.wholeCards(
             available: available, preferredSlot: targetWidth + 2 * inset, spacing: cardSpacing, sideMargin: inset,
             rounding: enlargedText || scale > 1 ? .down : .toNearestOrAwayFromZero
+        )
+        let count = MediaRailLayout.fittingCount(
+            preferred, available: available, spacing: cardSpacing, sideMargin: inset,
+            maximumArtworkWidth: maximumRailArtworkWidth(
+                aspect: size.width / size.height, cardStyle: cardStyle, showsCaption: showsCaption
+            )
         )
         let width = MediaRailLayout.slotWidth(available: available, count: count, spacing: cardSpacing, sideMargin: inset) - 2 * inset
         var result = self

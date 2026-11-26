@@ -248,8 +248,14 @@ public struct MediaRowView: View {
     /// fade out there instead of being cut off at a narrowed viewport edge.
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
     @Environment(\.plozzCardCaptionsHidden) private var captionsHidden
+    @Environment(\.plozzContinueWatchingCaptionsHidden) private var continueWatchingCaptionsHidden
+    @Environment(\.plozzContinueWatchingCaptionsHiddenWithArtworkTitle) private var artworkCaptionsHidden
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.plozzArtworkPolicy) private var presentationArtworkPolicy
+    private var showsRailCaption: Bool {
+        if showsSeriesArtwork { return !artworkCaptionsHidden }
+        return !(presentationArtworkPolicy.area == .continueWatching ? continueWatchingCaptionsHidden : captionsHidden)
+    }
     /// Keeps branch-specific masking completely out of native navigation styles.
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     #if os(tvOS)
@@ -1098,7 +1104,7 @@ public struct MediaRowView: View {
             return metrics.portraitRowSlotWidth(
                 viewportWidth: sizingViewportWidth ?? rowViewportWidth,
                 leadingInset: leadingInset,
-                cardStyle: cardStyle
+                cardStyle: cardStyle, showsCaption: showsRailCaption
             )
             #else
             return metrics.posterWidth
@@ -1185,7 +1191,7 @@ public struct MediaRowView: View {
         if presentation == .landscape {
             return metrics.fittingLandscapeRow(
                 viewportWidth: sizingViewportWidth ?? rowViewportWidth, leadingInset: leadingInset,
-                cardStyle: cardStyle, showsSeriesArtwork: showsSeriesArtwork
+                cardStyle: cardStyle, showsSeriesArtwork: showsSeriesArtwork, showsCaption: showsRailCaption
             )
         }
         #endif

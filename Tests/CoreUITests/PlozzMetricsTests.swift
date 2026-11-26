@@ -2,6 +2,9 @@
 import XCTest
 import SwiftUI
 import CoreModels
+#if os(tvOS)
+import UIKit
+#endif
 @testable import CoreUI
 
 final class PlozzMetricsTests: XCTestCase {
@@ -138,6 +141,44 @@ final class PlozzMetricsTests: XCTestCase {
     }
 
     #if os(tvOS)
+    func testHugeHomeCardsAtMaximumTextFitTheRowWithoutSacrificingTypeOrThePeek() {
+        let viewport: CGFloat = 1776
+        let height: CGFloat = 622
+        let base = PlozzMetrics(density: .extraLarge, dynamicTypeSize: .accessibility5)
+        let fitted = base.fittingRailHeight(height, focusStyle: .system)
+        let heading = ceil(UIFont.systemFont(ofSize: base.sectionHeaderFontSize, weight: .bold).lineHeight)
+        let labels = ceil(UIFont.systemFont(ofSize: base.cardTitleFontSize, weight: .semibold).lineHeight)
+            + ceil(UIFont.systemFont(ofSize: base.cardSubtitleFontSize).lineHeight)
+            + base.nativePosterCaptionSpacing + base.nativePosterCaptionFocusTravel + 2
+        for style in CardStyle.allCases {
+            let inset = style == .framed ? base.cardInset : base.borderlessCardSideMargin
+            let available = viewport - (style == .framed ? base.cardInset : 0)
+            for captions in [false, true] {
+                let portraitSlot = fitted.portraitRowSlotWidth(
+                    viewportWidth: viewport, leadingInset: 0, cardStyle: style, showsCaption: captions
+                )
+                var surfaces = [(portraitSlot - 2 * inset, CGFloat(2) / 3)]
+                for series in [false, true] {
+                    let landscape = fitted.fittingLandscapeRow(
+                        viewportWidth: viewport, leadingInset: 0, cardStyle: style,
+                        showsSeriesArtwork: series, showsCaption: captions
+                    )
+                    surfaces.append((series ? landscape.continueWatchingWidth : landscape.landscapeWidth,
+                                     series ? ContinueWatchingCardShape.aspectRatio : 16 / 9))
+                }
+                for (width, aspect) in surfaces {
+                    let maximumHeight = height - heading - base.sectionTitleSpacing - base.railTopPadding
+                        - base.railVerticalPadding - (captions ? labels : 0) - (style == .framed ? 2 * inset : 0)
+                    XCTAssertLessThanOrEqual(width / aspect, maximumHeight + 0.5)
+                    let pitch = width + 2 * inset + base.cardSpacing
+                    XCTAssertEqual(available - floor(available / pitch) * pitch, width / 4, accuracy: 0.001)
+                }
+            }
+        }
+        XCTAssertEqual(fitted.sectionHeaderFontSize, base.sectionHeaderFontSize)
+        XCTAssertEqual(fitted.cardTitleFontSize, base.cardTitleFontSize)
+    }
+
     func testTVTextSizeReflowsHomeRailsAndScalesHeadingsAtEveryDensity() {
         let sizes: [DynamicTypeSize] = [.large, .xLarge, .xxLarge, .xxxLarge, .accessibility1,
                                         .accessibility2, .accessibility3, .accessibility4, .accessibility5]

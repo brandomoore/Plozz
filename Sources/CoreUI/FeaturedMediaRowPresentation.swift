@@ -68,7 +68,10 @@ public struct FeaturedMediaRowPresentation<Cards: View>: View {
     }
 
     private var featuredGeometry: (size: CGSize, spacing: CGFloat) {
-        FeaturedCardLayout.rail(viewportWidth: fittedViewportWidth, television: television, textWidthScale: metrics.railTextWidthScale)
+        FeaturedCardLayout.rail(
+            viewportWidth: fittedViewportWidth, television: television, textWidthScale: metrics.railTextWidthScale,
+            maximumArtworkWidth: metrics.maximumRailArtworkWidth(aspect: 4 / 5, cardStyle: .borderless, showsCaption: false)
+        )
     }
 
     private var size: CGSize {

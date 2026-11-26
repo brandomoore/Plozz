@@ -79,6 +79,11 @@ not enlarged a second time. At the end of the content the last card
 is fully visible instead. Pinned-sidebar parking treats the trailing boundary
 as a valid stop for native targets and idle corrections, even when it lies
 less than half a card beyond the previous whole slot.
+Apple TV Home also fits these rows vertically. Classic leaves room for the next
+Down move; Showcase and Immersive reserve the selected title's area above the
+active row. If the heading, artwork and enabled captions would not fit together,
+the rail adds a whole column rather than shrinking the text or clipping the
+focused card. Placeholders use the same fit as the loaded rows.
 Full-bleed media rows retain the consumed trailing safe area as content padding,
 so the final card's native focus lift fits on screen without overscrolling.
 This changes the scrollable tail, not the viewport or portrait density.

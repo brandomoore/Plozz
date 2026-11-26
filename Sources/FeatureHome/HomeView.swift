@@ -420,10 +420,30 @@ public struct HomeView: View {
     public var body: some View {
         GeometryReader { geometry in
             screen
+                #if os(tvOS)
+                .environment(\.plozzMetrics, homeRailMetrics(viewportHeight: geometry.size.height))
+                #endif
                 .environment(\.mediaRowHeaderTrailingInset,
                              navigationStyle == .rail ? geometry.safeAreaInsets.trailing : 0)
         }
     }
+
+    #if os(tvOS)
+    @Environment(\.plozzCardFocusStyle) private var railFocusStyle
+
+    private func homeRailMetrics(viewportHeight: CGFloat) -> PlozzMetrics {
+        let height: CGFloat
+        if focusHeroSettings != nil {
+            // The scrolling shelf and the stationary details must fit at the same time.
+            height = FocusHeroLayout.rowsBottom(rowSpacing: FocusHeroLayout.rowSpacing) - FocusHeroLayout.lowestSlotTop
+                + FocusHeroLayout.rowTitleTightening + FocusHeroLayout.rowBottomTightening - FocusHeroLayout.activeTitleLift
+        } else {
+            let lift = carouselSettings?.isActive == true ? Self.recedeRowLift : 0
+            height = viewportHeight - lift - metrics.rowSpacing - FocusHeroLayout.nextRowPeek
+        }
+        return metrics.fittingRailHeight(height, focusStyle: railFocusStyle)
+    }
+    #endif
 
     private var screen: some View {
         let _ = PlozzBodyRate.tick("HomeView")
@@ -2442,6 +2462,8 @@ struct HomeLibrariesRow: View {
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
     @Environment(\.plozzCardFocusStyle) private var focusStyle
+    @Environment(\.plozzCardCaptionSettings) private var captions
+    @Environment(\.plozzCardCaptionIsShowcase) private var isShowcase
     @Environment(\.mediaRowHeaderTrailingInset) private var pageTrailingInset
     @State private var viewportWidth: CGFloat = 0
 
@@ -2453,7 +2475,8 @@ struct HomeLibrariesRow: View {
         let style: CardStyle = usesBorderlessSurface ? .borderless : .framed
         return metrics.fittingLandscapeRow(
             viewportWidth: viewportWidth, leadingInset: PlozzTheme.Metrics.screenPadding,
-            cardStyle: style, showsSeriesArtwork: false
+            cardStyle: style, showsSeriesArtwork: false,
+            showsCaption: captions.showsLabels(in: .homeLibraries, isShowcase: isShowcase)
         ).cardSlotWidth(for: .landscape, cardStyle: style)
     }
 

@@ -17,11 +17,16 @@ public enum FeaturedCardLayout {
         return scrimStops.last!.opacity
     }
 
-    public static func rail(viewportWidth: CGFloat, television: Bool, textWidthScale: CGFloat = 1) -> (size: CGSize, spacing: CGFloat) {
+    public static func rail(
+        viewportWidth: CGFloat, television: Bool, textWidthScale: CGFloat = 1, maximumArtworkWidth: CGFloat? = nil
+    ) -> (size: CGSize, spacing: CGFloat) {
         let available = max(1, viewportWidth - (television ? PlozzTheme.Metrics.screenPadding : 20))
         let spacing: CGFloat = television ? 32 : 16
-        let count = MediaRailLayout.wholeCards(
+        let preferred = MediaRailLayout.wholeCards(
             available: available, preferredSlot: television ? 540 * textWidthScale : 360, spacing: spacing
+        )
+        let count = MediaRailLayout.fittingCount(
+            preferred, available: available, spacing: spacing, maximumArtworkWidth: maximumArtworkWidth
         )
         let width = MediaRailLayout.slotWidth(available: available, count: count, spacing: spacing)
         guard television else { return (CGSize(width: width, height: width * 1.125), spacing) }

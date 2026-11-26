@@ -138,10 +138,12 @@ struct HomeSkeletonRowView: View {
         let leading = PlozzTheme.Metrics.screenPadding + navigationContentInset
         let rowMetrics = cardStyle(for: kind) == .landscape
             ? metrics.fittingLandscapeRow(viewportWidth: measuredWidth, leadingInset: leading,
-                                          cardStyle: style, showsSeriesArtwork: usesSeriesArtwork(kind))
+                                          cardStyle: style, showsSeriesArtwork: usesSeriesArtwork(kind),
+                                          showsCaption: showsCaption(for: kind))
             : metrics
         let width = cardStyle(for: kind) == .poster
-            ? metrics.portraitRowSlotWidth(viewportWidth: measuredWidth, leadingInset: leading, cardStyle: style)
+            ? metrics.portraitRowSlotWidth(viewportWidth: measuredWidth, leadingInset: leading,
+                                          cardStyle: style, showsCaption: showsCaption(for: kind))
             : rowMetrics.cardSlotWidth(for: .landscape, cardStyle: style, showsSeriesArtwork: usesSeriesArtwork(kind))
         VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
             // Reserve the *exact* height of MediaRowView's title — a hidden Text in
