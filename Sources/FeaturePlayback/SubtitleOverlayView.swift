@@ -496,7 +496,7 @@ public struct SubtitleOverlayView: View {
     public var controlsFrame: CGRect?
     public var controlsFrames: [CGRect]
     #if os(tvOS)
-    var ownsBlackLetterbox = false
+    var retainsDialogueView = false
     #endif
 
     public init(
@@ -546,11 +546,11 @@ public struct SubtitleOverlayView: View {
             ZStack {
                 bitmapLayer(in: rect, bounds: CGRect(origin: .zero, size: geo.size), controls: controls)
                 #if os(tvOS)
-                if ownsBlackLetterbox, isHDR, style.positionReference == .screen, style.verticalAnchor == .bottom,
+                if retainsDialogueView, isHDR, style.positionReference == .screen, style.verticalAnchor == .bottom,
                    !secondaryActive, controlsFrames.isEmpty, controlsFrame == nil, rect.height > 0,
                    rect.maxY > 0, rect.maxY < geo.size.height,
                    primary.count <= 1, primary.allSatisfy({ !$0.isImage && !isSourcePositioned($0) }) {
-                    letterboxDialogue(in: geo.size, videoBottom: rect.maxY)
+                    letterboxDialogue(in: geo.size)
                 } else {
                     textLayer(in: geo.size, videoRect: rect, controls: controls)
                 }
@@ -595,14 +595,14 @@ public struct SubtitleOverlayView: View {
     // MARK: - Text cues (primary + secondary)
 
     #if os(tvOS)
-    private func letterboxDialogue(in size: CGSize, videoBottom: CGFloat) -> some View {
+    private func letterboxDialogue(in size: CGSize) -> some View {
         let text: SubtitleText
         if case let .text(active)? = primary.first?.body { text = active } else { text = SubtitleText("") }
         return LetterboxDialogueSurface(
             line: StyledCueText(text: text, fontSize: Self.baseFontSize * style.fontScale,
                                 fillColor: scaled(style.textColor), style: style, colorScale: lumaScale)
                 .renderedLine.configuration,
-            size: size, videoBottom: videoBottom, style: style
+            size: size, style: style
         )
         .frame(width: size.width, height: size.height)
     }
@@ -783,8 +783,7 @@ public struct SubtitleOverlayView: View {
 }
 
 #if os(tvOS)
-/// Retain one opaque subtitle surface across cue replacements and silent gaps. Never paint
-/// black over picture pixels: a tall or elevated cue keeps its ordinary transparent backing.
+/// Keep the same transparent line view across cue replacements and silent gaps.
 private struct LetterboxDialogueSurface: UIViewRepresentable {
     final class Surface: UIView {
         let line = SubtitleLineView()
@@ -799,7 +798,6 @@ private struct LetterboxDialogueSurface: UIViewRepresentable {
 
     let line: SubtitleLineView.Config
     let size: CGSize
-    let videoBottom: CGFloat
     let style: SubtitleStyle
 
     func makeUIView(context: Context) -> Surface { Surface(frame: .zero) }
@@ -808,9 +806,6 @@ private struct LetterboxDialogueSurface: UIViewRepresentable {
         let view = surface.line
         view.configure(line)
         let screen = CGRect(origin: .zero, size: size)
-        let scale = context.environment.displayScale
-        let top = ceil(videoBottom * scale) / scale
-        let matte = CGRect(x: 0, y: top, width: size.width, height: max(0, size.height - top))
         let measured = line.text.isEmpty ? .zero : view.measure(maxWidth: size.width * 0.92)
         let layout = SubtitlePositionLayout(verticalPosition: style.verticalPosition, verticalAnchor: .bottom,
                                             spacing: 0, controlsFrames: [])
@@ -818,13 +813,7 @@ private struct LetterboxDialogueSurface: UIViewRepresentable {
                          y: layout.blockOrigin(height: measured.height, in: screen),
                          width: measured.width, height: measured.height)
         UIView.performWithoutAnimation {
-            if measured == .zero || matte.contains(ink) {
-                view.frame = matte
-                view.letterboxInkRect = ink.offsetBy(dx: 0, dy: -top)
-            } else {
-                view.frame = ink
-                view.letterboxInkRect = nil
-            }
+            view.frame = ink
         }
     }
 }

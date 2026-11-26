@@ -206,7 +206,7 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
     }
 
     #if os(tvOS)
-    func testHDRDialoguePaintsTheSameBarAcrossCueChangesAndLeavesVideoUntouched() async throws {
+    func testHDRDialogueRetainsTransparentCueSizedViewAcrossLinesAndGaps() async throws {
         let scene = try await activeScene()
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
@@ -253,13 +253,15 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
         try await waitUntil {
             let rendered = regions()
             first = rendered.bottom
-            return !first.isNull && first.minY > video.maxY && abs(rendered.top.maxY - video.maxY) <= pixel
+            return !first.isNull && first.minY > video.maxY && abs(rendered.top.maxY - window.bounds.maxY) <= pixel
         }
-        let bar = try XCTUnwrap(textSurface(host.view))
+        let line = try XCTUnwrap(textSurface(host.view))
+        XCTAssertTrue(!line.isOpaque && line.bounds.width < window.bounds.width)
         model.tick(2.5)
         try await waitUntil {
             let rendered = regions()
-            return rendered.bottom.isNull && abs(rendered.top.maxY - video.maxY) <= pixel
+            return rendered.bottom.isNull && abs(rendered.top.maxY - window.bounds.maxY) <= pixel
+                && line.bounds.isEmpty
         }
         model.tick(4)
         var second = CGRect.null
@@ -267,7 +269,7 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
             second = regions().bottom
             return second.minY > video.maxY && second.height > first.height * 1.5 && !second.isNull
         }
-        XCTAssertTrue(textSurface(host.view) === bar)
+        XCTAssertTrue(textSurface(host.view) === line)
         XCTAssertEqual(second.maxY, first.maxY, accuracy: pixel)
         controls.subtitleLayout.frame = CGRect(x: 0, y: video.maxY - 120, width: window.bounds.width, height: 260)
         try await waitUntil {

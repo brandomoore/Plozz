@@ -252,7 +252,7 @@ struct LiveSubtitleOverlay: View {
             controlsFrames: controls.subtitleLayout.frames
         )
         #if os(tvOS)
-        overlay.ownsBlackLetterbox = model.rendersPrimary && !model.primaryInVideoFrame
+        overlay.retainsDialogueView = model.rendersPrimary && !model.primaryInVideoFrame
             && !(scheduledArtwork != nil && model.permitsScheduledASSArtwork)
         #endif
         return overlay.background {
