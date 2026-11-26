@@ -322,7 +322,7 @@ private final class NowPlayingHostSpy: VideoNowPlayingHost {
         nowPlayingPaused = true
         resignations += 1
     }
-    func nowPlayingSeek(to seconds: TimeInterval) {
+    func nowPlayingSeek(to seconds: TimeInterval, undo: PlaybackSeekUndo) {
         seeks.append(seconds)
         nowPlayingPendingSeek = seconds
     }

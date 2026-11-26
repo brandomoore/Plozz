@@ -150,6 +150,39 @@ private struct RemainingRing: View {
     }
 }
 
+/// The close glyph and remaining time share one visual, without changing the button's hit area.
+public struct SkipUndoDismissLabel: View {
+    private let model: PlayerControlsModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    public init(model: PlayerControlsModel) {
+        self.model = model
+    }
+
+    public var body: some View {
+        TimelineView(.animation(minimumInterval: reduceMotion ? 1 : 1.0 / 30)) { _ in
+            let remaining = model.skipUndoDeadline.map { ContinuousClock.now.duration(to: $0) } ?? .zero
+            let fraction = min(1, max(0, remaining / PlayerControlsModel.skipUndoDuration))
+            ZStack {
+                Circle().strokeBorder(.foreground.opacity(0.24), lineWidth: 1.5)
+                Circle()
+                    .inset(by: 0.75)
+                    .trim(from: 0, to: fraction)
+                    .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.semibold))
+            }
+        }
+        #if os(tvOS)
+        .frame(width: 36, height: 36)
+        #else
+        .frame(width: 24, height: 24)
+        #endif
+        .accessibilityHidden(true)
+    }
+}
+
 /// High-contrast pill that reads clearly over any frame, brightening on focus.
 private struct SkipButtonStyle: ButtonStyle {
     let focused: Bool

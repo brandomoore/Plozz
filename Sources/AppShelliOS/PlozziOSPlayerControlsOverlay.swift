@@ -52,14 +52,14 @@ struct PlozziOSPlayerControlsOverlay: View {
     @State private var autoHideTask: Task<Void, Never>?
     @State private var touchGestures = PlayerTouchGestureState()
     @State private var availableSize: CGSize = .zero
-    /// The Skip button's interactive frame, measured in the touch surface's space
-    /// so taps on it never become a ±skip shortcut or pair into a double-tap.
+    /// The visible skip prompt's frame, so its buttons cannot trigger a video shortcut.
     @State private var skipButtonFrame: CGRect?
     @Environment(\.scenePhase) private var scenePhase
     @Environment(PlaybackSettingsModel.self) private var playbackSettings: PlaybackSettingsModel?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.accessibilitySwitchControlEnabled) private var switchControl
+    @Environment(\.playerControlForeground) private var controlForeground
     private var allowsAutoHide: Bool {
         let mode = playbackSettings?.settings.controlsAutoHide ?? PlaybackSettings.default.controlsAutoHide
         return mode.allowsHiding(paused: viewModel.controls.intendsPause) && !voiceOver && !switchControl
@@ -89,6 +89,10 @@ struct PlozziOSPlayerControlsOverlay: View {
         return [item?.sourceAccountID, item?.id, item?.selectedVersionID]
     }
     private var scrubSeconds: TimeInterval { viewModel.controls.scrubSeconds }
+    private var showsGoBack: Bool {
+        viewModel.controls.skipUndoPosition != nil && !isScrubbing && !isCardOpen
+            && !showsUpNext && !isPlayingElsewhere && !menuPresentation.isBusy && presentedSheet == nil
+    }
 
     var body: some View {
         ZStack {
@@ -119,7 +123,7 @@ struct PlozziOSPlayerControlsOverlay: View {
                 )
             }
 
-            if controlsVisible || touchGestures.skip != nil {
+            if controlsVisible || touchGestures.skip != nil || showsGoBack {
                 LinearGradient(
                     colors: [
                         .black.opacity(controlsVisible ? 0.65 : 0),
@@ -133,7 +137,7 @@ struct PlozziOSPlayerControlsOverlay: View {
                 .allowsHitTesting(false)
             }
 
-            if controlsVisible || touchGestures.skip != nil || showsUpNext {
+            if controlsVisible || touchGestures.skip != nil || showsUpNext || showsGoBack {
                 VStack(spacing: 0) {
                     if controlsVisible && !isScrubbing {
                         PlozziOSPlayerTopBar(
@@ -150,7 +154,7 @@ struct PlozziOSPlayerControlsOverlay: View {
                     Spacer(minLength: 0)
                     PlozziOSPlayerTransport(
                         viewModel: viewModel,
-                        showsTransport: controlsVisible || touchGestures.skip != nil,
+                        showsTransport: controlsVisible || touchGestures.skip != nil || showsGoBack,
                         showsUpNext: showsUpNext,
                         playbackControls: primaryPlaybackControls(compact: true),
                         timelineOnly: !controlsVisible || isScrubbing,
@@ -179,7 +183,7 @@ struct PlozziOSPlayerControlsOverlay: View {
                                 cancelTouchInteraction()
                                 cancelAutoHide()
                             } else {
-                                viewModel.requestSeek(to: scrubSeconds)
+                                viewModel.requestSeek(to: scrubSeconds, undo: .largeJump)
                                 scrubPreviewCoordinator?.clear()
                                 scheduleAutoHide()
                             }
@@ -200,7 +204,8 @@ struct PlozziOSPlayerControlsOverlay: View {
                         menuPresentation: menuPresentation,
                         isCardOpen: $isCardOpen,
                         onInteraction: noteInteraction,
-                        availableSize: availableSize
+                        availableSize: availableSize,
+                        goBackPrompt: showsGoBack ? AnyView(goBackPrompt) : nil
                     )
                 }
                 .modifier(PlayerTouchChromePadding(clearsCameraByRow: true))
@@ -216,7 +221,7 @@ struct PlozziOSPlayerControlsOverlay: View {
                 PlayerTouchGestureFeedbackView(state: touchGestures)
             }
 
-            if viewModel.controls.skipButtonVisible, !touchGestures.isActive, !isScrubbing {
+            if viewModel.controls.skipButtonVisible, !touchGestures.isActive, !isScrubbing, !showsGoBack {
                 Button {
                     let canSkip = viewModel.controls.activeSkipSegment != nil
                     viewModel.skipActiveSegment()
@@ -512,7 +517,7 @@ struct PlozziOSPlayerControlsOverlay: View {
             within: 0...max(0, duration - 1)
         ) else { return false }
         beginTouchInteraction()
-        viewModel.requestSeek(to: target, origin: origin)
+        viewModel.requestSeek(to: target, origin: origin, undo: .skip)
         return true
     }
 
@@ -532,6 +537,46 @@ struct PlozziOSPlayerControlsOverlay: View {
         touchGestures.cancel()
     }
 
+    private var goBackPrompt: some View {
+        PlayerGlassControlGroup {
+            HStack(spacing: 0) {
+                Button {
+                    touchGestures.cancel()
+                    viewModel.undoSkip()
+                    noteInteraction()
+                } label: {
+                    Label("Go Back", systemImage: "arrow.uturn.backward")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.leading, 14)
+                        .padding(.trailing, 10)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+
+                Button {
+                    viewModel.dismissSkipUndo()
+                } label: {
+                    SkipUndoDismissLabel(model: viewModel.controls)
+                        .foregroundStyle(controlForeground.opacity(0.8))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Dismiss Go Back")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(controlForeground)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: SkipButtonFramePreference.self,
+                    value: proxy.frame(in: .named(playerTouchSurfaceSpace))
+                )
+            }
+        }
+    }
+
     private func seek(by interval: TimeInterval) {
         guard viewModel.controls.duration.isFinite, viewModel.controls.duration > 0 else { return }
         let start = viewModel.controls.pendingSeekTarget ?? viewModel.controls.currentSeconds
@@ -540,7 +585,7 @@ struct PlozziOSPlayerControlsOverlay: View {
             viewModel.controls.duration
         )
         guard target != start else { return }
-        viewModel.requestSeek(to: target)
+        viewModel.requestSeek(to: target, undo: .skip)
         TouchFeedback.shared.emit(.impact)
         noteInteraction()
     }
@@ -793,6 +838,9 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
     let onInteraction: () -> Void
     /// The full player bounds, not this bottom cluster's intrinsic size.
     let availableSize: CGSize
+    var goBackPrompt: AnyView? = nil
+
+    private var isLandscape: Bool { availableSize.width > availableSize.height }
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 16) {
@@ -834,6 +882,9 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
 
     private var transportControls: some View {
         VStack(spacing: 0) {
+            if !isLandscape, let goBackPrompt {
+                goBackPrompt.padding(.bottom, 8)
+            }
             HStack(alignment: .bottom, spacing: 16) {
                 // Episode line ABOVE the title, matching `titleBlock` on tvOS:
                 // "S1, E2 · Episode Title" reads as a qualifier of the series
@@ -855,18 +906,24 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
                     in: viewModel.controls.subtitleLayout, region: .title,
                     isVisible: !isCardOpen && !timelineOnly
                 )
+                .playerTouchChromeHidden(isCardOpen || timelineOnly || !showsTransport)
+                .frame(maxWidth: isLandscape && goBackPrompt != nil ? .infinity : nil, alignment: .leading)
 
-                Spacer(minLength: 12)
+                if isLandscape, let goBackPrompt {
+                    goBackPrompt
+                } else {
+                    Spacer(minLength: 12)
+                }
 
                 trackControls
                     .reportSubtitleControlsFrame(
                         in: viewModel.controls.subtitleLayout, region: .trackControls,
                         isVisible: !isCardOpen && !timelineOnly
                     )
+                    .frame(maxWidth: isLandscape && goBackPrompt != nil ? .infinity : nil, alignment: .trailing)
             }
             .foregroundStyle(.white)
             .playerCameraSafeRow()
-            .playerTouchChromeHidden(isCardOpen || timelineOnly || !showsTransport)
 
             PlozziOSPlayerTimeline(
                 model: viewModel.controls, displayedSeconds: displayedSeconds, isScrubbing: isScrubbing,
@@ -898,7 +955,7 @@ struct PlozziOSPlayerTransport<PlaybackControls: View>: View {
                 availableSize: availableSize,
                 isCardOpen: $isCardOpen,
                 player: viewModel,
-                onRestart: { viewModel.requestSeek(to: 0, origin: "restart") },
+                onRestart: { viewModel.requestSeek(to: 0, origin: "restart", undo: .largeJump) },
                 onNextEpisode: { viewModel.playNextEpisode() },
                 onPreviousEpisode: {
                     if let previous = viewModel.previousEpisode {

@@ -85,6 +85,39 @@ final class PlayerGestureInteractionTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["player-gesture-skip-total"].exists)
     }
 
+    func testGoBackRestoresThePausedDepartureAfterSkippingInEitherDirection() {
+        app.buttons["Pause"].tap()
+        let time = app.buttons["player-timeline-current-time"]
+        guard let departure = time.value as? String else { return XCTFail("Missing departure time") }
+
+        let forward = app.buttons["Skip forward"]
+        XCTAssertTrue(forward.waitForExistence(timeout: 3))
+        forward.tap()
+        XCTAssertNotEqual(time.value as? String, departure)
+        let undo = app.buttons["Go Back"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 3), app.debugDescription)
+        capture("go-back-prompt")
+        undo.tap()
+        XCTAssertEqual(time.value as? String, departure)
+        XCTAssertTrue(app.buttons["Play"].exists)
+        XCTAssertTrue(undo.waitForNonExistence(timeout: 3))
+
+        app.buttons["Skip backward"].tap()
+        XCTAssertNotEqual(time.value as? String, departure)
+        XCTAssertTrue(undo.waitForExistence(timeout: 3))
+        undo.tap()
+        XCTAssertEqual(time.value as? String, departure)
+        XCTAssertTrue(undo.waitForNonExistence(timeout: 3))
+
+        forward.tap()
+        let skipped = time.value as? String
+        let dismiss = app.buttons["Dismiss Go Back"]
+        XCTAssertTrue(dismiss.waitForExistence(timeout: 3))
+        dismiss.tap()
+        XCTAssertTrue(undo.waitForNonExistence(timeout: 3))
+        XCTAssertEqual(time.value as? String, skipped)
+    }
+
     func testHoldAcceleratesAndReleaseRestoresRateWithoutLeavingControlsOpen() {
         XCTAssertTrue(app.staticTexts["gesture-rate"].wait(for: \.label, toEqual: "1.0", timeout: 5),
                       "Verify the actual renderer is playing at 1× before holding. \(app.debugDescription)")

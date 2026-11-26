@@ -512,9 +512,12 @@ Cast and Chapters use the same tab-to-content gap as Info, with directional scro
 fades only at edges where more content remains.
 Opening Chapters positions the current chapter without fading that first visible
 row; its top fade activates only after a user scroll, not the initial automatic jump.
-Selecting a chapter closes the panel and uses the normal
-seek coordinator, preserving play/pause intent. Existing skip buttons and intro/
-credits controls are unchanged. Mobile tabs scroll horizontally when needed.
+Selecting a chapter closes the panel and uses the normal seek coordinator,
+preserving play/pause intent. Mobile tabs scroll horizontally when needed.
+Go Back returns to the departure of the latest forward or backward skip, chapter
+jump, or intro/credits skip. Timeline jumps and restarts qualify when they move
+playback by at least 30 seconds. The prompt is single-use and expires after seven
+seconds.
 
 Plex, Jellyfin, and Emby supply chapters through their existing playback metadata
 requests; Emby intro/credit markers are excluded. Invalid, duplicate, and

@@ -163,6 +163,7 @@ struct PlayerControls: View {
 
     enum FocusSlot: Hashable {
         case button(Category)
+        case undoSkip, dismissUndoSkip
         /// Invisible strip above the Info tab. Focusing it IS the "leave the card"
         /// gesture — see `infoExitGuide`.
         case infoExit
@@ -907,6 +908,45 @@ struct PlayerControls: View {
             trackControlButtons
                 .layoutPriority(1)
         }
+        .overlay(alignment: .top) {
+            if showsGoBack, let player {
+                HStack(spacing: 16) {
+                    Button {
+                        onExitToSurface()
+                        player.undoSkip()
+                    } label: {
+                        Label("Go Back", systemImage: "arrow.uturn.backward")
+                    }
+                    .playerGlassButton(prominent: false)
+                    .focused($focus, equals: .undoSkip)
+                    .disabled(entryLocksOut(.undoSkip))
+
+                    Button {
+                        onExitToSurface()
+                        player.dismissSkipUndo()
+                    } label: {
+                        SkipUndoDismissLabel(model: model)
+                    }
+                    .accessibilityLabel("Dismiss Go Back")
+                    .playerGlassButton(prominent: false)
+                    .focused($focus, equals: .dismissUndoSkip)
+                    .disabled(entryLocksOut(.dismissUndoSkip))
+                }
+                .buttonBorderShape(.capsule)
+                .plozzFocusSection()
+                .alignmentGuide(.top) { $0[.bottom] + 16 }
+            }
+        }
+        .onChange(of: model.skipUndoPosition) { _, position in
+            if position == nil, focus == .undoSkip || focus == .dismissUndoSkip {
+                onExitToSurface()
+            }
+        }
+    }
+
+    private var showsGoBack: Bool {
+        model.controlsVisible && !model.isScrubbing && openPanel == nil
+            && model.skipUndoPosition != nil && player != nil
     }
 
     /// The track controls at the trailing edge their
@@ -1586,6 +1626,7 @@ struct PlayerControls: View {
     /// the leading edge of the row. (It used to prefer Subtitles as "the most-used
     /// control", which read as arbitrarily skipping past Speed and Audio.)
     private var initialFocus: FocusSlot {
+        if showsGoBack { return .undoSkip }
         guard let first = model.trackControlCategories.first else { return .button(.info) }
         return .button(first)
     }
