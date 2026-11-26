@@ -623,7 +623,8 @@ public struct PlexClient: Sendable {
         ratingKey: String,
         language: String,
         hearingImpaired: Int = 0,
-        forced: Int = 0
+        forced: Int = 0,
+        title: String? = nil
     ) async throws -> [PlexSubtitleSearchStream] {
         let lang = LanguageMatch.normalized(language) ?? language
         let endpoint = Endpoint(
@@ -632,7 +633,7 @@ public struct PlexClient: Sendable {
                 URLQueryItem(name: "language", value: lang),
                 URLQueryItem(name: "hearingImpaired", value: String(hearingImpaired)),
                 URLQueryItem(name: "forced", value: String(forced))
-            ],
+            ] + (title.map { [URLQueryItem(name: "title", value: $0)] } ?? []),
             headers: headers
         )
         return try await decode(PlexSubtitleSearchResponse.self, endpoint, using: interactiveHTTP)

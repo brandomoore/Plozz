@@ -1989,12 +1989,27 @@ public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginPr
     /// preference is passed through natively as Plex's `hearingImpaired`/`forced`
     /// query levels (0–3).
     public func remoteSubtitleSearch(itemID: String, language: String, preference: SubtitleSearchPreference) async throws -> [RemoteSubtitle] {
-        try await client.remoteSubtitleSearch(
-            ratingKey: itemID,
-            language: language,
-            hearingImpaired: preference.hearingImpaired.plexParameterValue,
-            forced: preference.forced.plexParameterValue
-        ).map(map(remoteSubtitle:))
+        func search(title: String? = nil) async throws -> [PlexSubtitleSearchStream] {
+            try await client.remoteSubtitleSearch(
+                ratingKey: itemID, language: language,
+                hearingImpaired: preference.hearingImpaired.plexParameterValue,
+                forced: preference.forced.plexParameterValue, title: title
+            )
+        }
+        let item = try await client.metadata(ratingKey: itemID)
+        let rows = try await search()
+        guard let episode = PlexSubtitleEpisode(item) else { return rows.map(map(remoteSubtitle:)) }
+
+        let candidates = rows.map { ($0, episode.match($0.title)) }
+        if !rows.isEmpty, !candidates.contains(where: { $0.1 == .conflict }) {
+            return rows.map(map(remoteSubtitle:))
+        }
+        let confirmed = candidates.filter { $0.1 == .confirmed }
+        if !confirmed.isEmpty { return confirmed.map { map(remoteSubtitle: $0.0) } }
+        // A title override searches across the whole series, not just this ratingKey.
+        try Task.checkCancellation()
+        return try await search(title: episode.series).filter { episode.match($0.title) == .confirmed }
+            .map(map(remoteSubtitle:))
     }
 
     /// Asks the server to download the chosen on-demand subtitle and attach it to

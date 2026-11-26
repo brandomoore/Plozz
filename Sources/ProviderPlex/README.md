@@ -25,6 +25,12 @@ first-class backends; co-equal with `ProviderJellyfin`.
 
 ## Invariants
 
+- On-demand episode subtitle search keeps Plex's item-specific ranking, excluding
+  release names that identify another series or episode. When that leaves no
+  results, it retries with the series title and accepts only releases identifying
+  the requested series, season, and episode. Manual and automatic search share
+  this path; the download key still belongs to the original episode.
+
 - HTTP sharing defaults off. Library sections and the
   stream-enriched browse helper explicitly opt in at their request definitions.
   Item/batch metadata, watched, rating, progress/timeline and transcode-session
