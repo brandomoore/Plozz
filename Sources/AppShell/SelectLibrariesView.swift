@@ -4,6 +4,7 @@ import CoreModels
 import CoreUI
 import FeatureLiveTV
 import FeatureLiveTVCore
+import FeatureSettings
 
 /// "Choose your libraries" — shown right after one or more servers are added
 /// (both first run and later adds). It lists the just-added servers' libraries
@@ -183,7 +184,16 @@ struct SelectLibrariesView: View {
             PlozzScrollCard {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 28) {
-                        ForEach(groups(from: all)) { group in
+                        ForEach(smbGroups, id: \.serverKey) { smb in
+                            SMBProfileLibrarySection(
+                                group: smb, libraries: Dictionary(grouping: all, by: \.accountID),
+                                visibility: appState.profileSettings.homeLibraryVisibilityModel,
+                                included: { appState.profileFlow.isAccountIncludedInActiveProfile($0) },
+                                setIncluded: { appState.profileFlow.setAccount($0, includedInActiveProfile: $1) },
+                                failures: discovery.failures, retry: { await loadLibraries() }, first: false
+                            )
+                        }
+                        ForEach(groups(from: all).filter { $0.transportKind != .smb }) { group in
                             VStack(alignment: .leading, spacing: 10) {
                                 HStack(spacing: 16) {
                                     ProviderBrandMark(provider: group.providerKind, size: 48, mediaShareTransport: group.transportKind)
@@ -210,6 +220,11 @@ struct SelectLibrariesView: View {
                 }
             }
         }
+    }
+    private var smbGroups: [ServerAccountGroup] {
+        libraryPickerGroups(from: appState.accountsProviders.accounts.filter {
+            appState.pendingLibrarySelectionAccountIDs.contains($0.id)
+        }).filter { $0.transportKind == .smb }
     }
 }
 #endif

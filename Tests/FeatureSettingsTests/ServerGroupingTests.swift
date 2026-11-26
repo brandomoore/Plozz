@@ -63,6 +63,39 @@ final class ServerGroupingTests: XCTestCase {
 
     // MARK: - Transport badge
 
+    func testLibraryPickerGroupsSMBRootsByEndpointAndExactLoginOnly() {
+        let a = account(id: "concerts", url: "smb://NAS.local/Concerts", provider: .mediaShare, user: "viewer")
+        let b = account(id: "videos", url: "smb://nas.local:445/Video", provider: .mediaShare, user: "viewer")
+        let other = account(id: "other", url: "smb://nas.local/Concerts", provider: .mediaShare, user: "other")
+        let port = account(id: "port", url: "smb://nas.local:1445/Concerts", provider: .mediaShare, user: "viewer")
+        let dav = account(id: "dav", url: "https://nas.local/Concerts", provider: .mediaShare, user: "viewer")
+        let namedGuest = account(id: "named", url: "smb://nas.local/Archive", provider: .mediaShare)
+        var anonymous = namedGuest
+        anonymous.id = "anonymous"
+        anonymous.userName = ""
+        let groups = libraryPickerGroups(from: [a, other, port, b, dav, namedGuest, anonymous])
+        XCTAssertEqual(groups.map { $0.accounts.map(\.id) },
+                       [["concerts", "videos"], ["other"], ["port"], ["dav"], ["named"], ["anonymous"]])
+        XCTAssertEqual(groups.first?.serverName, "nas.local")
+        XCTAssertNotEqual(serverKey(for: a), serverKey(for: b))
+    }
+
+    func testSMBPickerNamesSingleViewAndKeepsMixedCategoryKeys() {
+        func choice(_ id: String, _ name: MediaLibrary.SynthesizedName) -> AggregatedLibrary {
+            AggregatedLibrary(accountID: "concerts", accountName: "", serverName: "Concerts",
+                              providerKind: .mediaShare, transportKind: .smb,
+                              library: MediaLibrary(id: id, title: id, kind: .folder, synthesizedName: name))
+        }
+        let files = choice("files", .browseFiles), movie = choice("movies", .movies), tv = choice("tv", .tvShows)
+        for (inventory, expected) in [([files], files.key), ([files, movie], movie.key)] {
+            let choices = AggregatedLibrary.smbPickerChoices(inventory, rootName: "Concerts")
+            XCTAssertEqual(choices.map(\.key), [expected])
+            XCTAssertEqual(choices.map(\.library.title), ["Concerts"])
+            XCTAssertNil(choices.first?.library.synthesizedName)
+        }
+        XCTAssertEqual(AggregatedLibrary.smbPickerChoices([files, movie, tv], rootName: "Mixed"), [movie, tv])
+    }
+
     func testGroupDerivesTransportKindFromScheme() {
         let smb = account(id: "s", url: "smb://192.168.68.71/Media", provider: .mediaShare)
         let dav = account(id: "d", url: "http://192.168.68.71:8384/", provider: .mediaShare)

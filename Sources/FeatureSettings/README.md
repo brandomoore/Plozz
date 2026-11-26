@@ -54,6 +54,11 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+In the Libraries picker, SMB roots on the same host and port share a header
+only for the same saved sign-in. Each named root controls its own profile
+membership. Mixed roots retain individual catalog choices; Browse Files stays
+inside the library. This grouping never changes connection or credential identity.
+
 On Apple TV, a newly opened Settings page should focus its first enabled
 content control, not the Back button. Back remains reachable with the remote.
 
