@@ -1557,7 +1557,9 @@ watch history and planning-list behavior are documented in
   player while watching.
 - **Send Diagnostics** on TV and mobile uses the existing crash-reporting consent.
   On mobile, the input gives the placeholder and draft the same inset. Successful
-  submission clears the draft; failure keeps it available for retry.
+  submission clears the draft on both platforms and keeps the field editable.
+  Starting a new message clears the confirmation without reopening the form.
+  Failure keeps the draft available for retry.
   The setting is labeled **Share Diagnostics** because it covers more than crashes.
   When sharing is off, the native **Enable Sharing** action opens the existing
   consent prompt; confirming only enables sharing, without submitting or clearing

@@ -60,21 +60,30 @@ public struct MobileDiagnosticsSubmissionSection: View {
 public struct IssueDiagnosticSubmissionForm: DiagnosticSubmissionFormProviding {
     private let sharingEnabled: Binding<Bool>
     private let isConfigured: Bool
+    private let submit: @MainActor (String, PlaybackDiagnosticReport) async -> Bool
 
-    public init(sharingEnabled: Binding<Bool>, isConfigured: Bool) {
+    public init(
+        sharingEnabled: Binding<Bool>, isConfigured: Bool,
+        submit: @escaping @MainActor (String, PlaybackDiagnosticReport) async -> Bool = {
+            await CrashDiagnostics.send(note: $0, issue: $1)
+        }
+    ) {
         self.sharingEnabled = sharingEnabled
         self.isConfigured = isConfigured
+        self.submit = submit
     }
 
     public func form(for report: PlaybackDiagnosticReport) -> AnyView {
-        AnyView(SendDiagnosticsCard(sharingEnabled: sharingEnabled, isConfigured: isConfigured, issue: report))
+        AnyView(SendDiagnosticsCard(sharingEnabled: sharingEnabled, isConfigured: isConfigured) { note in
+            await submit(note, report)
+        })
     }
 }
 
 struct SendDiagnosticsCard: View {
     @Binding var sharingEnabled: Bool
     let isConfigured: Bool
-    var issue: PlaybackDiagnosticReport? = nil
+    var submit: @MainActor (String) async -> Bool = { await CrashDiagnostics.send(note: $0) }
     private enum SendState { case idle, sent, failed }
     @State private var sendState: SendState = .idle
     @State private var isSending = false
@@ -92,13 +101,13 @@ struct SendDiagnosticsCard: View {
                     .lineLimit(2...4)
                     .focused($editing)
                     .accessibilityIdentifier("diagnostics-message")
-                    .disabled(!isConfigured || sendState == .sent || isSending)
+                    .disabled(!isConfigured || isSending)
                 #else
                 TextField(text: $message) {
                     Text(SettingsCopy.diagnosticsMessage)
                 }
                 .accessibilityIdentifier("diagnostics-message")
-                .disabled(!isConfigured || sendState == .sent || isSending)
+                .disabled(!isConfigured || isSending)
                 #endif
 
                 HStack(spacing: 16) {
@@ -112,9 +121,10 @@ struct SendDiagnosticsCard: View {
                         editing = false
                         #endif
                         isSending = true
+                        sendState = .idle
                         Task {
                             defer { isSending = false }
-                            let ok = await CrashDiagnostics.send(note: note, issue: issue)
+                            let ok = await submit(note)
                             sendState = ok ? .sent : .failed
                             if ok { message = "" }
                         }
@@ -131,6 +141,7 @@ struct SendDiagnosticsCard: View {
                 }
             }
         }
+        .onChange(of: message) { if !message.isEmpty { sendState = .idle } }
         .onChange(of: sharingEnabled) { sendState = .idle }
     }
 
