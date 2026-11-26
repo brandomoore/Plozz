@@ -776,6 +776,9 @@ public struct PosterCardView: View {
         } else if reservesSubtitleSpace {
             Text(verbatim: " ")
                 .font(.system(size: captionSubtitleFontSize))
+                #if os(tvOS)
+                .fixedSize(horizontal: false, vertical: true)
+                #endif
                 .hidden()
         }
     }

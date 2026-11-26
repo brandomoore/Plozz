@@ -13,9 +13,8 @@ import CoreNetworking
 /// shifts the page when the content lands.
 public enum PlozzRailTitle {
     /// The platform's own section header, not a tvOS size shrunk down.
-    /// `sectionHeaderFontSize` is tuned for a screen read across a room and takes
-    /// no account of Dynamic Type; `.title2` is what every other iOS surface in
-    /// this app titles a rail with, and it scales with the user's text size.
+    /// tvOS metrics resolve viewing-distance sizing and system text size;
+    /// iOS uses its native Dynamic Type title.
     public static func font(sectionHeaderFontSize: CGFloat) -> Font {
         #if os(tvOS)
         return .system(size: sectionHeaderFontSize, weight: .bold)
@@ -92,6 +91,10 @@ public struct MediaRowHeader: View {
 
     private var heading: some View {
         let header = title.font(PlozzRailTitle.font(sectionHeaderFontSize: metrics.sectionHeaderFontSize))
+            #if os(tvOS)
+            .minimumScaleFactor(1)
+            .fixedSize(horizontal: false, vertical: true)
+            #endif
             .accessibilityAddTraits(.isHeader)
         return Group {
             if redactionReasons.contains(.placeholder) {

@@ -2461,7 +2461,10 @@ struct HomeLibrariesRow: View {
         VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing - titleTightening) {
             title
                 .accessibilityIdentifier("media-row-title")
-                .font(.system(size: metrics.sectionHeaderFontSize, weight: .bold))
+                .font(PlozzRailTitle.font(sectionHeaderFontSize: metrics.sectionHeaderFontSize))
+                .minimumScaleFactor(1)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
                 .padding(.leading, PlozzTheme.Metrics.screenPadding + navigationContentInset)
                 .modifier(PlozzRowTitlePosition())
             PinnedSidebarLeadingFade(

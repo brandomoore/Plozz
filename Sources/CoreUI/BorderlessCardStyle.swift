@@ -197,6 +197,9 @@ public struct BorderlessCardCaption: View {
             } else if reservesSubtitleSpace {
                 Text(verbatim: " ")
                     .font(.system(size: subtitleFontSize))
+                    #if os(tvOS)
+                    .fixedSize(horizontal: false, vertical: true)
+                    #endif
                     .hidden()
             }
         }

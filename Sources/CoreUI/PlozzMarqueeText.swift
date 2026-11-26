@@ -140,6 +140,8 @@ public struct PlozzMarqueeText: View {
         text
             .font(font)
             .lineLimit(1)
+            .minimumScaleFactor(1)
+            .fixedSize(horizontal: false, vertical: true)
             .hidden()
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .leading) { line }
@@ -176,7 +178,8 @@ public struct PlozzMarqueeText: View {
             .font(font)
             .foregroundStyle(color)
             .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
+            .minimumScaleFactor(1)
+            .fixedSize(horizontal: true, vertical: true)
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.width
             } action: { width in

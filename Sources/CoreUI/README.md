@@ -70,7 +70,12 @@ or falling back to the old header action. Browse actions carry no media identity
 or context-menu actions.
 Horizontal card rails fit a whole number of cards plus one quarter of the next
 visible card. Density and text size select the number of cards; they must not
-scale away the quarter-card preview. At the end of the content the last card
+scale away the quarter-card preview. On Apple TV, Text Size scales row headings
+and captions; portrait, Libraries, ordinary landscape and Featured rows make
+room for larger labels by fitting fewer cards. Two neighboring text settings
+can therefore have different type sizes but the same card width. Continue
+Watching’s landscape width already accounts for its playback caption; it is
+not enlarged a second time. At the end of the content the last card
 is fully visible instead. Pinned-sidebar parking treats the trailing boundary
 as a valid stop for native targets and idle corrections, even when it lies
 less than half a card beyond the previous whole slot.
@@ -1704,7 +1709,7 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   This keeps lazy-row estimation out of the expensive rendering path without
   adding another observable loading state to the row.
   Portrait television rows fit six full cards and a quarter of the seventh at
-  standard display size. `PlozzMetrics.portraitRowSlotWidth` uses the actual
+  standard display size and ordinary system text. `PlozzMetrics.portraitRowSlotWidth` uses the actual
   navigation-safe viewport and visible card margins, shared by loaded cards,
   placeholders and pinned-sidebar scroll parking. Only viewport-width changes
   update sizing; scrolling does not invalidate the row. Showcase's row viewport
@@ -1714,8 +1719,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   they are still visible in the overscan gutter. The trailing viewport is not
   expanded, preserving row density and pinned slot parking. Hosted loaded-artwork
   checks cover both screen edges in both scroll directions and navigation styles.
-  Display-size preferences still adjust density; library Browse
-  grids, landscape/episode card widths and mobile sizing are unchanged.
+  Display-size preferences still adjust density. Library Browse grids and
+  mobile sizing have their own layout rules.
   Native Browse uses the correction for both borderless and framed system-focus
   cells. Debug's `--original-library-posters` opts out of Browse only.
   Browse rasterizes its SwiftUI overlay to concrete pixels on the main actor

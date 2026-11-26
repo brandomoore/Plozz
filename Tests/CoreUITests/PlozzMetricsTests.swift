@@ -137,6 +137,50 @@ final class PlozzMetricsTests: XCTestCase {
         XCTAssertEqual(widths, widths.sorted())
     }
 
+    #if os(tvOS)
+    func testTVTextSizeReflowsHomeRailsAndScalesHeadingsAtEveryDensity() {
+        let sizes: [DynamicTypeSize] = [.large, .xLarge, .xxLarge, .xxxLarge, .accessibility1,
+                                        .accessibility2, .accessibility3, .accessibility4, .accessibility5]
+        let viewport: CGFloat = 1776
+        for density in UIDensity.allCases {
+            let steps = sizes.map { PlozzMetrics(density: density, dynamicTypeSize: $0) }
+            for (smaller, larger) in zip(steps, steps.dropFirst()) {
+                XCTAssertGreaterThan(larger.sectionHeaderFontSize, smaller.sectionHeaderFontSize)
+            }
+            XCTAssertGreaterThan(steps.last!.cardStatusCueFontSize, steps[0].cardStatusCueFontSize)
+            for style in CardStyle.allCases {
+                let posters = steps.map { m in
+                    let slot = m.portraitRowSlotWidth(viewportWidth: viewport, leadingInset: 0, cardStyle: style)
+                    let margin = style == .framed ? m.cardInset : m.borderlessCardSideMargin
+                    let available = viewport - (style == .framed ? m.cardInset : 0)
+                    let pitch = slot + m.cardSpacing
+                    XCTAssertEqual(available - floor(available / pitch) * pitch, (slot - 2 * margin) / 4, accuracy: 0.001)
+                    return slot
+                }
+                // Libraries use ordinary landscape cards, not the Continue Watching target.
+                let libraries = steps.map {
+                    $0.fittingLandscapeRow(viewportWidth: viewport, leadingInset: 0, cardStyle: style,
+                                           showsSeriesArtwork: false).landscapeWidth
+                }
+                for widths in [posters, libraries] {
+                    XCTAssertEqual(widths, widths.sorted())
+                    XCTAssertGreaterThan(widths.last!, widths[0])
+                }
+            }
+        }
+        let featured = sizes.map {
+            FeaturedCardLayout.rail(viewportWidth: viewport, television: true,
+                                    textWidthScale: PlozzMetrics(density: .standard, dynamicTypeSize: $0).railTextWidthScale)
+        }
+        XCTAssertGreaterThan(featured.last!.size.width, featured[0].size.width)
+        for (size, gap) in featured {
+            let pitch = size.width + gap
+            let available = viewport - PlozzTheme.Metrics.screenPadding
+            XCTAssertEqual(available - floor(available / pitch) * pitch, size.width / 4, accuracy: 0.001)
+        }
+    }
+    #endif
+
     func testRailCanParkAtAPartialFinalSlotWithoutLosingTheLeadingStop() {
         XCTAssertEqual(RowSlotTargets.slot(for: 0, pitch: 366, maximum: 105), 0)
         XCTAssertEqual(RowSlotTargets.slot(for: 102, pitch: 366, maximum: 105), 105)

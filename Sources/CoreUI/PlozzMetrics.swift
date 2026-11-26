@@ -99,6 +99,8 @@ public struct PlozzMetrics: Equatable, Sendable {
     public let scale: CGFloat
     public let usesDesktopSizing: Bool
     private let geometryScale: CGFloat
+    /// Applies to the preferred artwork width *before* fitting whole TV cards, never to the fitted slot or gutters.
+    let railTextWidthScale: CGFloat
 
     // MARK: Card artwork sizes (scaled)
 
@@ -109,8 +111,8 @@ public struct PlozzMetrics: Equatable, Sendable {
     /// Artwork width for a Continue Watching card.
     ///
     /// Narrower than an ordinary landscape card because it is taller (see
-    /// ``ContinueWatchingCardShape/widthScale``) — but unlike every other card
-    /// size it also grows with **Dynamic Type**.
+    /// ``ContinueWatchingCardShape/widthScale``). Its preferred width already
+    /// includes growth for the playback label; do not apply it again when fitting a row.
     ///
     /// It has to. This card carries its text *inside* the artwork ("S1, E12 ·
     /// 17m", on one line, beside a play glyph and a progress bar) rather than in
@@ -338,7 +340,7 @@ public struct PlozzMetrics: Equatable, Sendable {
         viewportWidth: CGFloat, leadingInset: CGFloat, cardStyle: CardStyle
     ) -> CGFloat {
         guard viewportWidth > 0 else { return posterWidth }
-        let wholeCards = Int(((PlozzTheme.Metrics.portraitRowVisibleCards / CGFloat(density.scale))
+        let wholeCards = Int(((PlozzTheme.Metrics.portraitRowVisibleCards / (scale * railTextWidthScale))
             - MediaRailLayout.peekFraction).rounded())
         let sideMargin = cardStyle == .borderless ? borderlessCardSideMargin : cardInset
         let artworkLeading = leadingInset + (cardStyle == .framed ? cardInset : 0)
@@ -353,13 +355,14 @@ public struct PlozzMetrics: Equatable, Sendable {
         guard viewportWidth > leadingInset else { return self }
         let available = viewportWidth - leadingInset - (cardStyle == .framed ? cardInset : 0)
         let size = artworkSize(for: .landscape, showsSeriesArtwork: showsSeriesArtwork)
+        let targetWidth = showsSeriesArtwork ? size.width : size.width * railTextWidthScale
         let inset = cardStyle == .framed ? cardInset : borderlessCardSideMargin
         let enlargedText = showsSeriesArtwork
             && continueWatchingWidth > (landscapeWidth * ContinueWatchingCardShape.widthScale).rounded()
         // Rounding up at larger sizes can make Huge artwork smaller than Large:
         // the same number of cards would have to share the row with wider gaps.
         let count = MediaRailLayout.wholeCards(
-            available: available, preferredSlot: size.width + 2 * inset, spacing: cardSpacing, sideMargin: inset,
+            available: available, preferredSlot: targetWidth + 2 * inset, spacing: cardSpacing, sideMargin: inset,
             rounding: enlargedText || scale > 1 ? .down : .toNearestOrAwayFromZero
         )
         let width = MediaRailLayout.slotWidth(available: available, count: count, spacing: cardSpacing, sideMargin: inset) - 2 * inset
@@ -613,6 +616,11 @@ public struct PlozzMetrics: Equatable, Sendable {
         // whole; growing the card is what stops that being necessary for the
         // ordinary large sizes people actually use.
         let cardTypeGrowth = min(1.6, max(1, 1 + (chipTypeGrowth - 1) * 0.75))
+        #if os(tvOS)
+        self.railTextWidthScale = geometryScale == 1 ? cardTypeGrowth : 1
+        #else
+        self.railTextWidthScale = 1
+        #endif
         self.continueWatchingWidth = (
             (usesDesktopSizing ? self.landscapeWidth : self.landscapeWidth * ContinueWatchingCardShape.widthScale)
                 * cardTypeGrowth
@@ -773,8 +781,8 @@ public struct PlozzMetrics: Equatable, Sendable {
         self.artworkMenuTargetSize = max((baseMenuTarget * densityScale).rounded(), 44)
         self.artworkMenuInset = (PlozzTheme.Metrics.artworkMenuInset * densityScale).rounded()
         #if os(tvOS)
-        let statusCueFont = PlozzTheme.Metrics.cardStatusCueFontSize
-        let statusCueMinFont = PlozzTheme.Metrics.cardStatusCueMinFontSize
+        let statusCueFont = scaled(.caption2, PlozzTheme.Metrics.cardStatusCueFontSize)
+        let statusCueMinFont = scaled(.caption2, PlozzTheme.Metrics.cardStatusCueMinFontSize)
         let statusCueHorizontalPadding = PlozzTheme.Metrics.cardStatusCueHorizontalPadding
         let statusCueMinHorizontalPadding =
             PlozzTheme.Metrics.cardStatusCueMinHorizontalPadding
@@ -818,7 +826,12 @@ public struct PlozzMetrics: Equatable, Sendable {
         )
         // Section headers scale with density but dampened, so they anchor the page
         // hierarchy instead of ballooning/shrinking 1:1 with the cards.
-        self.sectionHeaderFontSize = damped(PlozzTheme.Metrics.sectionHeaderFontSize, PlozzTheme.Metrics.headerScaleDamping)
+        let headerBase = damped(PlozzTheme.Metrics.sectionHeaderFontSize, PlozzTheme.Metrics.headerScaleDamping)
+        #if os(tvOS)
+        self.sectionHeaderFontSize = scaled(.headline, headerBase)
+        #else
+        self.sectionHeaderFontSize = headerBase
+        #endif
     }
 
     /// The standard-density snapshot, used as the environment default so any view

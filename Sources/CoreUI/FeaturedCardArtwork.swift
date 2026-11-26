@@ -2,6 +2,9 @@
 import CoreModels
 import MetadataKit
 import SwiftUI
+#if os(tvOS)
+import UIKit
+#endif
 
 public enum FeaturedCardLayout {
     static let scrimStops: [(location: CGFloat, opacity: Double)] = [(0.35, 0), (0.65, 0.42), (1, 0.88)]
@@ -14,11 +17,11 @@ public enum FeaturedCardLayout {
         return scrimStops.last!.opacity
     }
 
-    public static func rail(viewportWidth: CGFloat, television: Bool) -> (size: CGSize, spacing: CGFloat) {
+    public static func rail(viewportWidth: CGFloat, television: Bool, textWidthScale: CGFloat = 1) -> (size: CGSize, spacing: CGFloat) {
         let available = max(1, viewportWidth - (television ? PlozzTheme.Metrics.screenPadding : 20))
         let spacing: CGFloat = television ? 32 : 16
         let count = MediaRailLayout.wholeCards(
-            available: available, preferredSlot: television ? 540 : 360, spacing: spacing
+            available: available, preferredSlot: television ? 540 * textWidthScale : 360, spacing: spacing
         )
         let width = MediaRailLayout.slotWidth(available: available, count: count, spacing: spacing)
         guard television else { return (CGSize(width: width, height: width * 1.125), spacing) }
@@ -181,10 +184,7 @@ public struct FeaturedCardArtwork<Video: View>: View {
             VStack(alignment: .leading, spacing: 12) {
                 FeaturedCardLogo(item: item, title: title, size: size, artwork: resolvedArtwork)
                 if !metadata.isEmpty {
-                    Text(verbatim: metadata)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.9))
-                        .lineLimit(2)
+                    FeaturedCardCaptionText(text: Text(verbatim: metadata), role: .metadata)
                 }
             }
             .padding(size.width * 0.065)
@@ -238,7 +238,7 @@ private struct FeaturedCardLogo: View {
             constrainsToBounds: true, haloStyle: .gentle, logoNeedsHelp: needsHelp,
             onResolve: { logoTone = $0 }
         ) {
-            title.font(.title2.bold()).lineLimit(3).foregroundStyle(.white)
+            FeaturedCardCaptionText(text: title, role: .title)
         }
         .environment(\.colorScheme, .dark)
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("featured-card")) } action: { frame = $0 }
@@ -270,6 +270,41 @@ private struct FeaturedCardLogo: View {
             }
             #endif
         }
+    }
+}
+
+struct FeaturedCardCaptionText: View {
+    enum Role { case title, metadata }
+    let text: Text
+    let role: Role
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    init(text: Text, role: Role) {
+        self.text = text
+        self.role = role
+    }
+
+    private var font: Font {
+        #if os(tvOS)
+        let traits = UITraitCollection(preferredContentSizeCategory: dynamicTypeSize.plozzContentSizeCategory)
+        let pointSize = UIFont.preferredFont(
+            forTextStyle: role == .title ? .title2 : .subheadline, compatibleWith: traits
+        ).pointSize
+        return .system(size: pointSize, weight: role == .title ? .bold : .medium)
+        #else
+        return role == .title ? .title2.bold() : .subheadline.weight(.medium)
+        #endif
+    }
+
+    var body: some View {
+        text
+            .font(font)
+            .foregroundStyle(.white.opacity(role == .title ? 1 : 0.9))
+            .lineLimit(role == .title ? 3 : 2)
+            #if os(tvOS)
+            .minimumScaleFactor(1)
+            .fixedSize(horizontal: false, vertical: true)
+            #endif
     }
 }
 
