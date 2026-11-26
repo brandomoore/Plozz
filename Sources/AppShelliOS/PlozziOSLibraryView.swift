@@ -589,7 +589,7 @@ struct PlozziOSLibraryRecommendationRow: View {
         )
         let style: PosterCardView.Style = section.id == "continueWatching"
             ? continueWatchingLayout.cardStyle
-            : (section.style == .poster ? .poster : .landscape)
+            : (section.style.forMediaGroup(section.items) == .poster ? .poster : .landscape)
         PlozziOSMediaSection(
             title: section.displayName,
             artworkInset: cardStyle == .framed ? metrics.cardInset : 0
@@ -600,16 +600,17 @@ struct PlozziOSLibraryRecommendationRow: View {
                     spacing: PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
                 ) {
                     ForEach(MediaRowView.uniqued(section.items), id: \.stablePresentationID) { item in
+                        let itemStyle: PosterCardView.Style = section.id != "continueWatching" && item.isPersonalVideo ? .landscape : style
                         MediaArtworkZoomButton(id: item.stablePresentationID) { source in
                             onSelect(item, source)
                         } label: {
                             PlozziOSPosterCard(
-                                item: item, style: style,
+                                item: item, style: itemStyle,
                                 showsSeriesArtwork: showsSeriesArtwork,
                                 spoilerSettings: spoilerSettings,
                                 showsResumeChip: section.id == "continueWatching"
                             )
-                            .frame(width: cardWidth(style: style))
+                            .frame(width: cardWidth(style: itemStyle))
                         }
                         .buttonStyle(.plain)
                     }

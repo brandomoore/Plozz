@@ -98,9 +98,10 @@ public final class LibraryBrowseViewModel {
 
     // Replaced only before the first-page state is published, never during paging.
     @ObservationIgnored private var initialCollectionCovers: [MediaItem]?
+    private var firstPageCardStyle: LibrarySection.Style = .poster
 
     public var gridStyle: LibrarySection.Style {
-        showsCollectionCoverLayout ? collectionCoverLayout.style(for: initialCollectionCovers ?? []) : .poster
+        showsCollectionCoverLayout ? collectionCoverLayout.style(for: initialCollectionCovers ?? []) : firstPageCardStyle
     }
     private var capabilitiesRevision: Int {
         get { queryPresentation.capabilitiesRevision }
@@ -441,6 +442,7 @@ public final class LibraryBrowseViewModel {
         errorServers = []
         slots = [:]
         initialCollectionCovers = nil
+        firstPageCardStyle = .poster
         totalCount = 0
         pageError = nil
         queryPresentation.failureDiagnostic = nil
@@ -1629,6 +1631,11 @@ public final class LibraryBrowseViewModel {
     /// slot's `.item` (per-slot observation) rather than the grid size, so a
     /// fill re-renders only the affected cells — not the whole visible grid.
     private func fill(_ page: MediaPage) {
+        if page.startIndex == 0 {
+            // A partial page of videos doesn't establish the shape of a combined library.
+            firstPageCardStyle = queryCapabilities.isPersonalVideoLibrary ? .landscape
+                : page.items.count == page.totalCount ? .poster.forMediaGroup(page.items) : .poster
+        }
         guard !page.items.isEmpty else { return }
         for (offset, item) in page.items.enumerated() {
             slot(at: page.startIndex + offset)?.item = tagged(item)

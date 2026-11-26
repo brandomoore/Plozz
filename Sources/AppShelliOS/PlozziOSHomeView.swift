@@ -3257,7 +3257,7 @@ struct PlozziOSHomeLibraryPresentationRow: View, Equatable {
         } else if row.isLoading && row.collectionCardStyle != .featured {
             PlozziOSHomeSkeletonRail(
                 title: section.displayName,
-                style: section.style == .landscape ? .landscape : .poster,
+                style: row.cardStyle == .landscape ? .landscape : .poster,
                 showsCaption: appModel.settings.cardStyle.captions.showsLabels(in: .home)
             )
         } else if row.collectionCardStyle == .featured {
@@ -3268,8 +3268,9 @@ struct PlozziOSHomeLibraryPresentationRow: View, Equatable {
         } else {
             PlozziOSHomeMediaRail(
                 title: section.displayName, items: section.items,
-                style: section.style == .landscape ? .landscape : .poster,
-                appModel: appModel, browseItem: row.browseItem, onBrowse: onBrowse,
+                style: row.cardStyle == .landscape ? .landscape : .poster,
+                appModel: appModel, usesPersonalVideoLayout: row.usesPersonalVideoLayout,
+                browseItem: row.browseItem, onBrowse: onBrowse,
                 onNavigationInteraction: viewModel.noteHomeNavigationInteraction
             )
         }
@@ -3344,6 +3345,7 @@ struct PlozziOSHomeRowView: View {
                     items: row.items,
                     style: cardStyle,
                     appModel: appModel,
+                    usesPersonalVideoLayout: row.kind == .recentlyAdded,
                     interaction: row.playsOnSelect(
                         continueWatchingAction: appModel.settings.homeVisibility.continueWatchingAction
                     ) ? .play : .openDetail,
@@ -3481,6 +3483,7 @@ struct PlozziOSHomeMediaRail: View {
     let items: [MediaItem]
     let style: PosterCardView.Style
     let appModel: PlozziOSAppModel
+    var usesPersonalVideoLayout = false
     /// What pressing a card does. Declared by the caller rather than inferred
     /// from the card's shape — a landscape rail is a presentation choice, not a
     /// promise that the row is Continue Watching.
@@ -3545,9 +3548,10 @@ struct PlozziOSHomeMediaRail: View {
                 )) { element in
                     switch element {
                     case .item(let item):
+                        let itemStyle: PosterCardView.Style = usesPersonalVideoLayout && item.isPersonalVideo ? .landscape : style
                         PlozziOSHomeMediaCard(
                             item: item,
-                            isLandscape: style == .landscape,
+                            isLandscape: itemStyle == .landscape,
                             interaction: interaction,
                             showsResumeChip: showsResumeChip,
                             showsSeriesArtwork: showsSeriesArtwork,
@@ -3559,7 +3563,7 @@ struct PlozziOSHomeMediaRail: View {
                         )
                         .frame(
                             width: metrics.cardSlotWidth(
-                                for: style,
+                                for: itemStyle,
                                 cardStyle: cardStyle,
                                 showsSeriesArtwork: showsSeriesArtwork
                             )
@@ -3882,7 +3886,7 @@ struct PlozziOSHomeMediaCard: View {
             // The chip is requested explicitly rather than riding an implicit
             // "landscape means playable" rule, so presentation and behaviour stay
             // independently controlled.
-            showsResumeChip: item.kind != .collection && (showsResumeChip || isLandscape || interaction == .play),
+            showsResumeChip: item.kind != .collection && (showsResumeChip || (isLandscape && !item.isPersonalVideo) || interaction == .play),
             downloadState: liveDownloadRecord?.badgeState,
             // No visible "…" while browsing: the actions people actually reach for
             // live on the detail page, which is far more discoverable than a tiny

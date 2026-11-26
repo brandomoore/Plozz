@@ -18,7 +18,8 @@ extension PlexProvider: MediaLibraryQueryProviding {
             filters: LibraryFilter.allCases,
             nativeFilters: nativeFilters,
             nativeSortFields: nativeSortFields,
-            supportsGenres: true, supportsYears: true, nativeFacets: true
+            supportsGenres: true, supportsYears: true, nativeFacets: true,
+            isPersonalVideoLibrary: client.isPersonalVideoSection(containerID) == true
         )
     }
 

@@ -17,6 +17,10 @@ public struct LibrarySection: Identifiable, Equatable, Sendable {
         case poster
         /// Wide landscape stills — resume/continue-watching rows.
         case landscape
+
+        public func forMediaGroup(_ items: [MediaItem]) -> Self {
+            !items.isEmpty && items.allSatisfy(\.isPersonalVideo) ? .landscape : self
+        }
     }
 
     /// Stable, unique-within-a-library identity for the row. Global rows use a

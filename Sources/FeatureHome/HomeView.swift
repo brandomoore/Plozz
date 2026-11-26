@@ -1493,6 +1493,7 @@ public struct HomeView: View {
                 reservesLoadingFocus: reservesLoadingFocus,
                 onSelect: onSelectItem
             )
+            .adaptingPersonalVideoSlots(true)
             .browsingRow(row.items.isEmpty ? nil : onBrowse)
         case .libraries:
             if row.loadingPlaceholderCount > 0 {
@@ -1566,8 +1567,8 @@ public struct HomeView: View {
                     cardArtwork: row.style == .landscape
                         && !(row.kind == .continueWatching && visibility.continueWatchingLayout == .portrait)
                         ? { PosterCardView.leadingLandscapeArtwork(
-                            for: $0, showsSeriesArtwork: seriesArtwork,
-                            presentationPolicy: artworkPolicy.forArea(.continueWatching)
+                            for: $0, showsSeriesArtwork: row.kind == .continueWatching && seriesArtwork,
+                            presentationPolicy: artworkPolicy.forArea(row.kind == .continueWatching ? .continueWatching : .homeRows)
                         ) }
                         : nil
                 ),
@@ -1597,7 +1598,7 @@ public struct HomeView: View {
                         itemIDs: section.items.map(\.stablePresentationID),
                         leadItem: section.items.first, items: section.items,
                         isPlaceholder: row.isLoading,
-                        cardArtwork: section.style == .landscape
+                        cardArtwork: row.cardStyle == .landscape
                             ? { PosterCardView.leadingLandscapeArtwork(
                                 for: $0, showsSeriesArtwork: false, presentationPolicy: artworkPolicy.forArea(.homeRows)
                             ) }
@@ -1845,6 +1846,7 @@ public struct HomeView: View {
                         reservesLoadingFocus: reservesLoadingFocus,
                         onSelect: onSelectItem
                     )
+                    .adaptingPersonalVideoSlots(true)
                     .browsingRow(row.items.isEmpty ? nil : onBrowse)
                 case .libraries:
                     if row.loadingPlaceholderCount > 0 {
@@ -1900,7 +1902,7 @@ public struct HomeView: View {
                 MediaRowView(
                     title: section.displayName,
                     items: section.items,
-                    style: cardStyle(section.style),
+                    style: cardStyle(row.cardStyle),
                     spoilerSettings: spoilerSettings,
                     onFocusEntered: reporter.entered,
                     onFocusChange: onFocusChange,
@@ -1911,6 +1913,7 @@ public struct HomeView: View {
                     onSeeAll: row.browseItem.map { item in { onSelectItem(item) } },
                     onSelect: playsOnSelect ? onPlayItem : onSelectItem
                 )
+                .adaptingPersonalVideoSlots(row.usesPersonalVideoLayout)
                 .browsingRow(row.isLoading ? nil : onBrowse)
             }
         }
@@ -1969,13 +1972,14 @@ public struct HomeView: View {
                 MediaRowView(
                     title: section.displayName,
                     items: section.items,
-                    style: cardStyle(section.style),
+                    style: cardStyle(row.cardStyle),
                     spoilerSettings: spoilerSettings,
                     loadingPlaceholderCount: row.isLoading ? 8 : 0,
                     playsOnSelect: playsOnSelect,
                     onSeeAll: row.browseItem.map { item in { onSelectItem(item) } },
                     onSelect: playsOnSelect ? onPlayItem : onSelectItem
                 )
+                .adaptingPersonalVideoSlots(row.usesPersonalVideoLayout)
                 .browsingRow(row.isLoading ? nil : onBrowse)
         }
     }

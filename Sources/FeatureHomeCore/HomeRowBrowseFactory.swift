@@ -80,6 +80,7 @@ enum HomeRowBrowseFactory {
             isContinueWatching = home.kind == .continueWatching
             watchlistDates = home.kind == .watchlist
             if home.kind == .recentlyAdded {
+                style = .poster.forMediaGroup(snapshot)
                 mergesSources = true
                 isRecentlyAdded = true
                 for account in accounts {
@@ -118,6 +119,8 @@ enum HomeRowBrowseFactory {
             // not the special presentation of a history or collection-member rail.
             if CollectionCoverLayout.isCollectionGroup(section.items) {
                 style = section.style
+            } else if libraryRow.usesPersonalVideoLayout {
+                style = .poster.forMediaGroup(section.items)
             }
             title = section.title
             localizedTitle = section.localizedTitle

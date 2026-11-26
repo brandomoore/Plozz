@@ -223,8 +223,9 @@ behavior and never export item identities or response bodies.
 
 Library cards use the item's `thumb` first. If absent, `Image.coverPoster` supplies
 the poster and `Image.snapshot` supplies an episode's still before the show poster fallback.
-For personal video libraries (Plex “Other Videos”), both poster and landscape cards
-use the video's own thumbnail, including a wide frame or a typed `snapshot`.
+In Plex “Other Videos,” Browse and Recommended use landscape cards with the video's
+own thumbnail (or typed `snapshot`). Recently Added also gives these videos wide
+slots, without changing movie posters beside them or making selection start playback.
 These videos are not matched to catalog posters by title. A section can report
 `movie` for both personal videos and catalog movies; its display name is not used.
 Plex's selected `Image` entry with type `backgroundSquare` is retained as

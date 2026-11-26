@@ -22,7 +22,7 @@ struct PlozziOSHomeRowSlot<Content: View>: View {
         if isLibraryRow { return .landscape }
         switch presentation.source {
         case let .home(row): return row.style == .landscape ? .landscape : .poster
-        case let .library(row): return row.section.style == .landscape ? .landscape : .poster
+        case let .library(row): return row.cardStyle == .landscape ? .landscape : .poster
         case .liveTV: return .landscape
         }
     }

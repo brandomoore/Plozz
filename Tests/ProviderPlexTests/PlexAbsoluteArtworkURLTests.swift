@@ -45,6 +45,8 @@ final class PlexAbsoluteArtworkURLTests: XCTestCase {
         let browse = try await provider.items(in: "7", kind: .movie, page: .init())
         let recommended = try await provider.libraryHubs(libraryID: "7", kind: .movie, limit: 3)
         let recent = try await provider.libraryRecentlyAddedPage(in: "7", kind: .movie, startIndex: 0, limit: 3)
+        XCTAssertTrue(provider.libraryQueryCapabilities(in: "7", kind: .movie).isPersonalVideoLibrary)
+        XCTAssertFalse(provider.libraryQueryCapabilities(in: "8", kind: .movie).isPersonalVideoLibrary)
         for items in [browse.items, try XCTUnwrap(recommended.first).items, recent.items] {
             XCTAssertEqual(items.map(\.posterURL?.lastPathComponent), ["selected.jpg", "2.jpg", "3.jpg"])
             XCTAssertTrue(items.allSatisfy { $0.isPersonalVideo && !$0.allowsTitleBasedMetadataMatching })
