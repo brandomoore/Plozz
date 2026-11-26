@@ -584,9 +584,17 @@ public struct SubtitleOverlayView: View {
 
     @ViewBuilder
     private func textLayer(in size: CGSize, videoRect: CGRect, controls: [CGRect]) -> some View {
-        let reference = SubtitleOverlayGeometry.positionReference(
-            style: style, video: videoRect, active: activePictureRect, bounds: CGRect(origin: .zero, size: size)
+        let bounds = CGRect(origin: .zero, size: size)
+        let vertical = SubtitleOverlayGeometry.positionReference(
+            style: style, video: videoRect, active: activePictureRect, bounds: bounds
         )
+        // Picture analysis can change the side-bar estimates while a line is held.
+        // Only its vertical edges should affect the dialogue's bottom reference.
+        let horizontal = SubtitleOverlayGeometry.positionReference(
+            style: style, video: videoRect, active: nil, bounds: bounds
+        )
+        let reference = CGRect(x: horizontal.minX, y: vertical.minY,
+                               width: horizontal.width, height: vertical.height)
         let text = primary.filter { !$0.isImage }
         // A cue whose layout is source-positioned is a sign/caption placed
         // independently in its own plane (against the video rect). Everything

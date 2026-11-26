@@ -1842,7 +1842,9 @@ This lives in the existing profile-scoped subtitle style, including the separate
 Live TV style. Bottom of video uses measured active bounds when available and otherwise
 the displayed video, intersected with the visible viewport. It does not change
 source aspect ratio or resize authored subtitle canvases. Ordinary dialogue and
-dual lanes use that reference; eligible lower bitmap regions move together
+dual lanes use that reference vertically; their horizontal center, offset, and
+wrapping width use the displayed video, not the detected side bars, so a held
+line doesn't slide as a scene changes. Eligible lower bitmap regions move together
 without scaling, while fixed artwork and independently source-positioned text
 retain their authored placement. Font/color controls do not apply to bitmap
 subtitles; their player editor exposes picture positioning instead.

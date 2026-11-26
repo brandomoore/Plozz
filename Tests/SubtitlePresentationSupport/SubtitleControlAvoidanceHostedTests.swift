@@ -205,6 +205,43 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
         try await waitUntil { weakClock == nil }
     }
 
+    func testHeldDialogueTracksPictureBottomWithoutFollowingChangingSideBars() async throws {
+        let scene = try await activeScene()
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let model = LiveSubtitleModel()
+        model.style.followsSystemStyle = false
+        model.style.fontFamily = .system
+        model.style.positionReference = .picture
+        model.style.verticalAnchor = .bottom
+        model.style.verticalPosition = 0
+        model.style.horizontalOffset = 0.2
+        let video = window.bounds.insetBy(dx: 0, dy: window.bounds.height * 0.1)
+        model.videoRect = video
+        model.loadPrimary(SubtitleCueParser.parse("WEBVTT\n\n00:00:00.000 --> 00:01:00.000\nHeld dialogue.\n", id: 1))
+        model.tick(1)
+        let host = UIHostingController(rootView: LiveSubtitleOverlay(model: model, controls: PlayerControlsModel()))
+        host.safeAreaRegions = []
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for (dx, dy) in [(0.0, 0.0), (15.0, 12.0), (-15.0, 24.0)] {
+            let active = video.insetBy(dx: 20, dy: dy).offsetBy(dx: dx, dy: 0)
+            model.activePictureRect = active
+            try await waitUntil {
+                window.layoutIfNeeded()
+                guard let frame = self.frames(in: host.view, relativeTo: window).first else { return false }
+                return abs(frame.maxY - active.maxY) <= 1
+            }
+            let frame = try XCTUnwrap(frames(in: host.view, relativeTo: window).first)
+            XCTAssertEqual(frame.midX, video.midX + 0.05 * video.width, accuracy: 1)
+        }
+    }
+
     func testSeparateControlsHostLiftsAndRestoresRenderedSubtitlesWithoutChangingSavedStyle() async throws {
         let scene = try await activeScene()
         let previous = scene.windows.first(where: \.isKeyWindow)
