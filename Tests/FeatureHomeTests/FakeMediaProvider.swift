@@ -51,6 +51,7 @@ class FakeMediaProvider: MediaProvider, InteractiveBrowseActivityReporting,
     /// Optional per-parent children for `children(of:)`. When `nil`, the legacy
     /// behaviour (return `allItems`) is preserved for existing tests.
     var childrenByParent: [String: [MediaItem]]?
+    var seasonEpisodeHandler: (@Sendable (String, String) async throws -> [MediaItem])?
     /// Optional per-call responses for a parent. The first request gets the first
     /// array, the second gets the second, and later requests reuse the last.
     var childrenResponsesByParent: [String: [[MediaItem]]]?
@@ -203,6 +204,11 @@ class FakeMediaProvider: MediaProvider, InteractiveBrowseActivityReporting,
     /// `children(of:)` call until released. Lets tests observe state published
     /// between an item arriving and its children arriving.
     var childrenGate: [String: @Sendable (Int) async -> Void]?
+
+    func episodes(inSeason seasonID: String, ofSeries seriesID: String) async throws -> [MediaItem] {
+        if let seasonEpisodeHandler { return try await seasonEpisodeHandler(seasonID, seriesID) }
+        return try await children(of: seasonID)
+    }
 
     func children(of itemID: String) async throws -> [MediaItem] {
         let callNumber = withLock {

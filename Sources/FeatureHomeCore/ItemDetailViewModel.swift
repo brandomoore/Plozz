@@ -2691,7 +2691,8 @@ public final class ItemDetailViewModel {
                 let token = UUID()
                 load = SeasonLoad(token: token)
                 let superseded = seasonLoads[seasonID]
-                let isSeriesContainer = seasonID == state.value?.item.id || seasonID == activeItemID
+                let seriesID = state.value?.item.kind == .series ? state.value?.item.id : nil
+                let isSeriesContainer = seasonID == (seriesID ?? activeItemID)
                 load.task = Task { @MainActor [weak self, weak load, provider] in
                     defer {
                         if self?.seasonLoads[seasonID]?.token == token {
@@ -2702,7 +2703,12 @@ public final class ItemDetailViewModel {
                     // Distinguish "the server says this season is empty" from
                     // "the request failed": both cache `[]` so neither retries on
                     // every focus change, but only the first is an answer.
-                    let fetched = try? await provider.children(of: seasonID)
+                    let fetched: [MediaItem]?
+                    if let seriesID, !isSeriesContainer {
+                        fetched = try? await provider.episodes(inSeason: seasonID, ofSeries: seriesID)
+                    } else {
+                        fetched = try? await provider.children(of: seasonID)
+                    }
                     let episodes = (fetched ?? []).filter { !isSeriesContainer || $0.kind == .episode }.map { item in
                         var episode = item
                         if !isSeriesContainer, episode.kind == .episode, episode.seasonID == nil {
@@ -2989,12 +2995,8 @@ public final class ItemDetailViewModel {
            let openingSeasonID = DetailOpeningSelection.openingSeasonID(
                children: snapshot.children,
                resumeSeasonID: nil
-           ),
-           let episodes = snapshot.seasonEpisodes[openingSeasonID] {
-            seasonEpisodes[openingSeasonID] = episodes
-                .prefix(Self.maxRestoredEpisodesPerSeason)
-                .map(tagged)
-            snapshotSeasonIDs.insert(openingSeasonID)
+           ) {
+            restoreSnapshotEpisodes(from: snapshot, for: openingSeasonID)
         }
         if snapshot.sources.count > 1 {
             let restored = prunedToActiveAccounts(snapshot.sources)
@@ -3041,6 +3043,11 @@ public final class ItemDetailViewModel {
         guard snapshot.item.id == activeItemID,
               snapshot.item.sourceAccountID == nil
                 || snapshot.item.sourceAccountID == activeSourceAccountID else { return }
+        // Older MediaBrowser snapshots can contain virtual episodes as loose children.
+        var snapshot = snapshot
+        if activeProvider?.kind.usesMediaBrowserAPI == true {
+            snapshot.children.removeAll(where: \.isMetadataOnlyEpisode)
+        }
         if state.value == nil && !hasPaintedFreshDetail {
             applySnapshot(snapshot)
         } else {
@@ -3090,12 +3097,8 @@ public final class ItemDetailViewModel {
            let openingSeasonID = DetailOpeningSelection.openingSeasonID(
                children: state.value?.children ?? snapshot.children,
                resumeSeasonID: serverResumeEpisode?.seasonID
-           ),
-           let episodes = snapshot.seasonEpisodes[openingSeasonID] {
-            seasonEpisodes[openingSeasonID] = episodes
-                .prefix(Self.maxRestoredEpisodesPerSeason)
-                .map(tagged)
-            snapshotSeasonIDs.insert(openingSeasonID)
+           ) {
+            restoreSnapshotEpisodes(from: snapshot, for: openingSeasonID)
         }
         if sources.count <= 1, snapshot.sources.count > 1 {
             let restored = prunedToActiveAccounts(snapshot.sources)
@@ -3104,6 +3107,16 @@ public final class ItemDetailViewModel {
                 applyUnifiedWatchState()
             }
         }
+    }
+
+    private func restoreSnapshotEpisodes(from snapshot: DetailSnapshotCache.Snapshot, for seasonID: String) {
+        guard let episodes = snapshot.seasonEpisodes[seasonID] else { return }
+        let mediaBrowser = activeProvider?.kind.usesMediaBrowserAPI == true
+        seasonEpisodes[seasonID] = episodes.lazy
+            .filter { !mediaBrowser || !$0.isMetadataOnlyEpisode }
+            .prefix(Self.maxRestoredEpisodesPerSeason)
+            .map(tagged)
+        snapshotSeasonIDs.insert(seasonID)
     }
 
     /// Writes the current resolved detail (item + children + schedule + sources) to

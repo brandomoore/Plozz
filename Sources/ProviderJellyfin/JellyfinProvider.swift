@@ -897,8 +897,19 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
         let children = try await client.children(
             userID: session.userID,
             parentID: itemID
-        ).map(map(item:))
+        ).compactMap(libraryChild)
         return Self.canonicalChildOrder(children)
+    }
+
+    public func episodes(inSeason seasonID: String, ofSeries seriesID: String) async throws -> [MediaItem] {
+        guard kind == .jellyfin else { return try await children(of: seasonID) }
+        return try await client.episodes(userID: session.userID, seriesID: seriesID, seasonID: seasonID)
+            .compactMap(libraryChild)
+    }
+
+    private func libraryChild(_ dto: BaseItemDto) -> MediaItem? {
+        let child = map(item: dto)
+        return child.isMetadataOnlyEpisode ? nil : child
     }
 
     /// Emby and Jellyfin can apply `SortName` differently (e.g. Episode 10 before

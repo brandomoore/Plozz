@@ -4947,20 +4947,27 @@ final class ItemDetailViewModelTests: XCTestCase {
         staleEpisode.isPlayed = false
         var liveEpisode = staleEpisode
         liveEpisode.isPlayed = true
+        var missingEpisode = episode("virtual", number: 6)
+        missingEpisode.locallyValidatedPlayableSource = false
         let snapshot = DetailSnapshotCache.Snapshot(
             item: show.taggingSource("share"),
-            children: [seasonItem.taggingSource("share")],
+            children: [seasonItem.taggingSource("share"), missingEpisode.taggingSource("share")],
             seasonEpisodes: [
-                seasonItem.id: [staleEpisode.taggingSource("share")]
+                seasonItem.id: [missingEpisode.taggingSource("share"), staleEpisode.taggingSource("share")]
             ]
         )
         await cache.store(snapshot, for: "share|show")
 
-        let provider = FakeMediaProvider(allItems: [show, seasonItem, liveEpisode])
+        let provider = FakeMediaProvider(allItems: [show, seasonItem, liveEpisode], kind: .jellyfin)
         provider.childrenByParent = [
             show.id: [seasonItem],
-            seasonItem.id: [liveEpisode]
+            seasonItem.id: [liveEpisode, missingEpisode]
         ]
+        provider.seasonEpisodeHandler = { [liveEpisode] seasonID, seriesID in
+            XCTAssertEqual(seriesID, show.id)
+            XCTAssertEqual(seasonID, seasonItem.id)
+            return [liveEpisode]
+        }
         let vm = ItemDetailViewModel(
             provider: provider,
             itemID: show.id,
@@ -4969,7 +4976,7 @@ final class ItemDetailViewModelTests: XCTestCase {
             prefetchesOpeningSeason: false
         )
         await vm.load()
-        try? await Task.sleep(for: .milliseconds(100))
+        await waitUntil { vm.episodes(for: seasonItem.id) != nil }
         // A revisit paints the cached rail immediately: withholding it until the
         // live season fetch lands is exactly the placeholder pass the viewer
         // reported on every reopen. The snapshot's played state may be a moment
@@ -4981,12 +4988,9 @@ final class ItemDetailViewModelTests: XCTestCase {
 
         await vm.loadEpisodes(for: seasonItem.id)
 
+        XCTAssertEqual(vm.episodes(for: seasonItem.id)?.map(\.id), [liveEpisode.id])
         XCTAssertEqual(vm.episodes(for: seasonItem.id)?.first?.isPlayed, true)
-        XCTAssertGreaterThanOrEqual(
-            provider.childrenCallCount[seasonItem.id, default: 0],
-            1,
-            "The visible rail must be decided by one live load from the selected server"
-        )
+        XCTAssertEqual(provider.childrenCallCount[seasonItem.id, default: 0], 0)
     }
 
     /// The Plex episode-badge bug: a season's `/children` listing can return a

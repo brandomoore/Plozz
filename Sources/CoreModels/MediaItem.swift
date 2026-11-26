@@ -371,6 +371,12 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     /// alone never upgrades it.
     public var locallyValidatedPlayableSource: Bool
 
+    /// A library listing can contain episode metadata without a playable item.
+    /// Container records do not need a media source of their own.
+    public var isMetadataOnlyEpisode: Bool {
+        kind == .episode && !locallyValidatedPlayableSource
+    }
+
     /// When this episode is expected to air, for an episode that has **not aired
     /// yet** and therefore exists nowhere in the user's library.
     ///

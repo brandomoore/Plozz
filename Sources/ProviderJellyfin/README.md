@@ -208,6 +208,17 @@ provider instance; there is no global ratings cache for this integration.
 
 ## Episode identity and order
 
+Jellyfin season rails use the same authenticated `/Shows/{seriesId}/Episodes`
+route as Jellyfin Web, with the selected season ID and `IsMissing=false`.
+An empty season stays empty; it is not retried as a generic folder.
+Emby and loose episodes retain their existing container queries.
+Both providers' child lists omit episodes marked `LocationType: Virtual`.
+Jellyfin uses that value for missing episodes even when it returns a title,
+synopsis, and artwork. An absent `MediaSources` list is not evidence of a
+missing file. Remote episodes, combined episode ranges, and virtual season
+containers are retained. Scheduled previews and the separate canonical episode
+roster do not establish playable library membership.
+
 `DisplayOrder` is retained as `MediaItem.episodeOrdering` for community-marker
 coordinate conversion, including Jellyfin/Emby's DVD (`altdvd`) and alternate
 (`alttwo`) spellings. Missing order stays absent; unrecognized values stay
