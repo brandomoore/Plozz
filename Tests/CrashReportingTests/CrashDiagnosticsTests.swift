@@ -262,8 +262,11 @@ final class CrashDiagnosticsTests: XCTestCase {
     }
 
     @MainActor
-    func testBlankNotesDoNotCollectOrSubmitDiagnostics() {
-        for note: String? in [nil, "", " \n\t\r ", "\u{00A0}\u{2003}\u{2028}"] {
+    func testMissingDescriptionDoesNotCollectOrSubmitDiagnostics() {
+        let log = PlozzLog.activityExport(entries: []).supportText
+        let playbackLog = log + "\nage_ms=66140 category=playback level=error"
+        let details = PlaybackDiagnosticReport.homeSection(.failed(.serverUnreachable), provider: .jellyfin).supportText
+        for note: String? in [nil, "", " \n\t\r ", "\u{00A0}\u{2003}\u{2028}", log, playbackLog, details] {
             XCTAssertNil(CrashDiagnostics.normalizedNote(note))
             XCTAssertFalse(CrashDiagnostics.send(
                 note: note, isEnabled: true,
@@ -302,6 +305,10 @@ final class CrashDiagnosticsTests: XCTestCase {
     func testMessageValidationPreservesContentAndTrimsSurroundingWhitespace() {
         XCTAssertEqual(CrashDiagnostics.normalizedNote(" \nSources disappeared\nAfter refresh\t "), "Sources disappeared\nAfter refresh")
         XCTAssertEqual(CrashDiagnostics.normalizedNote("x"), "x")
+        let log = PlozzLog.activityExport(entries: []).supportText
+        for note in ["ghost episode", "\(log)\nghost episode", "ghost episode\n\(log)", "E6=unplayable"] {
+            XCTAssertEqual(CrashDiagnostics.normalizedNote(note), note)
+        }
     }
 
     @MainActor

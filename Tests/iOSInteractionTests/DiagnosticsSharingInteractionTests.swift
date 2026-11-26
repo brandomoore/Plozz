@@ -70,6 +70,21 @@ final class DiagnosticsSharingInteractionTests: XCTestCase {
         XCTAssertTrue(send.isEnabled)
     }
 
+    func testCopiedActivityRequiresADescription() {
+        launch(arguments: ["--diagnostics-enabled"])
+        let field = messageField
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText("format=plozz-activity-1 message_text=excluded")
+        let send = app.buttons["diagnostics-submit"]
+        let hint = app.staticTexts["Add a short description of what happened."]
+        XCTAssertTrue(hint.waitForExistence(timeout: 5))
+        XCTAssertFalse(send.isEnabled)
+        field.typeText(" ghost episode")
+        XCTAssertTrue(send.isEnabled)
+        XCTAssertFalse(hint.exists)
+    }
+
     func testErrorDetailsOfferTheFormWithoutAutomaticallySubmittingOrLosingTheDraft() {
         launch(arguments: ["--diagnostics-error-details"])
         app.buttons["content-failure-details"].tap()

@@ -43,6 +43,7 @@ public enum SettingsCopy {
         "Send recent activity, search, playback and connection diagnostics, and your message to the developer through Sentry."
 
     public static let diagnosticsMessage: LocalizedStringResource = "Message (required)"
+    public static let diagnosticsDescriptionRequired: LocalizedStringResource = "Add a short description of what happened."
 
     // MARK: - Scope headers
 

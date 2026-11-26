@@ -1565,11 +1565,10 @@ watch history and planning-list behavior are documented in
   explain their limitation and cannot offer an opt-in action.
   Detailed automatic/manual data disclosures and the privacy policy are behind
   the native information button, which remains available while Send is disabled.
-  The form shows status text only when sharing is off or unavailable, or after a send attempt.
-  Send uses native button/disabled styling and remains disabled until a nonblank
-  message is entered. The shared submission
-  path also rejects missing or whitespace-only messages before collecting or
-  submitting any diagnostics; automatic crash reports are unchanged.
+  Send stays disabled for an empty message or a pasted Plozz `key=value` export
+  without a description. The form prompts for a short description when the draft
+  is invalid; a few words alongside copied diagnostics are enough. The same check
+  runs before collecting or submitting diagnostics. Automatic crash reports are unchanged.
   Each submission appears in Sentry's User Feedback inbox with the required message,
   linked to the diagnostic event in Issues and its `plozz-diagnostics.json`
   attachment. The playback section includes the last three independently

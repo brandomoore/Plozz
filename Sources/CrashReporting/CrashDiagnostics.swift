@@ -16,9 +16,13 @@ import Sentry
 /// SDK is actually running). Otherwise it sends nothing and returns `false`, and
 /// the caller should tell the user to turn crash reporting on first.
 public enum CrashDiagnostics {
-    /// Trims the submitted message; missing or whitespace-only messages are invalid.
+    /// A pasted Plozz field dump is evidence, not a description of the problem.
     public static func normalizedNote(_ note: String?) -> String? {
         guard let note = note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty else {
+            return nil
+        }
+        if note.hasPrefix("format=plozz-"),
+           note.split(whereSeparator: \.isWhitespace).allSatisfy({ $0.contains("=") }) {
             return nil
         }
         return note

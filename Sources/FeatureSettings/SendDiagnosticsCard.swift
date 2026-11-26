@@ -22,6 +22,7 @@ public struct MobileDiagnosticsSubmissionSection: View {
     }
 
     public var body: some View {
+        let note = CrashDiagnostics.normalizedNote(message)
         SettingsSectionGroup("Send Diagnostics", accessory: { DiagnosticsInfoButton() }) {
             TextField(text: $message, axis: .vertical) { Text(SettingsCopy.diagnosticsMessage) }
                 .lineLimit(2...4)
@@ -32,10 +33,9 @@ public struct MobileDiagnosticsSubmissionSection: View {
                 .onChange(of: message) { if !message.isEmpty { status = nil } }
             DiagnosticsSendButton(
                 sharingEnabled: $sharingEnabled, isConfigured: isConfigured,
-                hasMessage: CrashDiagnostics.normalizedNote(message) != nil, isSending: isSending
+                hasMessage: note != nil, isSending: isSending
             ) {
-                guard !isSending else { return }
-                let note = message
+                guard !isSending, let note else { return }
                 editing = false
                 isSending = true
                 status = nil
@@ -50,6 +50,7 @@ public struct MobileDiagnosticsSubmissionSection: View {
         } footer: {
             if !isConfigured { Text(SettingsCopy.diagnosticSharingUnavailable) }
             else if !sharingEnabled { Text(SettingsCopy.diagnosticSharingRequired) }
+            else if note == nil && !message.isEmpty { Text(SettingsCopy.diagnosticsDescriptionRequired) }
         }
         .onChange(of: sharingEnabled) { status = nil }
     }
@@ -83,6 +84,7 @@ struct SendDiagnosticsCard: View {
     #endif
 
     var body: some View {
+        let note = CrashDiagnostics.normalizedNote(message)
         SettingsPanel(title: "Send Diagnostics", footer: footer) {
             VStack(alignment: .leading, spacing: 18) {
                 #if os(iOS)
@@ -102,11 +104,10 @@ struct SendDiagnosticsCard: View {
                 HStack(spacing: 16) {
                     DiagnosticsSendButton(
                         sharingEnabled: $sharingEnabled, isConfigured: isConfigured,
-                        hasMessage: CrashDiagnostics.normalizedNote(message) != nil,
+                        hasMessage: note != nil,
                         isSending: isSending, isSubmitted: sendState == .sent
                     ) {
-                        guard !isSending, sendState != .sent, sharingEnabled,
-                              let note = CrashDiagnostics.normalizedNote(message) else { return }
+                        guard !isSending, sendState != .sent, sharingEnabled, let note else { return }
                         #if os(iOS)
                         editing = false
                         #endif
@@ -125,6 +126,8 @@ struct SendDiagnosticsCard: View {
                     Text(SettingsCopy.diagnosticSharingUnavailable).settingsHelperText()
                 } else if !sharingEnabled {
                     Text(SettingsCopy.diagnosticSharingRequired).settingsHelperText()
+                } else if note == nil && !message.isEmpty {
+                    Text(SettingsCopy.diagnosticsDescriptionRequired).settingsHelperText()
                 }
             }
         }
