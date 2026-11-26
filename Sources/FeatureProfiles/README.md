@@ -64,8 +64,9 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
   its parental, local, and Plex authorization steps. Its avatar and name share
   the mobile PIN transition; Plex verification keeps the selected Plozz identity.
   The surrounding picker elements fade and lift away before the identity moves.
-  After the name settles, the PIN instruction rises slightly and fades in without
-  shifting the name or delaying keypad focus. With Reduce Motion it appears in
+  The forward glide uses a fixed-duration ease rather than a spring so the PIN
+  instruction can rise and fade in as soon as the name lands, without waiting
+  for a spring to settle or delaying keypad focus. With Reduce Motion it appears in
   place immediately. Animation completion, not a timer, advances the handoff;
   cancelled or replaced selections cannot advance it. The name and lock keep
   their picker typography.

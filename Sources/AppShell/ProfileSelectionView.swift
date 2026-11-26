@@ -189,7 +189,7 @@ struct ProfileSelectionView: View {
             handoffPhase = .clearing
         } completion: {
             guard handoffID == requestID, presentsAuthorization, handoffPhase == .clearing else { return }
-            withAnimation(handoffAnimation, completionCriteria: .removed) {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.48), completionCriteria: .removed) {
                 handoffPhase = .moving
             } completion: {
                 guard handoffID == requestID, presentsAuthorization, handoffPhase == .moving else { return }
