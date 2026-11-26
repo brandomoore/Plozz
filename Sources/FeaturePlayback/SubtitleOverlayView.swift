@@ -339,6 +339,16 @@ private struct SubtitlePositionLayout: Layout {
         )
     }
 
+    func blockOrigin(height: CGFloat, in bounds: CGRect) -> CGFloat {
+        let travel = bounds.height - height
+        if verticalPosition < 0 {
+            // Continue smoothly below 0% regardless of the selected anchor.
+            return travel - bounds.height * verticalPosition
+        }
+        let anchored = bounds.height * (1 - verticalPosition) - height * anchorFraction
+        return min(max(anchored, min(0, travel)), max(0, travel))
+    }
+
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         guard !subviews.isEmpty else { return }
         let contentProposal = ProposedViewSize(width: bounds.width, height: nil)
@@ -349,15 +359,7 @@ private struct SubtitlePositionLayout: Layout {
         let bottomInset = sizes[last].height > 0
             ? (heights[last] - sizes[last].height) * (1 - anchorFraction) : 0
         let height = heights.reduce(0, +) + spacing * CGFloat(last) - topInset - bottomInset
-        let travel = bounds.height - height
-        let origin: CGFloat
-        if verticalPosition < 0 {
-            // Continue smoothly below 0% regardless of the selected anchor.
-            origin = travel - bounds.height * verticalPosition
-        } else {
-            let anchored = bounds.height * (1 - verticalPosition) - height * anchorFraction
-            origin = min(max(anchored, min(0, travel)), max(0, travel))
-        }
+        let origin = blockOrigin(height: height, in: bounds)
         var visibleBlock = CGRect.null
         var naturalY = origin - topInset
         for index in sizes.indices {
@@ -493,6 +495,9 @@ public struct SubtitleOverlayView: View {
     /// Visible bottom controls in global coordinates; never a persisted position.
     public var controlsFrame: CGRect?
     public var controlsFrames: [CGRect]
+    #if os(tvOS)
+    var ownsBlackLetterbox = false
+    #endif
 
     public init(
         primary: [SubtitleCue],
@@ -540,7 +545,18 @@ public struct SubtitleOverlayView: View {
             )
             ZStack {
                 bitmapLayer(in: rect, bounds: CGRect(origin: .zero, size: geo.size), controls: controls)
+                #if os(tvOS)
+                if ownsBlackLetterbox, isHDR, style.positionReference == .screen, style.verticalAnchor == .bottom,
+                   !secondaryActive, controlsFrames.isEmpty, controlsFrame == nil, rect.height > 0,
+                   rect.maxY > 0, rect.maxY < geo.size.height,
+                   primary.count <= 1, primary.allSatisfy({ !$0.isImage && !isSourcePositioned($0) }) {
+                    letterboxDialogue(in: geo.size, videoBottom: rect.maxY)
+                } else {
+                    textLayer(in: geo.size, videoRect: rect, controls: controls)
+                }
+                #else
                 textLayer(in: geo.size, videoRect: rect, controls: controls)
+                #endif
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
@@ -577,6 +593,20 @@ public struct SubtitleOverlayView: View {
     }
 
     // MARK: - Text cues (primary + secondary)
+
+    #if os(tvOS)
+    private func letterboxDialogue(in size: CGSize, videoBottom: CGFloat) -> some View {
+        let text: SubtitleText
+        if case let .text(active)? = primary.first?.body { text = active } else { text = SubtitleText("") }
+        return LetterboxDialogueSurface(
+            line: StyledCueText(text: text, fontSize: Self.baseFontSize * style.fontScale,
+                                fillColor: scaled(style.textColor), style: style, colorScale: lumaScale)
+                .renderedLine.configuration,
+            size: size, videoBottom: videoBottom, style: style
+        )
+        .frame(width: size.width, height: size.height)
+    }
+    #endif
 
     /// Fraction of the container kept as a title-safe margin for edge-anchored
     /// cues, so ASS signs near a screen edge aren't lost to tvOS overscan.
@@ -751,6 +781,54 @@ public struct SubtitleOverlayView: View {
         return Color(.sRGB, red: c.red * k, green: c.green * k, blue: c.blue * k, opacity: c.alpha)
     }
 }
+
+#if os(tvOS)
+/// Retain one opaque subtitle surface across cue replacements and silent gaps. Never paint
+/// black over picture pixels: a tall or elevated cue keeps its ordinary transparent backing.
+private struct LetterboxDialogueSurface: UIViewRepresentable {
+    final class Surface: UIView {
+        let line = SubtitleLineView()
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isOpaque = false
+            isUserInteractionEnabled = false
+            addSubview(line)
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    }
+
+    let line: SubtitleLineView.Config
+    let size: CGSize
+    let videoBottom: CGFloat
+    let style: SubtitleStyle
+
+    func makeUIView(context: Context) -> Surface { Surface(frame: .zero) }
+
+    func updateUIView(_ surface: Surface, context: Context) {
+        let view = surface.line
+        view.configure(line)
+        let screen = CGRect(origin: .zero, size: size)
+        let scale = context.environment.displayScale
+        let top = ceil(videoBottom * scale) / scale
+        let matte = CGRect(x: 0, y: top, width: size.width, height: max(0, size.height - top))
+        let measured = line.text.isEmpty ? .zero : view.measure(maxWidth: size.width * 0.92)
+        let layout = SubtitlePositionLayout(verticalPosition: style.verticalPosition, verticalAnchor: .bottom,
+                                            spacing: 0, controlsFrames: [])
+        let ink = CGRect(x: screen.midX + style.horizontalOffset * (size.width * 0.25) - measured.width / 2,
+                         y: layout.blockOrigin(height: measured.height, in: screen),
+                         width: measured.width, height: measured.height)
+        UIView.performWithoutAnimation {
+            if measured == .zero || matte.contains(ink) {
+                view.frame = matte
+                view.letterboxInkRect = ink.offsetBy(dx: 0, dy: -top)
+            } else {
+                view.frame = ink
+                view.letterboxInkRect = nil
+            }
+        }
+    }
+}
+#endif
 
 // MARK: - ASS `\an` plane → text justification
 

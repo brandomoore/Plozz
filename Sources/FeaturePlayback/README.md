@@ -2172,6 +2172,12 @@ editing, previews, and saved position values are unchanged. The normal dialogue
 percentage remains screen-relative. Captions already encoded into video pixels
 cannot be repositioned.
 
+During letterboxed HDR playback on Apple TV, ordinary bottom-of-screen dialogue
+that fits entirely below the video is painted into the black bar itself. The
+same surface clears between lines. Lines extending into the picture retain a
+transparent backing; controls, positioned artwork and dual subtitles keep their
+normal layout.
+
 Mobile on-demand subtitle settings include the existing subtitle-delay control
 directly, rather than a separate Playback Sync menu entry. Engines that support
 audio delay retain that adjustment in the same settings. Availability, ranges,

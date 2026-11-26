@@ -153,6 +153,17 @@ final class SubtitleLineView: UIView {
     }
 
     private var config: Config?
+    #if os(tvOS)
+    /// When a whole line fits below the video, its ink and black matte share one backing store.
+    var letterboxInkRect: CGRect? {
+        didSet {
+            guard oldValue != letterboxInkRect else { return }
+            isOpaque = letterboxInkRect != nil
+            backgroundColor = isOpaque ? .black : .clear
+            setNeedsDisplay()
+        }
+    }
+    #endif
     private struct Measurement {
         var width: CGFloat
         var layout: Layout
@@ -221,15 +232,28 @@ final class SubtitleLineView: UIView {
 
     override func draw(_ rect: CGRect) {
         guard let c = config, let ctx = UIGraphicsGetCurrentContext() else { return }
+        let inkBounds: CGRect
+        #if os(tvOS)
+        if let letterboxInkRect {
+            ctx.setFillColor(UIColor.black.cgColor)
+            ctx.fill(bounds)
+            guard !letterboxInkRect.isEmpty else { return }
+            inkBounds = letterboxInkRect
+        } else {
+            inkBounds = bounds
+        }
+        #else
+        inkBounds = bounds
+        #endif
         let l: Layout
         // SwiftUI gives the view its measured (ink-tight) width, not necessarily
         // the wider wrapping proposal. Re-shaping at that smaller width wraps a
         // second time and draws extra lines above the height we just measured.
-        if let index = measurements.lastIndex(where: { $0.layout.totalSize == bounds.size })
-            ?? measurements.lastIndex(where: { $0.width == bounds.width }) {
+        if let index = measurements.lastIndex(where: { $0.layout.totalSize == inkBounds.size })
+            ?? measurements.lastIndex(where: { $0.width == inkBounds.width }) {
             l = reuseMeasurement(at: index)
         } else {
-            l = cacheLayout(c, maxWidth: bounds.width)
+            l = cacheLayout(c, maxWidth: inkBounds.width)
         }
 
         ctx.saveGState()
@@ -237,7 +261,7 @@ final class SubtitleLineView: UIView {
 
         // UIKit top-left origin → Core Text / Core Graphics bottom-left origin.
         ctx.textMatrix = .identity
-        ctx.translateBy(x: 0, y: bounds.height)
+        ctx.translateBy(x: inkBounds.minX, y: inkBounds.maxY)
         ctx.scaleBy(x: 1, y: -1)
 
         let path = l.path
