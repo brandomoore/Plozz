@@ -6,8 +6,8 @@
 
 **Free and open source. No ads or paywalls.** Enjoy your movies, shows, music
 and live TV in one app built for Apple devices. Connect **Jellyfin, Plex, Emby and Silo**,
-play directly from **SMB and WebDAV shares**, and keep your setup in sync
-with **iCloud**.
+play directly from **SMB, WebDAV, NFS, SFTP or FTP shares**, add **M3U or Xtream
+IPTV**, and keep your setup in sync with **iCloud**.
 
 <p align="center">
   <a href="https://apps.apple.com/app/plozz-player/id6782668147"><img src="docs/assets/app-store-badge.svg" alt="Download Plozz Player on the App Store" width="180" /></a>
@@ -45,6 +45,11 @@ with **iCloud**.
 Browse and search everything in one place, without switching between sources.
 You can still browse each source separately and pick up where you left off.
 
+Development/TestFlight builds also offer **Navidrome / Subsonic / OpenSubsonic**
+for music-only libraries. Protocol compatibility and features vary by server;
+see [supported sources](.github/CONTRIBUTING.md#supported-sources) and
+[Subsonic limits](Sources/ProviderSubsonic/README.md).
+
 ## Network shares
 
 <p>
@@ -78,7 +83,7 @@ Live TV is experimental; Plozz supplies no channels or IPTV subscription.
 
 | Feature | What you get |
 | --- | --- |
-| **Music on iOS, iPadOS and tvOS** | Browse albums, artists, songs and playlists from Plex, Jellyfin and Emby. Use the mini-player, queue, shuffle or repeat, and keep listening in the background. |
+| **Music on iOS, iPadOS and tvOS** | Browse albums, artists, songs and playlists from Plex, Jellyfin and Emby, plus Navidrome/Subsonic in development/TestFlight. Use the mini-player, queue, shuffle or repeat, and keep listening in the background. |
 | **Video playback** | Pick an audio track, change playback speed and resume where you stopped. Enjoy HDR and surround sound with compatible files and equipment. |
 | **Playback shortcuts** | Skip intros and credits yourself or automatically, jump between chapters where available, and choose whether the next episode starts on its own. |
 | **Picture in Picture and AirPlay** | Watch while using other apps on iPhone and iPad, or send video to another screen. Availability depends on how the video plays; separately saved subtitles stay in Plozz. |
@@ -177,8 +182,8 @@ Features vary by device and service. Your server's access rules and any
 subscriptions it requires still apply.
 
 This README covers what's implemented in the code. App Store and TestFlight
-releases may be behind; mobile music is enabled for development/TestFlight
-builds, but isn't in the App Store version yet.
+releases may be behind; mobile music and Navidrome/Subsonic onboarding are enabled
+for development/TestFlight builds, but aren't in the App Store version yet.
 
 [Explore features](https://plozz.app/features/) ·
 [Supported formats](https://plozz.app/formats/) ·

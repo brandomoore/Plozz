@@ -1,7 +1,8 @@
 # ProviderPlex
 
-Plex implementation of `CoreModels.MediaProvider`. One of Plozz's two
-first-class backends; co-equal with `ProviderJellyfin`.
+Plex implementation of `CoreModels.MediaProvider`, co-equal with Jellyfin.
+It participates alongside the other
+[supported sources](../../.github/CONTRIBUTING.md#supported-sources).
 
 ## Responsibility
 

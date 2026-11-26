@@ -1,16 +1,23 @@
 # Plozz Metadata & Artwork Architecture
 
-> Scalable, keyless‑to‑the‑user metadata/artwork enrichment for a tvOS home‑media
-> client. Designed for **anime‑first** excellence, gorgeous heroes/episode
+> Scalable, keyless‑to‑the‑user metadata/artwork enrichment for an Apple TV,
+> iPhone and iPad media client. Designed for **anime‑first** excellence, gorgeous heroes/episode
 > thumbnails/posters/logos for **movies, TV, anime and music**, and **useful**
 > ratings — powered by **free APIs that scale to hundreds of thousands of users**
 > with **no "bring your own API key" (BYOK)**.
 
 ---
 
+This document retains the original architecture rationale. Current source
+support includes [managed servers, shares, IPTV and music-only Subsonic](../.github/CONTRIBUTING.md#supported-sources);
+external enrichment depends on media identity and source capabilities, not on a
+Jellyfin/Plex-only library. Current implementation details live in
+[`MetadataKit`](../Sources/MetadataKit/README.md) and
+[`FeatureMusic`](../Sources/FeatureMusic/README.md).
+
 ## 1. The problem, restated
 
-Plozz enriches a user's own Jellyfin/Plex library with external artwork and
+Plozz enriches supported library items with external artwork and
 ratings. The legacy path used **TMDb** (posters, backdrops, per‑episode stills,
 logos, trailers) and **OMDb** (IMDb/RT/Metacritic ratings) via keys substituted
 in at build time. Two structural problems:
@@ -184,9 +191,9 @@ Sources/MetadataKit/
 - **Western‑movie heroes/logos depend on Tier 2.** With no proxy configured,
   movies fall back to the user's own server art. Anime/TV/music do not depend on
   Tier 2.
-- **Music view wiring is deferred.** Deezer/MusicBrainz providers and the router's
-  music methods exist and are callable, but the music feature views are not yet
-  switched over (see Phase 4). This bounds build/regression risk.
+- **Music artwork is wired.** `FeatureMusic.MusicArtworkFallback` uses the
+  router's album/artist methods on both platforms, with server artwork preferred
+  by default. Music source and release-channel limits still apply.
 - **The default public build has no proxy URL**, so out of the box it behaves like
   today for western movies until the maintainer hosts/points at a proxy — but
   anime/TV/music/ratings are immediately better with zero setup.
@@ -201,8 +208,8 @@ Sources/MetadataKit/
   key + xcconfig default (empty). Ship the reference proxy + docs.
 - **Phase 3 — Music providers (DONE in MetadataKit).** Deezer + MusicBrainz/CAA
   providers and router music methods.
-- **Phase 4 — Music view wiring (FUTURE).** Route `FeatureMusic` artwork through
-  the router's music methods.
+- **Phase 4 — Music view wiring (DONE).** `FeatureMusic` artwork uses the
+  router's music methods.
 - **Phase 5 — Enrichment polish (FUTURE).** Anime character art from AniList,
   trailer routing through the proxy, smarter title‑match scoring, prefetch tuning.
 

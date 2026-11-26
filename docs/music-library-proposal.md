@@ -1,10 +1,15 @@
 # Music Library Support — Design & UX Proposal
 
-**Status:** Implemented — this is the design record for the shipped Music library
-feature (`FeatureMusic`, `CoreModels/MusicProvider.swift`).
-**Scope:** Add support for browsing and playing a **music** library (artists,
-albums, tracks, playlists, genres) from Plex **or** Jellyfin, alongside the
-existing TV & Movies experience.
+**Status:** Historical design record for the implemented Music library feature.
+Current browsing/player behavior lives in [`FeatureMusic`](../Sources/FeatureMusic/README.md)
+and `CoreModels/MusicProvider.swift`. Music is implemented on Apple TV, iPhone
+and iPad. Plex, Jellyfin and Emby supply music;
+development/TestFlight also offers music-only Navidrome/Subsonic. Mobile music
+remains development/TestFlight-only. Implemented does not mean available in
+every App Store build.
+**Original scope:** Add music browsing and playback alongside TV and movies.
+The baseline and phased work below describe the original Plex/Jellyfin design,
+not current unsupported features or a two-provider limit.
 **Owning constraint:** Everything above the provider layer talks to the
 `MediaProvider` protocol in `CoreModels`, never to Jellyfin/Plex directly. Any
 music support must preserve that seam and must stay **invisible to video-only

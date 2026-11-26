@@ -7,13 +7,13 @@ import SwiftUI
 
 /// iOS/iPadOS "Add a Media Share" — a native port of the tvOS unified flow. Reuses
 /// the shared `UnifiedAddShareModel` (all discovery / connect / verify / location
-/// logic) and mirrors its five steps with native iOS idioms:
+/// logic) for SMB, WebDAV, NFS, SFTP and FTP/FTPS with native iOS idioms:
 ///
 ///  1. Choose device — "Detected automatically" list + "Enter an address manually"
 ///  2. Connect — Protocol → Address+Port → credentials → nickname
-///  3. Verify — TOFU fingerprint approval (WebDAV self-signed TLS / SFTP host key)
+///  3. Verify — TOFU fingerprint approval (WebDAV/FTPS TLS / SFTP host key)
 ///  4. Pick location — SMB shares, NFS exports, or drillable WebDAV/SFTP/FTP folders
-///  5. Coming soon — for transports not yet wired
+/// A separate coming-soon state is reserved for future unimplemented transports.
 ///
 /// Its three output callbacks are wired to the iOS app model's add* handlers.
 @MainActor

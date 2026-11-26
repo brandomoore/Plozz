@@ -329,7 +329,7 @@ public struct SettingsView: View {
     }
 
     /// Whether the active profile includes at least one server that can download
-    /// subtitles (Jellyfin or Plex). A media-share (SMB) account can't — it only
+    /// subtitles (Jellyfin, Emby or Plex). A media-share account can't — it only
     /// surfaces sidecar files already on the share — so download-only settings are
     /// hidden for a share-only profile.
     private var activeProfileCanDownloadSubtitles: Bool {

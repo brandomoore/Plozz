@@ -2,10 +2,11 @@ import Foundation
 
 /// The provider abstraction that lets Plozz support multiple backends.
 ///
-/// Plozz ships **two** first-class conformers — `ProviderJellyfin.JellyfinProvider`
-/// and `ProviderPlex.PlexProvider` — and treats them as co-equal: features above
-/// this protocol are written once and work against either. Adding another backend
-/// (e.g. Overseerr) means writing one new conformer plus a `ProviderKind` case.
+/// Managed servers, IPTV, network shares and music-only Subsonic use this seam.
+/// Jellyfin and Emby share `ProviderJellyfin.JellyfinProvider`; Plex, Silo,
+/// shares, IPTV and Subsonic have their own adapters. Shared features respect
+/// provider capabilities rather than assuming every source has a video library,
+/// server-side transcoding or remote watch state.
 ///
 /// All methods are `async` and throw `AppError`. Implementations must:
 ///  * never log secrets/tokens;

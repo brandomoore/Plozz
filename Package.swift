@@ -393,12 +393,11 @@ let package = Package(
             name: "ProviderPlex",
             dependencies: ["CoreModels", "CoreNetworking"]
         ),
-        // Second-class local media-share backend (SMB today). Scans a share into
-        // a synthesised library and conforms to `MediaProvider` so the rest of the
-        // app treats it like Plex/Jellyfin. Runtime browsing/scanning use injected
-        // MediaTransportCore sessions; SMBClient remains here only for setup-time
-        // SMB discovery/share enumeration. Playback still flows through
-        // EnginePlozzigen's existing SMB path. See docs/media-share-proposal.md.
+        // Network-share backend for SMB, WebDAV, NFS, SFTP and FTP/FTPS.
+        // Owns the local catalog and watch state behind `MediaProvider`.
+        // Browsing, scanning and playback use injected MediaTransportCore sessions;
+        // SMBClient remains for setup-time SMB discovery/share enumeration.
+        // See docs/media-share-work-scope.md and docs/playback-engines.md.
         .target(
             name: "ProviderShare",
             dependencies: [

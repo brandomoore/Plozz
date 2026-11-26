@@ -3,10 +3,10 @@ import Foundation
 // MARK: - Optional music capability (additive, non-breaking)
 //
 // `MusicProvider` is a *separate, optional* capability protocol. It does NOT
-// extend or modify `MediaProvider`, so the existing providers (`ProviderJellyfin`,
-// `ProviderPlex`) keep conforming to `MediaProvider` unchanged and keep compiling.
+// extend or modify `MediaProvider`. Jellyfin/Emby, Plex and Subsonic opt in;
+// other media sources need not implement music.
 //
-// A provider gains music support later by opting in *in its own module*:
+// A provider gains music support by opting in *in its own module*:
 //
 //     extension JellyfinProvider: MusicProvider { /* map music endpoints */ }
 //

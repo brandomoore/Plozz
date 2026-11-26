@@ -45,7 +45,7 @@ struct EngineFallbackState: Equatable {
 /// The cross-engine fallback decision, extracted from
 /// `PlayerViewModel.handleEngineFailure` as a pure function.
 ///
-/// Dual-provider/engine safety: this only *chooses*; the coordinator still owns
+/// Provider/engine safety: this only *chooses*; the coordinator still owns
 /// engine construction and hand-off. Keeping the decision pure means Plex and
 /// Jellyfin failures walk exactly the same chain, and the fragile once-only
 /// guards can be pinned with tests instead of discovered on a device.

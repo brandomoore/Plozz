@@ -1840,9 +1840,10 @@ watch history and planning-list behavior are documented in
   values (`migrateLegacyIfNeeded` in `ProfileStore`).
 - **No tokens here.** Account & Trakt token management is delegated to
   `FeatureAuth.AccountStore` / `TraktService.TraktTokenStore`.
-- **Dual-provider.** Server/library management must work for both Plex
-  and Jellyfin accounts (Plex Home-user mapping is Plex-specific, but
-  the UI must clearly say so).
+- **Multi-source.** Account/library management must preserve all
+  [supported sources](../../.github/CONTRIBUTING.md#supported-sources) and their
+  capability differences. Plex Home-user mapping remains Plex-specific; the UI
+  must clearly say so.
 - **No persistence schema duplication.** Persistence lives in
   `CoreModels` / `FeatureAuth` / `TraktService`; this module only
   **edits** what they store.
