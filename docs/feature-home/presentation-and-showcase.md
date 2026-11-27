@@ -26,6 +26,9 @@ Compact mobile detail badges use their natural height when fully visible, with
 Overflow disclosures retain their 44-point tap target.
 Episode synopses use the same font size and line spacing as hero descriptions at
 every adjustment, while episode titles stay larger and semibold.
+In the TV Detail settings preview, the episode row reserves space for its
+wrapped captions before the hero is positioned; the slider never shrinks the
+sample text to make it fit. The preview uses fictional content, not library data.
 TV episode descriptions are visible on every labeled card by default. The
 profile-scoped **Only show descriptions on focus** toggle in the detail-page label settings
 restores the delayed focus-only reveal. Hidden labels and spoiler protection

@@ -898,6 +898,11 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   together without changing `mediaBadgeScale`'s existing compact-format styling.
   Scope it to the metadata subtree, not buttons, cards, or whole pages.
   The local default is 1; the TV hero uses native Text Size as its baseline.
+  TV Settings renders a sample certificate, genre, wrapping synopsis and (where
+  applicable) Play label at screen size before shrinking the illustration. The
+  synopsis follows the full profile adjustment; secondary metadata uses the
+  gentler positive adjustment, and Play follows only system text size. Home
+  and library Recommended use the same illustrations as the Home layout cards.
   Mobile retains its separate Dynamic Type behavior.
 - **Hero scrim coverage** — `heroScrimHeightScale` extends both the analytic gradient
   and cached texture upward from their bottom anchor, within the existing bounds

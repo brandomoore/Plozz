@@ -1053,6 +1053,117 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
         }
     }
 
+    func testSettingsPreviewMatchesFeaturedHeroTextAtNativeAndLocalSizes() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        fixture.window.overrideUserInterfaceStyle = .dark
+        let preview = SizingModel()
+        let host = UIHostingController(rootView:
+            HomeSizingPreview(model: preview)
+                .transaction { $0.disablesAnimations = true }
+                .environment(\.plozzShowsContentRatings, true)
+                .environment(\.colorScheme, .dark)
+                .environment(\.themePalette, .dark)
+                .ignoresSafeArea()
+        )
+        let container = try XCTUnwrap(fixture.window.rootViewController)
+        container.addChild(host)
+        host.view.frame = container.view.bounds
+        container.view.addSubview(host.view)
+        host.didMove(toParent: container)
+        let live = HeroForegroundUIView(frame: container.view.bounds)
+        live.backgroundColor = .black
+        container.view.addSubview(live)
+        defer { live.stopContinuousUpdates() }
+        let synopsis = "A radio operator follows a signal across the mountains."
+        live.apply(HeroForegroundModel(
+            itemID: "preview-reference", title: "Northstar", logoURL: nil,
+            metadataText: "Adventure", ratingBadgeText: "TV-14", scheduleLine: nil, overview: synopsis,
+            ratings: [], familyGuidanceAge: nil,
+            pills: [.init(kind: .play, text: "Play", systemImage: "play.fill", progress: nil)],
+            selectedIndex: 0, heroFocused: false, dots: nil
+        ), logo: nil, metadataVisible: true, slideChanged: false)
+        func capture() -> UIImage {
+            fixture.window.layoutIfNeeded()
+            return UIGraphicsImageRenderer(bounds: fixture.window.bounds).image { _ in
+                fixture.window.drawHierarchy(in: fixture.window.bounds, afterScreenUpdates: true)
+            }
+        }
+        let terms = ["Adventure", "TV-14", "operator", "Play"]
+        for (native, local): (DynamicTypeSize, Int) in [
+            (.large, 0), (.accessibility1, 0), (.accessibility5, 0), (.accessibility5, -5), (.accessibility5, 5)
+        ] {
+            fixture.window.traitOverrides.preferredContentSizeCategory = native.plozzContentSizeCategory
+            preview.textSize = HeroTextSize(rawValue: local)
+            live.appTextScale = MetadataBadgeSpacing.textScale(for: native)
+            live.textSize = preview.textSize
+            live.isHidden = false
+            let actualImage = capture()
+            let actual = try HeroTextInk.frames(in: actualImage, terms: terms, brightTerms: ["TV-14"])
+            live.isHidden = true
+            let previewImage = capture()
+            let sample = try HeroTextInk.frames(
+                in: previewImage, terms: terms, brightTerms: ["Adventure", "TV-14", "operator"],
+                darkPillTerms: ["Play"]
+            )
+            for (name, image) in [("live", actualImage), ("preview", previewImage)] {
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "text-parity-\(native)-local\(local)-\(name)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+            for term in terms {
+                let expected = try XCTUnwrap(actual[term])
+                let illustrated = try XCTUnwrap(sample[term])
+                print("Hero preview ink: term=\(term) native=\(native) local=\(local) live=\(expected.height) preview=\(illustrated.height)")
+                XCTAssertEqual(illustrated.height, expected.height, accuracy: 3, "\(term), \(native), \(local)")
+            }
+        }
+    }
+
+    private struct HomeSizingPreview: View {
+        let model: SizingModel
+
+        var body: some View {
+            HomeLayoutSwatch(style: .carousel, logoSize: .default, textSize: model.textSize)
+        }
+    }
+
+    func testDetailPreviewKeepsAllEnlargedEpisodeCaptionLinesInsideCard() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        for native: DynamicTypeSize in [.accessibility1, .accessibility5] {
+            let host = UIHostingController(rootView:
+                HeroLogoSizePreview(size: .default, surface: .detail, layout: .television,
+                                    textSize: HeroTextSize(rawValue: 5))
+                    .frame(width: 640, height: 480)
+                    .background(PreviewCardFrame())
+                    .environment(\.dynamicTypeSize, native)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+            )
+            fixture.window.rootViewController = host
+            fixture.window.layoutIfNeeded()
+            let card = try XCTUnwrap(findPreviewCard(in: host.view))
+            let frame = card.convert(card.bounds, to: fixture.window)
+            // Left side of the first episode: no sun in the artwork and no neighboring caption.
+            let crop = CGRect(x: frame.minX + 28, y: frame.maxY - 160, width: 100, height: 160).integral
+            let pixels = try rgbaPixels(in: fixture.window, rect: crop)
+            let width = Int(crop.width)
+            let inkRows = (0..<Int(crop.height)).filter { y in
+                (0..<width).contains { x in
+                    let index = 4 * (y * width + x)
+                    return pixels[index] > 170 && pixels[index + 1] > 170 && pixels[index + 2] > 170
+                }
+            }
+            let first = try XCTUnwrap(inkRows.first)
+            let last = try XCTUnwrap(inkRows.last)
+            let gaps = zip(inkRows, inkRows.dropFirst()).filter { $1 - $0 > 3 }
+            XCTAssertEqual(gaps.count + 1, 4, "Expected the episode title and three synopsis lines at \(native).")
+            XCTAssertGreaterThan(first, 0)
+            XCTAssertGreaterThan(Int(crop.height) - last, 6, "The last line needs a visible bottom margin.")
+        }
+    }
+
     func testTVPreviewArtworkMatchesLayoutCoverageAndFade() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }
@@ -1351,6 +1462,7 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
 
     @Observable fileprivate final class SizingModel {
         var size = HeroLogoSize.default
+        var textSize = HeroTextSize.default
         var resolutions = 0
         var layout = HeroStyle.carousel
         var homeSize = HeroLogoSize.default

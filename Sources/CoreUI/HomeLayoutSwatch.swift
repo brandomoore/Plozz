@@ -86,9 +86,25 @@ public struct HomeLayoutSwatch: View {
     private var spotlight: some View {
         let scale = PlozzTypography.scale(local: textSize.scale, app: baseTextScale)
         let metadataScale = PlozzTypography.heroMetadataScale(local: textSize.scale, app: baseTextScale)
+        #if !os(tvOS)
         let textTop: CGFloat = 686 - max(0, 22 * (metadataScale - 1) + 18 * (scale - 1))
+        #endif
         return ZStack(alignment: .topLeading) {
             HomePreviewBackdrop(style: .carousel, size: Self.screen)
+            #if os(tvOS)
+            VStack(alignment: .leading, spacing: 12) {
+                HeroLogoPreviewWordmark(size: logoSize ?? .default, layout: .television)
+                    .padding(.bottom, 14)
+                HeroPreviewMetadata(scale: metadataScale)
+                HeroPreviewSynopsis(scale: scale, lines: textSize.descriptionLineLimit(base: 3))
+                    .frame(width: HeroLogoSizing.homeTextWidth(for: .television, logoSize: logoSize ?? .default),
+                           alignment: .leading)
+                HeroPreviewActions(showsHomeActions: true)
+                    .padding(.top, 16)
+            }
+            .frame(height: 856, alignment: .bottomLeading)
+            .offset(x: 144)
+            #else
             if let logoSize {
                 wordmark(size: logoSize, baseline: textTop - 30)
             } else {
@@ -103,6 +119,7 @@ public struct HomeLayoutSwatch: View {
                     .frame(width: 66, height: 66)
                     .offset(x: 328 + CGFloat(index) * 94, y: 786)
             }
+            #endif
             // Paging dots, centred.
             HStack(spacing: 14) {
                 Capsule().fill(HomeLayoutPreviewColors.wordmark).frame(width: 34, height: 10)
@@ -140,9 +157,22 @@ public struct HomeLayoutSwatch: View {
             } else {
                 block(144, 160, 420, 96, wordmark: true)
             }
+            #if os(tvOS)
+            VStack(alignment: .leading, spacing: 12) {
+                HeroPreviewMetadata(scale: metadataScale)
+                ViewThatFits(in: .vertical) {
+                    HeroPreviewSynopsis(scale: scale, lines: 3)
+                    HeroPreviewSynopsis(scale: scale, lines: 1)
+                    Color.clear.frame(height: 0)
+                }
+            }
+            .frame(width: 820, height: 560 - 282 - 24, alignment: .topLeading)
+            .offset(x: 144, y: 282)
+            #else
             block(144, 282, 300 * metadataScale, 22 * metadataScale)
             block(144, 282 + 22 * metadataScale + 22, min(640 * scale, Self.screen.width - 288), 18 * scale)
             block(144, 282 + 22 * metadataScale + 18 * scale + 36, 480 * scale, 18 * scale)
+            #endif
             block(144, 560, 280, 30)
             cards(y: 640, height: 270, focusedFirst: true)
             block(144, 976, 200, 30)

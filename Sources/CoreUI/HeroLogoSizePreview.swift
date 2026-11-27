@@ -32,7 +32,7 @@ public struct HeroLogoSizePreview: View {
         GeometryReader { geometry in
             let scale = geometry.size.width / screen.width
             scene
-                .frame(width: screen.width, height: screen.height)
+                .frame(width: screen.width, height: screen.height, alignment: mobile ? .center : .topLeading)
                 .scaleEffect(scale, anchor: .topLeading)
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
                 .clipped()
@@ -47,22 +47,45 @@ public struct HeroLogoSizePreview: View {
         if surface == .detail && !mobile {
             detailScene
         } else {
+            #if os(tvOS)
+            HomeLayoutSwatch(style: surface == .showcase ? .followsFocus : .carousel,
+                            cornerRadius: 0, logoSize: size, textSize: textSize)
+            #else
             standardScene
+            #endif
         }
     }
 
     private var detailScene: some View {
         let scale = PlozzTypography.scale(local: textSize.scale, app: appTextScale)
         let metadataScale = PlozzTypography.heroMetadataScale(local: textSize.scale, app: appTextScale)
-        let description = PlozzTypography.heroDescription.scaled(by: scale)
-        let episodeDescription = PlozzTypography.episodeDescription.scaled(by: scale)
-        let episodeTitle = PlozzTypography.episodeTitle.scaled(by: scale)
-        let descriptionWidth = HeroDescriptionFactsLayout.minimumWidth
         return ZStack(alignment: .topLeading) {
             Color.black
             HomePreviewBackdrop(style: .carousel, size: CGSize(width: 1920, height: 1080))
+            VStack(alignment: .leading, spacing: 100) {
+                detailHeader(scale: scale, metadataScale: metadataScale)
+                    .frame(maxHeight: .infinity, alignment: .bottomLeading)
+                detailEpisodes(scale: scale)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, 24)
+                    .frame(minHeight: 440, alignment: .topLeading)
+            }
+            .padding(.leading, 80)
+            .frame(width: screen.width, height: screen.height, alignment: .topLeading)
+        }
+    }
+
+    private func detailHeader(scale: CGFloat, metadataScale: CGFloat) -> some View {
+        let descriptionWidth = HeroDescriptionFactsLayout.minimumWidth
+        return HStack(alignment: .bottom, spacing: 0) {
             VStack(alignment: .leading, spacing: 24) {
                 HeroLogoPreviewWordmark(size: size, layout: layout)
+                #if os(tvOS)
+                HeroPreviewMetadata(scale: metadataScale)
+                HeroPreviewSynopsis(scale: scale, lines: PlozzTypography.detailDescriptionLines)
+                HeroPreviewActions()
+                #else
+                let description = PlozzTypography.heroDescription.scaled(by: scale)
                 Capsule().fill(.white.opacity(0.5))
                     .frame(width: 300, height: PlozzTypography.heroMetadata.scaled(by: metadataScale).pointSize * 0.7)
                 VStack(alignment: .leading, spacing: description.pointSize * 0.4 + description.lineSpacing) {
@@ -75,37 +98,49 @@ public struct HeroLogoSizePreview: View {
                     Capsule().fill(.white.opacity(0.85)).frame(width: 168, height: 64)
                     Circle().fill(.white.opacity(0.25)).frame(width: 64, height: 64)
                 }
+                #endif
             }
-            .frame(width: descriptionWidth, height: 900, alignment: .bottomLeading)
-            .offset(x: 80)
+            .frame(width: descriptionWidth, alignment: .leading)
+            .frame(width: 1320, alignment: .leading)
             VStack(alignment: .leading, spacing: 16 * metadataScale) {
                 Capsule().fill(.white.opacity(0.4)).frame(width: 400, height: 18 * metadataScale)
                 Capsule().fill(.white.opacity(0.4)).frame(width: 320, height: 18 * metadataScale)
             }
-            .frame(height: 900, alignment: .bottomLeading)
-            .offset(x: 1400)
-            HStack(alignment: .top, spacing: EpisodeColumnCard.trailingSpacing) {
-                ForEach(0..<4) { index in
-                    VStack(alignment: .leading, spacing: 12) {
-                        HomePreviewArtwork()
-                            .frame(width: EpisodeColumnCard.artworkSize.width, height: EpisodeColumnCard.artworkSize.height)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                        Capsule().fill(.white.opacity(0.7))
-                            .frame(width: 360, height: episodeTitle.pointSize * 0.7)
-                        VStack(alignment: .leading, spacing: episodeDescription.pointSize * 0.4 + episodeDescription.lineSpacing) {
-                            ForEach(0..<3) { line in
-                                Capsule().fill(.white.opacity(index == 0 ? 0.4 : 0.2))
-                                    .frame(width: line == 2 ? 350 : 460, height: episodeDescription.pointSize * 0.6)
-                            }
-                        }
-                    }
-                    .frame(width: EpisodeColumnCard.artworkSize.width, alignment: .leading)
-                }
-            }
-            .offset(x: 80, y: 1000)
         }
     }
 
+    private func detailEpisodes(scale: CGFloat) -> some View {
+        let episodeTitle = PlozzTypography.episodeTitle.scaled(by: scale)
+        return HStack(alignment: .top, spacing: EpisodeColumnCard.trailingSpacing) {
+            ForEach(0..<4) { index in
+                VStack(alignment: .leading, spacing: 12) {
+                    HomePreviewArtwork()
+                        .frame(width: EpisodeColumnCard.artworkSize.width, height: EpisodeColumnCard.artworkSize.height)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                    #if os(tvOS)
+                    Text("Episode \(index + 1)")
+                        .font(.system(size: episodeTitle.pointSize, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    HeroPreviewSynopsis(scale: scale, lines: 3)
+                    #else
+                    let episodeDescription = PlozzTypography.episodeDescription.scaled(by: scale)
+                    Capsule().fill(.white.opacity(0.7))
+                        .frame(width: 360, height: episodeTitle.pointSize * 0.7)
+                    VStack(alignment: .leading, spacing: episodeDescription.pointSize * 0.4 + episodeDescription.lineSpacing) {
+                        ForEach(0..<3) { line in
+                            Capsule().fill(.white.opacity(index == 0 ? 0.4 : 0.2))
+                                .frame(width: line == 2 ? 350 : 460, height: episodeDescription.pointSize * 0.6)
+                        }
+                    }
+                    #endif
+                }
+                .frame(width: EpisodeColumnCard.artworkSize.width, alignment: .leading)
+            }
+        }
+    }
+
+    #if !os(tvOS)
     private var standardScene: some View {
         let textScale = PlozzTypography.scale(local: textSize.scale, app: appTextScale)
         let metadataScale = PlozzTypography.heroMetadataScale(local: textSize.scale, app: appTextScale)
@@ -178,7 +213,71 @@ public struct HeroLogoSizePreview: View {
             }
         }
     }
+    #endif
 }
+
+#if os(tvOS)
+struct HeroPreviewMetadata: View {
+    let scale: CGFloat
+
+    var body: some View {
+        HStack(spacing: 16 * scale) {
+            MediaBadgeChip(badge: MediaBadge("TV-14", style: .rating))
+            Text("Adventure")
+                .font(.system(size: PlozzTypography.heroMetadata.scaled(by: scale).pointSize, weight: .medium))
+                .foregroundStyle(.white)
+        }
+        .environment(\.themePalette, .dark)
+        .environment(\.metadataTextScale, scale)
+    }
+}
+
+struct HeroPreviewSynopsis: View {
+    let scale: CGFloat
+    let lines: Int
+
+    var body: some View {
+        let style = PlozzTypography.heroDescription.scaled(by: scale)
+        Text("A radio operator follows a signal across the mountains.", comment: "Fictional synopsis in the hero text-size preview.")
+            .font(.system(size: style.pointSize))
+            .foregroundStyle(.white.opacity(0.85))
+            .lineSpacing(style.lineSpacing)
+            .lineLimit(lines)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Passive sample labels: the Settings card, not the illustrated actions, owns focus.
+struct HeroPreviewActions: View {
+    var showsHomeActions = false
+
+    var body: some View {
+        HStack(spacing: 24) {
+            PlayResumeButtonLabel(title: "Play", progress: nil, remainingText: nil, onLight: true)
+                .font(.body)
+                .fixedSize()
+                .foregroundStyle(.black)
+                .padding(.horizontal, 30)
+                .frame(minHeight: 70)
+                .background(.white, in: Capsule())
+            icon("bookmark")
+            if showsHomeActions {
+                icon("info.circle")
+                icon("chevron.forward")
+            }
+        }
+    }
+
+    private func icon(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 28, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 70, height: 70)
+            .background(.white.opacity(0.18), in: Circle())
+    }
+}
+#endif
 
 struct HeroLogoPreviewWordmark: View {
     let size: HeroLogoSize
