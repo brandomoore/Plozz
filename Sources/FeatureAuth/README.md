@@ -241,6 +241,9 @@ in the default suite.
   catalog. Blank/comment-only responses without a playlist header, invalid content
   such as a web page, and playlists containing only unusable entries still fail
   setup without creating an account. Imported files remain device-local snapshots.
+- **IPTV connection types.** Setup switches between Playlist and Xtream. On
+  iPhone and iPad, Playlist accepts a URL or a local file. Choosing a file
+  replaces the URL field with its filename; switching back restores the URL draft.
 - **IPTV setup discovers guides automatically.** The basic form exposes one
   optional EPG URL; leaving it empty uses the provider's guide. Custom guide URLs
   keep priority and are never overwritten by automatic discovery. There is no

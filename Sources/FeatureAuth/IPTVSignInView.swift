@@ -70,6 +70,9 @@ public struct IPTVSignInView: View {
         .environment(\.colorScheme, palette.isLight ? .light : .dark)
         .background { SettingsPageBackground() }
         .settingsSignInFields()
+        #if os(iOS)
+        .tint(palette.primaryText)
+        #endif
         #if canImport(UIKit)
         .keepsDisplayAwake(while: model.isConnecting)
         #endif
@@ -90,27 +93,32 @@ private struct IPTVConnectionFields: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
+            Picker("Connection type", selection: Binding(
+                get: { model.mode == .xtream ? IPTVCredential.Mode.xtream : .playlist },
+                set: { model.mode = $0 == .playlist && model.playlistFileURL != nil ? .file : $0 }
+            )) {
+                Text("Playlist").tag(IPTVCredential.Mode.playlist)
+                Text("Xtream").tag(IPTVCredential.Mode.xtream)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("iptv-connection-type")
+
             SettingsSectionGroup {
-                Picker("Connection type", selection: $model.mode) {
-                    Text("Playlist URL").tag(IPTVCredential.Mode.playlist)
-                    Text("Xtream account").tag(IPTVCredential.Mode.xtream)
-                    #if os(iOS)
-                    Text("Playlist file").tag(IPTVCredential.Mode.file)
-                    #endif
-                }
-                .accessibilityIdentifier("iptv-connection-type")
-                if model.mode == .file {
-                    #if os(iOS)
-                    IPTVPlaylistFileFields(model: model)
-                    #else
-                    Text("Import this playlist file on an iPhone or iPad.")
-                    #endif
-                } else {
+                if model.mode != .file {
                     IPTVAddressField(
                         title: model.mode == .playlist ? "Playlist URL" : "Server address",
                         value: $model.address
                     )
                 }
+                #if os(iOS)
+                if model.mode != .xtream {
+                    IPTVPlaylistFileFields(model: model)
+                }
+                #else
+                if model.mode == .file {
+                    Text("Import this playlist file on an iPhone or iPad.")
+                }
+                #endif
                 TextField("Name (optional)", text: $model.name)
                 if model.mode == .xtream {
                     IPTVLoginFields(username: $model.username, password: $model.password)
@@ -195,20 +203,34 @@ private struct IPTVPlaylistFileFields: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Button("Choose playlist file", systemImage: "doc") { showsFilePicker = true }
-            if let file = model.playlistFileURL {
-                Text(verbatim: file.lastPathComponent).font(.caption)
+            Button { showsFilePicker = true } label: {
+                if let file = model.playlistFileURL {
+                    Label { Text(verbatim: file.lastPathComponent) } icon: { Image(systemName: "doc") }
+                } else {
+                    Label("Choose file…", systemImage: "folder")
+                }
             }
-            Text("Imported files stay on this device. Import a replacement to update the catalogue.")
-                .font(.footnote).foregroundStyle(.secondary)
+            .accessibilityIdentifier("iptv-choose-file")
+            if model.mode == .file {
+                Button("Use URL instead") {
+                    model.playlistFileURL = nil
+                    model.mode = .playlist
+                }
+                Text("Imported files stay on this device. Import a replacement to update the catalogue.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
         }
         .fileImporter(
             isPresented: $showsFilePicker,
             allowedContentTypes: [.data], allowsMultipleSelection: false
         ) { result in
             switch result {
-            case .success(let urls): model.playlistFileURL = urls.first
-            case .failure: fileSelectionFailed = true
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                model.playlistFileURL = url
+                model.mode = .file
+            case .failure(let error):
+                fileSelectionFailed = (error as? CocoaError)?.code != .userCancelled
             }
         }
         .alert("The playlist file couldn't be opened", isPresented: $fileSelectionFailed) {
