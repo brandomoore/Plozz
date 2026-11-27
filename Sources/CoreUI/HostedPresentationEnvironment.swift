@@ -14,6 +14,7 @@ public extension EnvironmentValues {
         scenePhase = source.scenePhase
         themePalette = source.themePalette
         diagnosticSubmissionForm = source.diagnosticSubmissionForm
+        episodeRailDiagnostics = source.episodeRailDiagnostics
         gradientBackgroundsEnabled = source.gradientBackgroundsEnabled
         plozzShowsContentRatings = source.plozzShowsContentRatings
         artworkGradientTintSaturation = source.artworkGradientTintSaturation

@@ -8,6 +8,23 @@ import XCTest
 
 @MainActor
 final class SettingsCommunityLinksHostedTests: XCTestCase {
+    func testHelpReportQRDecodesEpisodeEvidenceWithoutSubmitting() async throws {
+        let store = EpisodeRailDiagnosticStore()
+        let item = MediaItem(id: "private", title: "private", kind: .episode, seasonNumber: 1, episodeNumber: 6)
+        let selection = EpisodeRailDiagnostic(list: .init(origin: .seasonRequest, returnedEpisodes: 10),
+                                              libraryCards: 10, upcomingCards: 0, selected: item)
+        store.record(selection)
+        let repo = AppLinks.repository.absoluteString
+        let report = DiagnosticsReport(appVersion: "1", appBuild: "2", providers: "none", repoURL: repo,
+                                       marketingVersion: AppVersionIdentity.current.marketingVersion, episodeRail: selection)
+        _ = try await renderCodes(
+            HelpDiagnosticsDetailView(appVersion: "1", appBuild: "2", repoURL: repo, accounts: [],
+                                      diagnostics: .init(), crashReporting: .init(), crashReportingConfigured: false)
+                .environment(\.episodeRailDiagnostics, store),
+            scheme: .dark, name: "episode-support-report", expectedURLs: [report.newIssueURLString]
+        )
+    }
+
     func testPrivacyPolicyCodeOpensThePublicPolicyInBothThemes() async throws {
         for scheme in [ColorScheme.light, .dark] {
             _ = try await renderCodes(

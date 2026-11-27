@@ -9,6 +9,7 @@ import SwiftUI
 
 public extension EnvironmentValues {
     @Entry var diagnosticSubmissionForm: (any DiagnosticSubmissionFormProviding)?
+    @Entry var episodeRailDiagnostics: EpisodeRailDiagnosticStore?
 }
 
 public struct PlaybackDiagnosticDetailsView: View {

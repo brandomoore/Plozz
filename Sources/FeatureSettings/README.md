@@ -1576,6 +1576,14 @@ watch history and planning-list behavior are documented in
   without a description. The form prompts for a short description when the draft
   is invalid; a few words alongside copied diagnostics are enough. The same check
   runs before collecting or submitting diagnostics. Automatic crash reports are unchanged.
+  On Apple TV, selecting a Jellyfin episode card records the latest selection in
+  memory for the current profile and accounts. The manual attachment and **Report a
+  Problem** QR draft include the episode number, source of the list, server episode
+  count before filtering (unknown for a snapshot), library and upcoming card counts,
+  and whether the selected card was an upcoming placeholder. No media titles,
+  IDs, paths or server addresses are included. The QR text can be copied on a phone
+  without posting the issue. Reproduce, then report before selecting another card
+  or restarting the app.
   Each submission appears in Sentry's User Feedback inbox with the required message,
   linked to the diagnostic event in Issues and its `plozz-diagnostics.json`
   attachment. The playback section includes the last three independently

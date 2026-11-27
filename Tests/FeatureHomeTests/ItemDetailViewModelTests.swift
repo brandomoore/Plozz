@@ -4985,10 +4985,15 @@ final class ItemDetailViewModelTests: XCTestCase {
             vm.episodes(for: seasonItem.id)?.map(\.id), [staleEpisode.id],
             "A revisited series must paint its cached rail instead of a placeholder"
         )
+        let scopedShow = show.taggingSource("share")
+        XCTAssertEqual(vm.episodeRailEvidence(for: scopedShow, seasonID: seasonItem.id), .snapshot)
+        XCTAssertNil(vm.episodeRailEvidence(for: show.taggingSource("other"), seasonID: seasonItem.id))
 
         await vm.loadEpisodes(for: seasonItem.id)
 
         XCTAssertEqual(vm.episodes(for: seasonItem.id)?.map(\.id), [liveEpisode.id])
+        XCTAssertEqual(vm.episodeRailEvidence(for: scopedShow, seasonID: seasonItem.id), .unknown,
+                       "A provider that reports no raw response count must not inherit the snapshot's provenance")
         XCTAssertEqual(vm.episodes(for: seasonItem.id)?.first?.isPlayed, true)
         XCTAssertEqual(provider.childrenCallCount[seasonItem.id, default: 0], 0)
     }

@@ -153,6 +153,20 @@ public struct RootView: View {
     /// lifetime so every detail destination under the same identity shares one
     /// instance and a switch of identity reads from a different on-disk scope.
     @State private var detailCacheFactory = DetailSnapshotCacheFactory()
+    @State private var episodeDiagnosticBox = LazyViewState<EpisodeRailDiagnosticStore>()
+
+    private var episodeDiagnosticStore: EpisodeRailDiagnosticStore? {
+        guard appState.isActiveProfileAuthorized else {
+            episodeDiagnosticBox.discard { $0.invalidate() }
+            return nil
+        }
+        let key = HomeRuntimeScope.homeScopeKey(
+            profileID: appState.profilesModel.activeProfileID,
+            accounts: appState.accountsProviders.homeAccounts.map(\.account),
+            plexIdentityGeneration: appState.plexHomeUsers.plexIdentityGeneration
+        )
+        return episodeDiagnosticBox.value(forKey: key, onDiscard: { $0.invalidate() }) { EpisodeRailDiagnosticStore() }
+    }
 
     @MainActor
     public init(
@@ -589,13 +603,16 @@ public struct RootView: View {
             }
         }
         .seerRequestDestination(appState.seerService)
+        .environment(\.episodeRailDiagnostics, episodeDiagnosticStore)
         .environment(\.diagnosticSubmissionForm, IssueDiagnosticSubmissionForm(
             sharingEnabled: Binding(
                 get: { appState.crashReportingModel.isEnabled },
                 set: { appState.crashReportingModel.isEnabled = $0; reconcileCrashReporting() }
             ),
             isConfigured: crashReporting.isConfigured
-        ))
+        ) { [store = episodeDiagnosticStore] note, issue in
+            await CrashDiagnostics.send(note: note, issue: issue, episodeRail: store?.lastSelection)
+        })
         .signInSyncPermission(
             appState.providerCredentialSync.publicationPermission,
             canPresent: startupPresentationReady && rootPresentation.active == nil

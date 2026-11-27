@@ -1338,7 +1338,10 @@ final class JellyfinProviderMappingTests: XCTestCase {
                 stub.stub(pathSuffix: "/Users/u1/Items", requiring: [.init(name: "ParentId", value: "season1")], json: listing)
             }
             let provider = JellyfinProvider(session: makeSession(provider: kind), http: stub)
-            let episodes = try await provider.episodes(inSeason: "season1", ofSeries: "show")
+            let listing = try await EpisodeChildListing.fetch(from: provider, containerID: "season1", seriesID: "show")
+            let episodes = listing.items
+            XCTAssertEqual(listing.evidence.returnedEpisodes, 10)
+            XCTAssertEqual(listing.evidence.origin, kind == .jellyfin ? .seasonRequest : .childrenRequest)
 
             XCTAssertEqual(episodes.map(\.id), ["one", "two", "three", "four", "five"])
             XCTAssertEqual(episodes.first?.overview, "The first installment")
@@ -1356,8 +1359,9 @@ final class JellyfinProviderMappingTests: XCTestCase {
         ]}
         """)
         let provider = JellyfinProvider(session: makeSession(), http: stub)
-        let children = try await provider.children(of: "show")
-        XCTAssertEqual(children.map(\.id), ["special", "season"])
+        let listing = try await EpisodeChildListing.fetch(from: provider, containerID: "show")
+        XCTAssertEqual(listing.items.map(\.id), ["special", "season"])
+        XCTAssertEqual(listing.evidence, .init(origin: .childrenRequest, returnedEpisodes: 2))
     }
 
     func testItemCommunityRatingDoesNotInventTMDBProvenance() async throws {

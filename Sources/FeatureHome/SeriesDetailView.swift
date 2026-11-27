@@ -1122,7 +1122,8 @@ struct SeriesDetailView: View {
     private func episodeRail(onFocusEntered: @escaping () -> Void) -> some View {
         // Owned episodes first, then the season's not-yet-aired ones so a viewer can
         // see (and read about) the rest of the run without leaving the page.
-        let episodes = currentEpisodes + upcomingPlaceholders
+        let library = currentEpisodes
+        let episodes = library + upcomingPlaceholders
         // The episode focus should land on when entering the rail / where it
         // pre-scrolls. We use the STABLE `railTargetID` (updated only on open,
         // season change, or a cross-server switch) rather than the live
@@ -1138,10 +1139,11 @@ struct SeriesDetailView: View {
         // 50 when the id arrived — the apparent post-arrival "renegotiation".
         // Resolve the same fallback synchronously from the final episode pool so
         // the rail's very first frame already uses its permanent target.
-        let target = episodeEntryTarget(in: currentEpisodes)
+        let target = episodeEntryTarget(in: library)
         return SeriesEpisodeRailContent(
             title: railTitle,
             episodes: episodes,
+            diagnosticList: viewModel.episodeRailEvidence(for: series, seasonID: selectedSeasonID),
             spoilerSettings: spoilerSettings,
             targetID: target,
             focusResetToken: episodeRailResetToken,
@@ -1759,6 +1761,7 @@ struct SeriesDetailView: View {
 private struct SeriesEpisodeRailContent: View {
     let title: Text?
     let episodes: [MediaItem]
+    let diagnosticList: EpisodeRailDiagnostic.List?
     let spoilerSettings: SpoilerSettings
     let targetID: String?
     let focusResetToken: Int
@@ -1769,8 +1772,16 @@ private struct SeriesEpisodeRailContent: View {
     let onFocusEntered: () -> Void
     let onSelect: (MediaItem) -> Void
 
+    private struct Evidence: Equatable {
+        let list: EpisodeRailDiagnostic.List
+        let library: Int
+        let upcoming: Int
+    }
+    @Environment(\.episodeRailDiagnostics) private var diagnostics
+    @State private var renderedEvidence: Evidence?
+
     var body: some View {
-        MediaRowView(
+        let row = MediaRowView(
             title: title,
             items: episodes,
             presentation: .episodeColumn,
@@ -1783,8 +1794,20 @@ private struct SeriesEpisodeRailContent: View {
             leadingInset: PlozzTheme.Metrics.heroLeadingPadding,
             onFocusEntered: onFocusEntered,
             episodeEntry: episodeEntry,
-            onSelect: onSelect
+            onSelect: { item in
+                diagnostics?.record(renderedEvidence.map {
+                    EpisodeRailDiagnostic(list: $0.list, libraryCards: $0.library, upcomingCards: $0.upcoming, selected: item)
+                })
+                onSelect(item)
+            }
         )
+        let evidence = diagnosticList.map { list in
+            let upcoming = row.items.lazy.filter(\.isUpcomingUnaired).count
+            return Evidence(list: list, library: row.items.count - upcoming, upcoming: upcoming)
+        }
+        // Equatable episode cards retain their action when only the surrounding rail changes.
+        return row
+        .onChange(of: evidence, initial: true) { _, value in renderedEvidence = value }
         .environment(\.plozzCardCaptionView, .episodes)
         .environment(\.plozzArtworkArea, .episodes)
         .mediaItemActionContext(

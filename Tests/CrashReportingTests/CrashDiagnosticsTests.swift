@@ -474,6 +474,10 @@ final class CrashDiagnosticsTests: XCTestCase {
         siloSearch.finish(error: .unknown(privateValues.joined(separator: " ")))
         XCTAssertTrue(CrashDiagnostics.send(
             note: "My report message", isEnabled: true,
+            episodeRail: EpisodeRailDiagnostic(
+                list: .init(origin: .seasonRequest, returnedEpisodes: 10), libraryCards: 10, upcomingCards: 0,
+                selected: MediaItem(id: "private-item", title: privateValues[5], kind: .episode, episodeNumber: 6)
+            ),
             activity: { PlozzLog.activityExport(scope: scope) },
             sourceDiagnostics: { sources.export(scope: scope) },
             preparationDiagnostics: { PlaybackPreparationDiagnostics.export(scope: scope) },
@@ -488,6 +492,11 @@ final class CrashDiagnosticsTests: XCTestCase {
                     XCTAssertFalse(text.contains(value), value)
                 }
                 XCTAssertFalse(text.contains("My report message"))
+                let selection = body["episodeRail"] as? [String: Any]
+                XCTAssertEqual(selection?["displayedCards"] as? Int, 10)
+                XCTAssertEqual(selection?["episodeNumber"] as? Int, 6)
+                XCTAssertEqual(selection?["selectedUpcoming"] as? Bool, false)
+                XCTAssertEqual((selection?["list"] as? [String: Any])?["returnedEpisodes"] as? Int, 10)
                 let records = (body["playback"] as? [String: Any])?["entries"] as? [[String: Any]]
                 XCTAssertEqual(records?.count, 2)
                 XCTAssertEqual(records?.first?["session"] as? String, records?.last?["session"] as? String)

@@ -83,7 +83,8 @@ public struct IssueDiagnosticSubmissionForm: DiagnosticSubmissionFormProviding {
 struct SendDiagnosticsCard: View {
     @Binding var sharingEnabled: Bool
     let isConfigured: Bool
-    var submit: @MainActor (String) async -> Bool = { await CrashDiagnostics.send(note: $0) }
+    var submit: (@MainActor (String) async -> Bool)?
+    @Environment(\.episodeRailDiagnostics) private var episodeDiagnostics
     private enum SendState { case idle, sent, failed }
     @State private var sendState: SendState = .idle
     @State private var isSending = false
@@ -122,9 +123,12 @@ struct SendDiagnosticsCard: View {
                         #endif
                         isSending = true
                         sendState = .idle
+                        let selection = episodeDiagnostics?.lastSelection
                         Task {
                             defer { isSending = false }
-                            let ok = await submit(note)
+                            let ok: Bool
+                            if let submit { ok = await submit(note) }
+                            else { ok = await CrashDiagnostics.send(note: note, episodeRail: selection) }
                             sendState = ok ? .sent : .failed
                             if ok { message = "" }
                         }

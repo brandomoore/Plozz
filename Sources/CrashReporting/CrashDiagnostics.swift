@@ -33,7 +33,9 @@ public enum CrashDiagnostics {
     /// `false` when the message is blank, reporting is inactive, or either event was rejected.
     @MainActor
     @discardableResult
-    public static func send(note: String? = nil, issue: PlaybackDiagnosticReport? = nil) async -> Bool {
+    public static func send(
+        note: String? = nil, issue: PlaybackDiagnosticReport? = nil, episodeRail: EpisodeRailDiagnostic? = nil
+    ) async -> Bool {
         guard let note = normalizedNote(note) else {
             PlozzLog.app.error("A message is required to submit diagnostics; nothing submitted.")
             return false
@@ -46,6 +48,7 @@ public enum CrashDiagnostics {
             note: note,
             isEnabled: SentrySDK.isEnabled,
             issue: issue,
+            episodeRail: episodeRail,
             activity: { PlozzLog.activityExport(scope: scope) },
             sourceDiagnostics: { LiveTVSourceDiagnostics.captureExport(scope: scope) },
             preparationDiagnostics: { PlaybackPreparationDiagnostics.export(scope: scope) },
@@ -71,6 +74,7 @@ public enum CrashDiagnostics {
         note: String?,
         isEnabled: Bool,
         issue: PlaybackDiagnosticReport? = nil,
+        episodeRail: EpisodeRailDiagnostic? = nil,
         activity: @MainActor () -> PlozzLog.ActivityExport = { PlozzLog.activityExport() },
         sourceDiagnostics: @MainActor () -> LiveTVSourceDiagnostics.Export = {
             LiveTVSourceDiagnostics.captureExport(scope: DiagnosticExportScope())
@@ -99,7 +103,7 @@ public enum CrashDiagnostics {
         guard isEnabled else { return false }
 
         let report = TechnicalReport(
-            issueDetails: issue?.supportText,
+            issueDetails: issue?.supportText, episodeRail: episodeRail,
             activity: activity(), sources: sourceDiagnostics(), preparation: preparationDiagnostics(),
             library: libraryDiagnostics(), connections: connectionDiagnostics(),
             playback: playbackDiagnostics,
@@ -149,6 +153,7 @@ public enum CrashDiagnostics {
     private struct TechnicalReport: Encodable {
         let format = "plozz-user-diagnostics-2"
         let issueDetails: String?
+        let episodeRail: EpisodeRailDiagnostic?
         let activity: PlozzLog.ActivityExport
         let sources: LiveTVSourceDiagnostics.Export
         let preparation: PlaybackPreparationDiagnostics.Export

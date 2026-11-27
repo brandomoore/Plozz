@@ -192,7 +192,7 @@ public struct MediaRowView: View {
     /// Cross-server merging unions by external identity (TMDb and the like), so
     /// until enrichment has supplied those ids it has nothing to match on and
     /// both copies survive into the row.
-    private let items: [MediaItem]
+    package let items: [MediaItem]
     private let liveChannels: [HomeLiveTVChannel]
     private let onLiveChannelFocused: ((HomeLiveTVChannel) -> Void)?
     private let presentation: Presentation
