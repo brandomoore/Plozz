@@ -160772,6 +160772,238 @@
         }
       }
     },
+    "Add a short description of what happened." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "أضف وصفًا موجزًا لما حدث."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Добавете кратко описание на случилото се."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "কী ঘটেছে তা সংক্ষেপে লিখুন।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Afegiu una breu descripció del que ha passat."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stručně popište, co se stalo."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Beskriv kort, hvad der skete."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Beschreibe kurz, was passiert ist."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Προσθέστε μια σύντομη περιγραφή του τι συνέβη."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Añade una breve descripción de lo ocurrido."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "توضیح کوتاهی دربارهٔ آنچه رخ داد بنویسید."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lisää lyhyt kuvaus siitä, mitä tapahtui."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ajoutez une brève description de ce qui s’est passé."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הוסיפו תיאור קצר של מה שקרה."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "क्या हुआ, इसका संक्षिप्त विवरण लिखें।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dodajte kratak opis onoga što se dogodilo."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Adja meg röviden, mi történt."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tambahkan deskripsi singkat tentang apa yang terjadi."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aggiungi una breve descrizione di ciò che è successo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "何が起きたかを簡潔に説明してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "어떤 일이 있었는지 간단히 설명해 주세요."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Terangkan secara ringkas apa yang berlaku."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Beskriv kort hva som skjedde."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Beschrijf kort wat er is gebeurd."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Krótko opisz, co się stało."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Adicione uma breve descrição do que aconteceu."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Adaugă o scurtă descriere a celor întâmplate."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Добавьте краткое описание произошедшего."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pridajte krátky opis toho, čo sa stalo."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dodajte kratek opis tega, kar se je zgodilo."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dodajte kratak opis onoga što se dogodilo."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lägg till en kort beskrivning av vad som hände."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "กรุณาอธิบายสั้นๆ ว่าเกิดอะไรขึ้น"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ne olduğunu kısaca açıklayın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Коротко опишіть, що сталося."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "مختصراً بتائیں کہ کیا ہوا۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mô tả ngắn gọn những gì đã xảy ra."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "请简要描述发生的情况。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "請簡短描述發生的情況。"
+          }
+        }
+      }
+    },
     "Add a source" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -407129,6 +407361,7 @@
       }
     },
     "Don't include passwords or personal information." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -958730,7 +958963,240 @@
         }
       }
     },
+    "Send recent activity, search, playback and connection diagnostics, and your message to the developer through Sentry." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "أرسل نشاطك الأخير، وبيانات تشخيص البحث والتشغيل والاتصال، ورسالتك إلى المطوّر عبر Sentry."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Изпратете скорошната активност, диагностичните данни за търсенето, възпроизвеждането и връзката и съобщението си на разработчика чрез Sentry."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "সাম্প্রতিক কার্যকলাপের তথ্য, অনুসন্ধান, প্লেব্যাক ও সংযোগ সংক্রান্ত ডায়াগনস্টিক তথ্য এবং আপনার বার্তা Sentry-এর মাধ্যমে ডেভেলপারের কাছে পাঠান।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Envieu l’activitat recent, les dades de diagnòstic de la cerca, la reproducció i la connexió, i el vostre missatge al desenvolupador a través de Sentry."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Odešlete nedávnou aktivitu, diagnostické údaje o vyhledávání, přehrávání a připojení a svou zprávu vývojáři prostřednictvím Sentry."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Send den seneste aktivitet, diagnostiske oplysninger om søgning, afspilning og forbindelse samt din besked til udvikleren via Sentry."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sende Daten zu den letzten Aktivitäten, Diagnoseinformationen zur Suche, Wiedergabe und Verbindung sowie deine Nachricht über Sentry an den Entwickler."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Στείλτε στον προγραμματιστή μέσω του Sentry στοιχεία για την πρόσφατη δραστηριότητα, διαγνωστικά δεδομένα για την αναζήτηση, την αναπαραγωγή και τη σύνδεση, καθώς και το μήνυμά σας."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Envía al desarrollador, a través de Sentry, información sobre la actividad reciente, datos de diagnóstico de las búsquedas, la reproducción y las conexiones, junto con tu mensaje."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اطلاعات مربوط به فعالیت‌های اخیر و داده‌های عیب‌یابی جستجو، پخش و اتصال را همراه با پیامتان از طریق Sentry برای توسعه‌دهنده ارسال کنید."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lähetä tiedot viimeaikaisesta toiminnasta, hakujen, toiston ja yhteyksien diagnostiikkatiedot sekä viestisi kehittäjälle Sentry-palvelun kautta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Envoyez au développeur, via Sentry, des informations sur l’activité récente, les données de diagnostic de la recherche, de la lecture et des connexions, ainsi que votre message."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "שלחו למפתח דרך Sentry את הפעילות האחרונה, נתוני האבחון של החיפוש, הניגון והחיבור ואת ההודעה שלכם."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sentry के ज़रिए डेवलपर को हाल की गतिविधि की जानकारी, खोज, प्लेबैक और कनेक्शन से जुड़ा डायग्नोस्टिक डेटा और अपना संदेश भेजें।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pošaljite nedavne aktivnosti, dijagnostičke podatke o pretraživanju, reprodukciji i vezi te svoju poruku razvojnom programeru putem usluge Sentry."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Küldje el a legutóbbi tevékenységeket, a keresés, a lejátszás és a kapcsolat diagnosztikai adatait, valamint az üzenetét a fejlesztőnek a Sentry szolgáltatáson keresztül."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kirim aktivitas terbaru, data diagnostik pencarian, pemutaran, dan koneksi, serta pesan Anda kepada pengembang melalui Sentry."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Invia allo sviluppatore tramite Sentry le attività recenti, i dati diagnostici relativi a ricerca, riproduzione e connessione e il tuo messaggio."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "最近の操作履歴、検索・再生・接続の診断情報、およびメッセージをSentry経由で開発者に送信します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "최근 활동, 검색·재생·연결 진단 정보와 작성한 메시지를 Sentry를 통해 개발자에게 보냅니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hantar aktiviti terkini, maklumat diagnostik carian, main balik dan sambungan, serta mesej anda kepada pembangun melalui Sentry."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Send nylig aktivitet, diagnostikk for søk, avspilling og tilkobling samt meldingen din til utvikleren via Sentry."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Je recente activiteit, diagnostische gegevens over zoeken, afspelen en verbindingen en je bericht worden via Sentry naar de ontwikkelaar gestuurd."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wyślij ostatnią aktywność, dane diagnostyczne wyszukiwania, odtwarzania i połączenia oraz swoją wiadomość do dewelopera za pośrednictwem Sentry."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Envie ao desenvolvedor, pelo Sentry, informações sobre sua atividade recente, diagnósticos de pesquisa, reprodução e conexão e sua mensagem."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Trimite dezvoltatorului, prin Sentry, informații despre activitatea recentă, date de diagnostic pentru căutare, redare și conexiune, precum și mesajul tău."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Отправьте разработчику через Sentry сведения о недавних действиях, диагностические данные о поиске, воспроизведении и подключении, а также своё сообщение."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Odošlite vývojárovi cez Sentry údaje o nedávnej aktivite, diagnostické údaje o vyhľadávaní, prehrávaní a pripojení spolu so svojou správou."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Razvijalcu prek storitve Sentry pošljite podatke o nedavni dejavnosti, diagnostične podatke o iskanju, predvajanju in povezavi ter svoje sporočilo."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pošaljite programeru putem servisa Sentry podatke o nedavnoj aktivnosti, dijagnostičke podatke o pretrazi, reprodukciji i vezi, kao i svoju poruku."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Skicka information om den senaste aktiviteten, diagnostik för sökning, uppspelning och anslutning samt ditt meddelande till utvecklaren via Sentry."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ส่งข้อมูลกิจกรรมล่าสุด ข้อมูลการวินิจฉัยการค้นหา การเล่น และการเชื่อมต่อ รวมถึงข้อความของคุณให้ผู้พัฒนาผ่าน Sentry"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Son etkinlik bilgilerini, arama, oynatma ve bağlantı tanılama verilerini ve mesajınızı Sentry aracılığıyla geliştiriciye gönderin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Надішліть розробнику через Sentry дані про нещодавню активність, діагностичні дані щодо пошуку, відтворення й підключення та своє повідомлення."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "حالیہ سرگرمی کی معلومات، تلاش، پلے بیک اور کنکشن کی تشخیصی معلومات، اور اپنا پیغام Sentry کے ذریعے ڈویلپر کو بھیجیں۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gửi thông tin về hoạt động gần đây, dữ liệu chẩn đoán về tìm kiếm, phát nội dung và kết nối, cùng lời nhắn của bạn đến nhà phát triển qua Sentry."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "通过 Sentry 向开发者发送近期活动记录及搜索、播放和连接的诊断信息，并附上你的留言。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "透過 Sentry 向開發者傳送近期活動紀錄及搜尋、播放與連線的診斷資訊，並附上你的留言。"
+          }
+        }
+      }
+    },
     "Send recent activity, search, playback and connection diagnostics, and your message to the developer through Sentry. Don't include passwords or personal information." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -978981,6 +979447,7 @@
       }
     },
     "Sharing is optional and does not change any app features. Sending recent activity logs is a separate action in Settings." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
