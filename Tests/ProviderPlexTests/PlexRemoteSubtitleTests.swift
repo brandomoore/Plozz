@@ -72,6 +72,23 @@ final class PlexRemoteSubtitleTests: XCTestCase {
         XCTAssertEqual(stub.sentPaths.filter { $0 == suffix }.count, 1)
     }
 
+    func testEpisodeSearchAllowsElidedOrSeparatedApostrophesButRejectsOtherTitlesAndEpisodes() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/library/metadata/rk1", json: #"{"MediaContainer":{"Metadata":[{"type":"episode","grandparentTitle":"Schitt’s Creek","parentIndex":1,"index":1}]}}"#)
+        stub.stub(pathSuffix: "/library/metadata/rk1/subtitles", json: """
+        {"MediaContainer":{"Stream":[
+          {"title":"Schitts.Creek.2015.S01E01","key":"elided"},
+          {"title":"Schitt.s.Creek.S01E01","key":"separated"},
+          {"title":"Schitt's Creek S01E01","key":"straight"},
+          {"title":"Schitts.Creek.S01E02","key":"wrong-episode"},
+          {"title":"Schitts.Creekside.S01E01","key":"wrong-series"}
+        ]}}
+        """)
+        let provider = PlexProvider(session: makeSession(), http: stub)
+        let results = try await provider.remoteSubtitleSearch(itemID: "rk1", language: "en")
+        XCTAssertEqual(results.map(\.id), ["elided", "separated", "straight"])
+    }
+
     func testRemoteSubtitleSearchMapsResultsAndPassesLanguage() async throws {
         let stub = searchStub()
         stub.stub(pathSuffix: "/library/metadata/rk1/subtitles", json: """

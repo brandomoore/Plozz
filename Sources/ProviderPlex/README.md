@@ -29,7 +29,8 @@ It participates alongside the other
 - On-demand episode subtitle search keeps Plex's item-specific ranking, excluding
   release names that identify another series or episode. When that leaves no
   results, it retries with the series title and accepts only releases identifying
-  the requested series, season, and episode. Manual and automatic search share
+  the requested series, season, and episode. A release can omit a series title's
+  apostrophe without counting as a different show. Manual and automatic search share
   this path; the download key still belongs to the original episode.
 
 - HTTP sharing defaults off. Library sections and the

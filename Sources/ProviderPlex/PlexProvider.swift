@@ -1994,7 +1994,7 @@ public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginPr
     /// preference is passed through natively as Plex's `hearingImpaired`/`forced`
     /// query levels (0–3).
     public func remoteSubtitleSearch(itemID: String, language: String, preference: SubtitleSearchPreference) async throws -> [RemoteSubtitle] {
-        func search(title: String? = nil) async throws -> [PlexSubtitleSearchStream] {
+        func search(title: String? = nil) async throws -> [PlexSubtitleSearchStream] {  // l10n:content — Plex series title used as a subtitle search query
             try await client.remoteSubtitleSearch(
                 ratingKey: itemID, language: language,
                 hearingImpaired: preference.hearingImpaired.plexParameterValue,

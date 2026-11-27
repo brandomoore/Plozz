@@ -30,20 +30,27 @@ struct PlexSubtitleEpisode {
         guard let s = Range(token.range(at: group), in: title),
               let e = Range(token.range(at: group + 1), in: title),
               Int(title[s]) == season, Int(title[e]) == episode else { return .conflict }
-        var releaseWords = Self.words(String(title[..<marker.lowerBound]))
+        let release = String(title[..<marker.lowerBound])
+        let releaseWords = Self.words(release)
         guard !releaseWords.isEmpty, !seriesWords.isEmpty else { return .unknown }
-        if releaseWords == seriesWords { return .confirmed }
-        // Release names often add the premiere year to distinguish reboots.
-        if let last = releaseWords.last, last.count == 4, Int(last) != nil {
-            releaseWords.removeLast()
-            if releaseWords == seriesWords { return .confirmed }
-        }
-        return .conflict
+        if Self.matchesSeries(releaseWords, seriesWords) { return .confirmed }
+        // Releases may either split at an apostrophe or omit it entirely.
+        return Self.matchesSeries(Self.words(release, elidingApostrophes: true),
+                                  Self.words(series, elidingApostrophes: true)) ? .confirmed : .conflict
     }
 
-    private static func words(_ title: String) -> [String] {
-        title.folding(options: [.diacriticInsensitive, .caseInsensitive, .widthInsensitive],
-                      locale: Locale(identifier: "en_US_POSIX"))
-            .split { !$0.isLetter && !$0.isNumber }.map(String.init)
+    private static func matchesSeries(_ release: [String], _ series: [String]) -> Bool {
+        guard !series.isEmpty else { return false }
+        if release == series { return true }
+        // Release names often add the premiere year to distinguish reboots.
+        guard let year = release.last, year.count == 4, Int(year) != nil else { return false }
+        return release.dropLast().elementsEqual(series)
+    }
+
+    private static func words(_ title: String, elidingApostrophes: Bool = false) -> [String] {
+        var folded = title.folding(options: [.diacriticInsensitive, .caseInsensitive, .widthInsensitive],
+                                   locale: Locale(identifier: "en_US_POSIX"))
+        if elidingApostrophes { folded.removeAll { $0 == "'" || $0 == "\u{2019}" || $0 == "\u{02BC}" } }
+        return folded.split { !$0.isLetter && !$0.isNumber }.map(String.init)
     }
 }
