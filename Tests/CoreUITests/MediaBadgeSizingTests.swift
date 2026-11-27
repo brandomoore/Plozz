@@ -73,6 +73,21 @@ final class MediaBadgeSizingTests: XCTestCase {
         XCTAssertFalse(destination.plozzShowsContentRatings)
     }
 
+    #if os(tvOS)
+    func testCertificateMeasuresItsWholeBorderedBoxWithoutScalingTheFontTwice() {
+        let badge = MediaBadgeChip(badge: MediaBadge("TV-14", style: .rating))
+        let baseline = size(of: badge.environment(\.dynamicTypeSize, .large))
+        let native = MetadataBadgeSpacing.textScale(for: .accessibility5)
+        let largest = size(of: badge.environment(\.dynamicTypeSize, .accessibility5))
+        let custom = size(of: badge.environment(\.metadataTextScale, native * 1.5)
+            .environment(\.dynamicTypeSize, .accessibility5))
+        for (box, scale) in [(largest, native), (custom, native * 1.5)] {
+            XCTAssertEqual(box.width, baseline.width * scale, accuracy: 2)
+            XCTAssertEqual(box.height, baseline.height * scale, accuracy: 1)
+        }
+    }
+    #endif
+
     func testMetadataBadgesUsePlatformCompactScale() {
         for badge in badges {
             let original = size(of: MediaBadgeChip(badge: badge)

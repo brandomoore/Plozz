@@ -175,8 +175,6 @@ final class HeroForegroundUIView: UIView {
         ratingLabel.lineBreakMode = .byTruncatingTail
         ratingLabel.isHidden = true
 
-        metadataLabel.numberOfLines = 1
-
         // Chrome matched to the flat idle pill rather than the detail hero's
         // material: this renderer exists because live blur re-samples the moving
         // backdrop every transition frame, and a badge that sampled would give back
@@ -214,6 +212,7 @@ final class HeroForegroundUIView: UIView {
 
     private func applyTextSizing() {
         let scale = textScale
+        metadataLabel.numberOfLines = scale > 1 ? 2 : 1
         overviewLabel.numberOfLines = textSize.descriptionLineLimit(base: 3)
         titleLabel.font = .systemFont(ofSize: PlozzTypography.heroFallbackTitle.scaled(by: scale).pointSize, weight: .bold)
         metadataLabel.font = .systemFont(ofSize: PlozzTypography.heroMetadata.scaled(by: scale).pointSize, weight: .medium)
@@ -670,16 +669,20 @@ final class HeroForegroundUIView: UIView {
 
         // Metadata line.
         if !metadataLabel.isHidden || !ratingLabel.isHidden {
-            let h: CGFloat = 36 * textScale
-            var x = leading
+            let rowWidth = min(availableWidth, maxWidth * max(1, textScale))
+            let ratingWidth = ratingLabel.isHidden ? 0 : min(ratingLabel.intrinsicContentSize.width, 240 * textScale, rowWidth)
+            let textStart = ratingLabel.isHidden ? 0 : ratingWidth + 16 * textScale
+            let textWidth = max(0, rowWidth - textStart)
+            let labelHeight = metadataLabel.isHidden ? 0 : metadataLabel.sizeThatFits(
+                CGSize(width: textWidth, height: .greatestFiniteMagnitude)
+            ).height
+            let h = max(36 * textScale, ceil(labelHeight))
             if !ratingLabel.isHidden {
-                var rSize = ratingLabel.intrinsicContentSize
-                rSize.width = min(rSize.width, min(240, maxWidth * 0.5))
-                ratingLabel.frame = CGRect(x: x, y: y - h + (h - rSize.height) / 2, width: rSize.width, height: rSize.height)
-                x += rSize.width + 16 * textScale
+                let ratingHeight = ratingLabel.intrinsicContentSize.height
+                ratingLabel.frame = CGRect(x: leading, y: y - (h + ratingHeight) / 2, width: ratingWidth, height: ratingHeight)
             }
             if !metadataLabel.isHidden {
-                metadataLabel.frame = CGRect(x: x, y: y - h, width: maxWidth - (x - leading), height: h)
+                metadataLabel.frame = CGRect(x: leading + textStart, y: y - h, width: textWidth, height: h)
             }
             y -= h + columnSpacing
         }

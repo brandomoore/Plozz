@@ -49,7 +49,7 @@ public struct EpisodeColumnCard: View, Equatable {
     @Environment(\.plozzCardCaptionSettings) private var captionSettings
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.detailHeaderSettings) private var detailSettings
-    @Environment(\.plozzAppTextScale) private var appTextScale
+    @Environment(\.plozzHeroBaseTextScale) private var appTextScale
 
     private let metrics = PlozzMetrics.standard
     private var descriptionsOnFocus: Bool {

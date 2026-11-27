@@ -361,7 +361,8 @@ wraps independently, preserving the avatar, native focus treatment, and trailing
 selection indicator without squeezing the name alongside badges.
 
 `PlozzTypography` owns semantic text metrics, including additional line spacing,
-and composes local adjustments with `plozzAppTextScale` once at a surface boundary.
+and composes local adjustments with `plozzHeroBaseTextScale` once at a surface boundary.
+On tvOS that baseline includes the native metadata text scale and `plozzAppTextScale`.
 SwiftUI text and the UIKit Home foreground resolve the same styles; badge children
 receive the resolved `metadataTextScale`, not another multiplier. Episode captions,
 loading placeholders, and the Detail preview use the same episode styles.
@@ -896,7 +897,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   of artwork. `metadataTextScale` scales badge fonts, icons, borders, and spacing
   together without changing `mediaBadgeScale`'s existing compact-format styling.
   Scope it to the metadata subtree, not buttons, cards, or whole pages.
-  The default is 1; mobile preserves Dynamic Type in addition to the chosen size.
+  The local default is 1; the TV hero uses native Text Size as its baseline.
+  Mobile retains its separate Dynamic Type behavior.
 - **Hero scrim coverage** — `heroScrimHeightScale` extends both the analytic gradient
   and cached texture upward from their bottom anchor, within the existing bounds
   and before the backdrop's dissolve mask. Default coverage remains unchanged.

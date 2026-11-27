@@ -294,7 +294,7 @@ public struct RatingSourceIcon: View {
             .monospacedDigit()
             .foregroundStyle(.white)
             .frame(width: size * 1.42, height: size * 1.42)
-            .background(metacriticColor, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(metacriticColor, in: RoundedRectangle(cornerRadius: size / 4, style: .continuous))
     }
 
     private var metacriticColor: Color {

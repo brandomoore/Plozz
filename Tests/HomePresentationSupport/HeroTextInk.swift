@@ -3,7 +3,9 @@ import Vision
 import XCTest
 
 enum HeroTextInk {
-    static func frames(in image: UIImage, terms: [String], darkTerms: Set<String> = []) throws -> [String: CGRect] {
+    static func frames(
+        in image: UIImage, terms: [String], darkTerms: Set<String> = [], brightTerms: Set<String> = []
+    ) throws -> [String: CGRect] {
         let full = try XCTUnwrap(image.cgImage)
         let crop = try XCTUnwrap(full.cropping(to: CGRect(
             x: 0, y: 0, width: min(CGFloat(full.width), 1000 * image.scale), height: CGFloat(full.height)
@@ -45,13 +47,16 @@ enum HeroTextInk {
             )
             // Exclude adjacent badge borders from Vision's loose substring bounds.
             let rect = recognized.insetBy(dx: recognized.width * 0.1, dy: -2 * image.scale)
+            // A translucent horizontal border can still cross the padded line bounds.
+            let minimumChannel: UInt8 = brightTerms.contains(term) ? 200 : 72
             var ink = CGRect.null
             for y in max(0, Int(rect.minY))..<min(crop.height, Int(ceil(rect.maxY))) {
                 for x in max(0, Int(rect.minX))..<min(crop.width, Int(ceil(rect.maxX))) {
                     let offset = (y * crop.width + x) * 4
                     let matches = darkTerms.contains(term)
                         ? pixels[offset] < 72 && pixels[offset + 1] < 72 && pixels[offset + 2] < 72
-                        : pixels[offset] > 72 && pixels[offset + 1] > 72 && pixels[offset + 2] > 72
+                        : pixels[offset] > minimumChannel && pixels[offset + 1] > minimumChannel
+                            && pixels[offset + 2] > minimumChannel
                     if matches {
                         ink = ink.union(CGRect(x: x, y: y, width: 1, height: 1))
                     }

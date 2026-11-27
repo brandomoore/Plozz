@@ -188,11 +188,8 @@ enum SeriesEpisodeBrowserLayout {
     /// the first chip is much wider than this, so the overflow never reaches the
     /// screen edge.
     static let seasonBarFocusOverflow: CGFloat = 80
-    /// Full height of an episode card: artwork + title + the focused card's
-    /// 3-line synopsis. `heroOverlap` is derived from this so the browser column
-    /// ends exactly at the bottom edge of the screen — the rail must be neither
-    /// taller (an overflowing frame is what the focus engine scrolls to reveal)
-    /// nor shorter (which clips the synopsis off the focused card).
+    /// Default stage height. When enlarged captions need more space the rail
+    /// grows down, away from the hero, without moving its focus anchor.
     static let episodeRailHeight: CGFloat = 520
 
     /// Distance from the bottom of the episode rail to Cast/Related. A single
@@ -282,9 +279,9 @@ struct SeriesEpisodeBrowser<SeasonContent: View, EpisodeContent: View>: View {
 
             ZStack(alignment: .top) {
                 episodeContent()
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(
-                        height: SeriesEpisodeBrowserLayout.episodeRailHeight,
-                        alignment: .top
+                        minHeight: SeriesEpisodeBrowserLayout.episodeRailHeight
                     )
 
                 VStack(spacing: 0) {
@@ -300,7 +297,6 @@ struct SeriesEpisodeBrowser<SeasonContent: View, EpisodeContent: View>: View {
             .frame(
                 maxWidth: .infinity,
                 minHeight: SeriesEpisodeBrowserLayout.episodeRailHeight,
-                maxHeight: SeriesEpisodeBrowserLayout.episodeRailHeight,
                 alignment: .topLeading
             )
             .padding(.top, showsSeasons ? 0 : SeriesEpisodeBrowserLayout.seasonBarHeight)

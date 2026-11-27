@@ -88,7 +88,7 @@ struct DetailHeroView: View, Equatable {
     @Environment(HeroBackgroundSettingsModel.self) private var heroBackground
     @Environment(\.detailHeaderSettings) private var detailHeaderSettings
     @Environment(\.discPlaybackDefault) private var discPlaybackDefault
-    @Environment(\.plozzAppTextScale) private var appTextScale
+    @Environment(\.plozzHeroBaseTextScale) private var appTextScale
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.seasonRequestContextID) private var seasonRequestContextID

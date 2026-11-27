@@ -89,7 +89,7 @@ struct EpisodeRowEntryPlaceholder: View {
     @Environment(\.plozzCardFocusStyle) private var focusStyle
     @Environment(\.plozzCardCaptionsHidden) private var captionsHidden
     @Environment(\.detailHeaderSettings) private var detailSettings
-    @Environment(\.plozzAppTextScale) private var appTextScale
+    @Environment(\.plozzHeroBaseTextScale) private var appTextScale
     private let metrics = PlozzMetrics.standard
     private var textScale: CGFloat {
         #if os(tvOS)

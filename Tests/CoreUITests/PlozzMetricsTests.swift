@@ -189,6 +189,8 @@ final class PlozzMetricsTests: XCTestCase {
                 XCTAssertGreaterThan(larger.sectionHeaderFontSize, smaller.sectionHeaderFontSize)
             }
             XCTAssertGreaterThan(steps.last!.cardStatusCueFontSize, steps[0].cardStatusCueFontSize)
+            XCTAssertGreaterThan(steps.last!.cardStatusCueHorizontalPadding, steps[0].cardStatusCueHorizontalPadding)
+            XCTAssertGreaterThan(steps.last!.cardStatusCueVerticalPadding, steps[0].cardStatusCueVerticalPadding)
             for style in CardStyle.allCases {
                 let posters = steps.map { m in
                     let slot = m.portraitRowSlotWidth(viewportWidth: viewport, leadingInset: 0, cardStyle: style)

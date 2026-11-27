@@ -430,13 +430,16 @@ public struct HomeView: View {
 
     #if os(tvOS)
     @Environment(\.plozzCardFocusStyle) private var railFocusStyle
+    @Environment(\.plozzHeroBaseTextScale) private var heroBaseTextScale
 
     private func homeRailMetrics(viewportHeight: CGFloat) -> PlozzMetrics {
         let height: CGFloat
-        if focusHeroSettings != nil {
+        if let focusHeroSettings {
             // The scrolling shelf and the stationary details must fit at the same time.
+            let scale = PlozzTypography.scale(local: focusHeroSettings.showcaseTextSize.scale, app: heroBaseTextScale)
             height = FocusHeroLayout.rowsBottom(rowSpacing: FocusHeroLayout.rowSpacing) - FocusHeroLayout.lowestSlotTop
                 + FocusHeroLayout.rowTitleTightening + FocusHeroLayout.rowBottomTightening - FocusHeroLayout.activeTitleLift
+                - FocusHeroLayout.additionalMetadataHeight(scale: scale)
         } else {
             let lift = carouselSettings?.isActive == true ? Self.recedeRowLift : 0
             height = viewportHeight - lift - metrics.rowSpacing - FocusHeroLayout.nextRowPeek

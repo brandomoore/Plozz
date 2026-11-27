@@ -98,6 +98,32 @@ final class HeroForegroundRatingsStateTests: XCTestCase {
         XCTAssertEqual(pills.frame, buttonsFrame)
     }
 
+    func testEnlargedCertificateDoesNotCrowdTheGenresOutOfTheFeaturedHero() throws {
+        let foreground = HeroForegroundUIView(frame: CGRect(x: 0, y: 0, width: 1500, height: 850))
+        defer { foreground.stopContinuousUpdates() }
+        let facts = "2000  ·  Comedy  ·  Family  ·  Mystery"
+        foreground.apply(HeroForegroundModel(
+            itemID: "genre-fit", title: "Series", logoURL: nil,
+            metadataText: facts, ratingBadgeText: "TV-G", scheduleLine: nil,
+            overview: nil, ratings: [], familyGuidanceAge: nil, pills: [],
+            selectedIndex: 0, heroFocused: false, dots: nil
+        ), logo: nil, metadataVisible: true, slideChanged: false)
+        foreground.textSize = HeroTextSize(rawValue: 5)
+        foreground.appTextScale = MetadataBadgeSpacing.textScale(for: .accessibility5)
+        foreground.layoutIfNeeded()
+        let labels = foreground.subviews.compactMap { $0 as? UILabel }
+        let genres = try XCTUnwrap(labels.first { $0.text == facts })
+        let certificate = try XCTUnwrap(labels.first { $0.text == "TV-G" })
+        let untruncated = UILabel()
+        untruncated.text = facts
+        untruncated.font = genres.font
+        untruncated.numberOfLines = 0
+        let required = untruncated.sizeThatFits(CGSize(width: genres.bounds.width, height: .greatestFiniteMagnitude))
+        XCTAssertGreaterThan(genres.frame.minX, certificate.frame.maxX)
+        XCTAssertLessThanOrEqual(genres.frame.maxX, foreground.bounds.width)
+        XCTAssertLessThanOrEqual(required.height, genres.bounds.height + 1)
+    }
+
     func testAgeOnlyUpdatesPublishAndClearWithoutAReviewScoreChange() async {
         let state = HeroForegroundRatingsState()
         let update = expectation(description: "Age metadata publishes")

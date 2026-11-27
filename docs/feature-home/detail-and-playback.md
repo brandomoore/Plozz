@@ -395,6 +395,8 @@ records on both platforms; error dialogs, playback routing and timeouts are unch
   existing focus-restoration behavior rather than claiming Play again.
   Series with loose episodes but no season tabs retain the same browser-stage
   spacing, so the Episodes heading cannot overlap the resting hero action.
+  Enlarged episode captions grow the rail downward. They do not center taller
+  cards across the upper rail edge or move the browser's focus anchor.
   Episode-rail re-entry measures the remembered card before revealing it.
   An already-visible card keeps its horizontal position instead of snapping to
   the leading edge when focus moves to Seasons, the hero, or lower details.

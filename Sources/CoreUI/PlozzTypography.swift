@@ -54,6 +54,16 @@ private struct AppTextScaleKey: EnvironmentKey {
 }
 
 public extension EnvironmentValues {
+    /// Heroes share the native TV metadata curve. The surface adds its own
+    /// profile adjustment; badges must not apply Dynamic Type a second time.
+    var plozzHeroBaseTextScale: CGFloat {
+        #if os(tvOS)
+        plozzAppTextScale * MetadataBadgeSpacing.textScale(for: dynamicTypeSize)
+        #else
+        plozzAppTextScale
+        #endif
+    }
+
     /// Extension point for app-wide sizing. No global preference is exposed yet.
     var plozzAppTextScale: CGFloat {
         get { self[AppTextScaleKey.self] }

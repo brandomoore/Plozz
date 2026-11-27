@@ -11,6 +11,25 @@ import XCTest
 
 @MainActor
 final class DetailPrimaryFocusHostedTests: XCTestCase {
+    func testSeriesEpisodeRailReservesItsEnlargedCaptionHeightBelowTheHero() {
+        let series = MediaItem(id: "rail-height", title: "Series", kind: .series, allowsTitleBasedMetadataMatching: false)
+        for cardHeight: CGFloat in [459, 674] {
+            let browser = SeriesEpisodeBrowser(
+                series: series, recedeModel: SeriesHeroRecedeModel(), showsSeasons: false, focusAnchorID: "anchor",
+                seasonContent: { EmptyView() },
+                episodeContent: {
+                    ScrollView(.horizontal) {
+                        LazyHStack { Color.red.frame(width: 529, height: cardHeight) }
+                    }
+                }
+            )
+            let host = UIHostingController(rootView: browser.fixedSize(horizontal: false, vertical: true))
+            let measured = host.sizeThatFits(in: CGSize(width: 1920, height: 1080))
+            XCTAssertEqual(measured.height, SeriesEpisodeBrowserLayout.seasonBarHeight
+                + max(cardHeight, SeriesEpisodeBrowserLayout.episodeRailHeight), accuracy: 1)
+        }
+    }
+
     func testDetailCallbackRefreshDoesNotRebuildEpisodeMenuActions() async throws {
         throw XCTSkip("The hosted runner rebuilds episode menu callbacks between revision updates; the deterministic menu-content tests cover the identity guard.")
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)

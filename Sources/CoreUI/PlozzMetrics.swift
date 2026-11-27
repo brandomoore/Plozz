@@ -832,11 +832,10 @@ public struct PlozzMetrics: Equatable, Sendable {
         #if os(tvOS)
         let statusCueFont = scaled(.caption2, PlozzTheme.Metrics.cardStatusCueFontSize)
         let statusCueMinFont = scaled(.caption2, PlozzTheme.Metrics.cardStatusCueMinFontSize)
-        let statusCueHorizontalPadding = PlozzTheme.Metrics.cardStatusCueHorizontalPadding
-        let statusCueMinHorizontalPadding =
-            PlozzTheme.Metrics.cardStatusCueMinHorizontalPadding
-        let statusCueVerticalPadding = PlozzTheme.Metrics.cardStatusCueVerticalPadding
-        let statusCueMinVerticalPadding = PlozzTheme.Metrics.cardStatusCueMinVerticalPadding
+        let statusCueHorizontalPadding = scaled(.caption2, PlozzTheme.Metrics.cardStatusCueHorizontalPadding)
+        let statusCueMinHorizontalPadding = scaled(.caption2, PlozzTheme.Metrics.cardStatusCueMinHorizontalPadding)
+        let statusCueVerticalPadding = scaled(.caption2, PlozzTheme.Metrics.cardStatusCueVerticalPadding)
+        let statusCueMinVerticalPadding = scaled(.caption2, PlozzTheme.Metrics.cardStatusCueMinVerticalPadding)
         #elseif canImport(UIKit)
         let statusCueFont = preferred(.caption2)
         let statusCueMinFont = PlozzTheme.Metrics.cardStatusCueTouchMinFontSize

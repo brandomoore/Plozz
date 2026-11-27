@@ -693,6 +693,54 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
         }
     }
 
+    func testShowcaseGenreAndCertificateFollowNativeAndLocalTextSizeTogether() async throws {
+        let fixture = try await makeFixture()
+        defer { fixture.close() }
+        let item = MediaItem(
+            id: "hero-type", title: "Signal", kind: .movie, overview: "A quiet town.",
+            officialRating: "TV-14", genres: ["Comedy"], allowsTitleBasedMetadataMatching: false
+        )
+        let row = FocusHeroRow(id: "row", itemIDs: [item.stablePresentationID], leadItem: item, items: [item])
+        let model = FocusHeroModel()
+        model.record(height: 340, for: row.id)
+        model.motion.height = 340
+        model.seed(from: [row])
+        var baseline: [String: CGRect] = [:]
+        for (native, step): (DynamicTypeSize, Int) in [(.large, 0), (.accessibility5, 0), (.accessibility5, 5)] {
+            var settings = HeroSettings.default
+            settings.showcaseTextSize = HeroTextSize(rawValue: step)
+            fixture.window.rootViewController = UIHostingController(rootView:
+                Color.black.overlay(alignment: .topLeading) {
+                    FocusHeroColumn(
+                        model: model, metadata: FocusHeroMetadata(), enrich: nil, settings: settings,
+                        spoilerSettings: .default, navigationStyle: .rail, rows: [row], minimumDetailsTop: nil
+                    )
+                }
+                .environment(\.plozzShowsContentRatings, true)
+                .environment(\.dynamicTypeSize, native)
+                .environment(\.colorScheme, .dark)
+                .environment(\.themePalette, .dark)
+                .ignoresSafeArea()
+            )
+            let terms = ["TV-14", "Comedy", "quiet town"]
+            fixture.window.layoutIfNeeded()
+            let image = UIGraphicsImageRenderer(bounds: fixture.window.bounds).image { _ in
+                fixture.window.drawHierarchy(in: fixture.window.bounds, afterScreenUpdates: true)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "showcase-badge-ink-\(native)-\(step)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let frames = try HeroTextInk.frames(in: image, terms: terms, brightTerms: ["TV-14"])
+            if baseline.isEmpty { baseline = frames }
+            let scale = MetadataBadgeSpacing.textScale(for: native) * CGFloat(settings.showcaseTextSize.scale)
+            for term in terms {
+                XCTAssertEqual(try XCTUnwrap(frames[term]).height, try XCTUnwrap(baseline[term]).height * scale,
+                               accuracy: 3, "\(term), \(native), \(step)")
+            }
+        }
+    }
+
     func testLateScheduleKeepsLogoGeometryAndHugsTrimmedArtwork() async throws {
         let fixture = try await makeFixture()
         defer { fixture.close() }

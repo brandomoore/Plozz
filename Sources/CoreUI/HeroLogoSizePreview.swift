@@ -3,7 +3,7 @@ import CoreModels
 import SwiftUI
 
 public struct HeroLogoSizePreview: View {
-    @Environment(\.plozzAppTextScale) private var appTextScale
+    @Environment(\.plozzHeroBaseTextScale) private var appTextScale
     let size: HeroLogoSize
     let surface: HeroLogoSizing.Surface
     let layout: HeroLogoSizing.Layout
@@ -121,7 +121,10 @@ public struct HeroLogoSizePreview: View {
             size: size, layout: layout, availableWidth: mobile ? screen.width - leading * 2 : .infinity
         )
         let fitted = wordmark.fittedSize
-        let baseline: CGFloat = mobile ? 205 : surface == .showcase ? 300 : 640
+        let showsActions = surface != .showcase
+        let railTop: CGFloat = showsActions ? 980 : 640
+        let detailsHeight: CGFloat = (3 * 18 + (showsActions ? 3 : 2) * 22) * textScale + (showsActions ? 76 : 0)
+        let baseline: CGFloat = mobile ? 205 : min(showsActions ? 640 : 300, railTop - 32 - detailsHeight - 28)
         let x = layout == .compact ? (screen.width - fitted.width) / 2 : leading
         return ZStack(alignment: .topLeading) {
             if mobile {
@@ -168,7 +171,7 @@ public struct HeroLogoSizePreview: View {
                             .frame(width: 360, height: 210)
                     }
                 }
-                .offset(x: leading, y: surface == .showcase ? 640 : 980)
+                .offset(x: leading, y: railTop)
             }
         }
     }

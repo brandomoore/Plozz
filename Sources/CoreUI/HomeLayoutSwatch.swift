@@ -35,6 +35,7 @@ public struct HomeLayoutSwatch: View {
     private let textSize: HeroTextSize
     private let rowsOnly: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.plozzHeroBaseTextScale) private var baseTextScale
 
     public init(
         style: HeroStyle, cornerRadius: CGFloat = 16, logoSize: HeroLogoSize? = nil,
@@ -83,16 +84,17 @@ public struct HomeLayoutSwatch: View {
     // MARK: Fullscreen Hero
 
     private var spotlight: some View {
-        let scale = CGFloat(textSize.scale)
+        let scale = PlozzTypography.scale(local: textSize.scale, app: baseTextScale)
+        let textTop: CGFloat = 686 - max(0, 40 * (scale - 1))
         return ZStack(alignment: .topLeading) {
             HomePreviewBackdrop(style: .carousel, size: Self.screen)
             if let logoSize {
-                wordmark(size: logoSize, baseline: 656)
+                wordmark(size: logoSize, baseline: textTop - 30)
             } else {
-                block(144, 608, 500, 48, wordmark: true)
+                block(144, textTop - 78, 500, 48, wordmark: true)
             }
-            block(144, 686, 360 * scale, 22 * scale)
-            block(144, 686 + 22 * scale + 24, 280 * scale, 18 * scale)
+            block(144, textTop, 360 * scale, 22 * scale)
+            block(144, textTop + 22 * scale + 24, 280 * scale, 18 * scale)
             // Play, then the round Watchlist, More Info and Next actions.
             Capsule().fill(Color.white).frame(width: 168, height: 74).offset(x: 140, y: 782)
             ForEach(0..<3, id: \.self) { index in
@@ -128,7 +130,7 @@ public struct HomeLayoutSwatch: View {
     }
 
     private var immersive: some View {
-        let scale = CGFloat(textSize.scale)
+        let scale = PlozzTypography.scale(local: textSize.scale, app: baseTextScale)
         return ZStack(alignment: .topLeading) {
             HomePreviewBackdrop(style: .followsFocus, size: Self.screen)
             if let logoSize {
@@ -137,7 +139,7 @@ public struct HomeLayoutSwatch: View {
                 block(144, 160, 420, 96, wordmark: true)
             }
             block(144, 282, 300 * scale, 22 * scale)
-            block(144, 282 + 22 * scale + 22, 640 * scale, 18 * scale)
+            block(144, 282 + 22 * scale + 22, min(640 * scale, Self.screen.width - 288), 18 * scale)
             block(144, 282 + 40 * scale + 36, 480 * scale, 18 * scale)
             block(144, 560, 280, 30)
             cards(y: 640, height: 270, focusedFirst: true)

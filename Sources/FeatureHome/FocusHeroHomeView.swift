@@ -164,6 +164,17 @@ enum FocusHeroLayout {
     static func availableDetailsHeight(columnOffset: CGFloat, minimumTop: CGFloat) -> CGFloat {
         max(0, lowestSlotTop + columnOffset - columnGap - minimumTop)
     }
+
+    /// Reserve growth for a certificate and two synopsis lines before fitting
+    /// the rail. This budget is independent of which item's metadata has arrived.
+    static func additionalMetadataHeight(scale: CGFloat) -> CGFloat {
+        guard scale > 1 else { return 0 }
+        let style = PlozzTypography.heroDescription
+        let baseline = UIFont.systemFont(ofSize: style.pointSize).lineHeight
+        let enlarged = UIFont.systemFont(ofSize: style.scaled(by: scale).pointSize).lineHeight
+        return 36 * (scale - 1) + style.scaled(by: scale).height(lineHeight: enlarged, lines: 2)
+            - style.height(lineHeight: baseline, lines: 2)
+    }
 }
 
 private struct FocusHeroMinimumDetailsTopKey: EnvironmentKey {
@@ -1623,7 +1634,7 @@ struct FocusHeroColumn: View {
     @State var schedules = HeroScheduleLines()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
-    @Environment(\.plozzAppTextScale) private var appTextScale
+    @Environment(\.plozzHeroBaseTextScale) private var appTextScale
     @Environment(\.focusHeroMinimumDetailsTop) private var navigationMinimumTop
     @Environment(\.focusHeroVisibleDetailsTop) private var navigationVisibleTop
     private var textScale: CGFloat { PlozzTypography.scale(local: settings.showcaseTextSize.scale, app: appTextScale) }
@@ -1658,7 +1669,10 @@ struct FocusHeroColumn: View {
 
     @ViewBuilder private var column: some View {
         let navigationTop = hasCustomSizing ? navigationMinimumTop : navigationVisibleTop ?? navigationMinimumTop
-        if let minimumDetailsTop = navigationTop ?? minimumDetailsTop {
+        if appTextScale > 1, model.details?.item != nil {
+            constrainedColumn(minimumTop: navigationVisibleTop ?? navigationTop ?? minimumDetailsTop
+                              ?? FocusHeroLayout.columnTop(for: navigationStyle))
+        } else if let minimumDetailsTop = navigationTop ?? minimumDetailsTop {
             constrainedColumn(minimumTop: minimumDetailsTop)
         } else {
             standardColumn
@@ -1714,7 +1728,10 @@ struct FocusHeroColumn: View {
                 let item = metadata.item(for: item)
                 let box = HeroLogoSizing.box(for: .showcase, size: settings.showcaseLogoSize)
                 Group {
-                    if hasCustomSizing {
+                    if appTextScale > 1 {
+                        defaultConstrainedColumn(item: item, box: box)
+                            .modifier(FocusHeroContentFit(motion: model.motion))
+                    } else if hasCustomSizing {
                         VStack(alignment: .leading, spacing: 0) {
                             if HeroScheduleLines.canShowLine(for: item) {
                                 HeroScheduleBadge(text: "Upcoming")

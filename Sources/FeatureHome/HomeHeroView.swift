@@ -26,7 +26,7 @@ import MetadataKit
 /// change here (`index` + `lastPageForward`); the backdrop reacts to the fronted
 /// slide's id/URLs and entering direction on its own.
 struct HomeHeroView: View {
-    @Environment(\.plozzAppTextScale) private var appTextScale
+    @Environment(\.plozzHeroBaseTextScale) private var appTextScale
     private var textScale: CGFloat { PlozzTypography.scale(local: settings.textSize.scale, app: appTextScale) }
     let items: [MediaItem]
     let settings: HeroSettings
@@ -1066,7 +1066,7 @@ struct HomeHeroView: View {
                 .padding(.bottom, 14)
 
                 metadataLine(for: item)
-                    .frame(maxWidth: textWidth, alignment: .leading)
+                    .frame(maxWidth: textWidth * max(1, textScale), alignment: .leading)
                     .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
 
                 if let heroText = HeroContentPolicy.homeDescription(
@@ -2577,7 +2577,8 @@ struct HeroMetadataLine: View {
                     Text(metadata.joined(separator: "  ·  "))
                         .font(.system(size: PlozzTypography.heroMetadata.scaled(by: textScale).pointSize, weight: .medium))
                         .foregroundStyle(.primary)
-                        .lineLimit(1)
+                        .lineLimit(textScale > 1 ? 2 : 1)
+                        .fixedSize(horizontal: false, vertical: true)
                         .contentTransition(.opacity)
                 }
             }
