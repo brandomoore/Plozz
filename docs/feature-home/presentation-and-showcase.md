@@ -12,10 +12,13 @@ catalog across playback states and locale changes on a retained pill.
 
 Home text sizing applies to both SwiftUI and persistent UIKit foregrounds.
 Detail Page, Showcase, and library Recommended have independent profile-scoped sizes.
-On tvOS the native metadata text size is the baseline; each surface applies
-its profile text adjustment once. Title fallbacks, descriptions and metadata
-grow with the entire badge (lettering, artwork, padding, gaps and border);
-artwork sizing and action controls remain independent. On Apple TV, Detail Page
+All tvOS hero text follows the full Apple TV Text Size curve. Above a surface's
+profile default, title fallbacks and descriptions receive the full local increase
+(up to 50%); genres, facts, credits and whole badges receive a quarter of that
+increase (up to 12.5%). Smaller profile sizes still reduce both together.
+Badge lettering, artwork, padding, gaps and borders keep their proportions.
+Home's custom action labels follow system button typography, not the profile
+slider; icon-only controls and wordmark sizing stay independent. On Apple TV, Detail Page
 text sizing also scales the episode titles and three-line synopses below episode
 artwork, including loading placeholders; other row/card labels remain independent.
 Compact mobile detail badges use their natural height when fully visible, with

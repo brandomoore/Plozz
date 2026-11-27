@@ -72,6 +72,7 @@ final class HeroForegroundRatingsStateTests: XCTestCase {
             foreground.textSize = HeroTextSize(rawValue: rawValue)
             foreground.layoutIfNeeded()
             let scale = CGFloat(foreground.textSize.scale)
+            let metadataScale = PlozzTypography.heroMetadataScale(local: foreground.textSize.scale)
             XCTAssertEqual(description.font.pointSize, 24 * scale)
             let paragraph = try XCTUnwrap(
                 description.attributedText?.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
@@ -81,13 +82,13 @@ final class HeroForegroundRatingsStateTests: XCTestCase {
             XCTAssertEqual(description.frame.height,
                            description.font.lineHeight * CGFloat(description.numberOfLines)
                            + paragraph.lineSpacing * CGFloat(description.numberOfLines - 1), accuracy: 1)
-            XCTAssertEqual(metadata.font.pointSize, 23 * scale)
+            XCTAssertEqual(metadata.font.pointSize, 23 * metadataScale)
             XCTAssertEqual(title.font.pointSize, 64 * scale)
-            XCTAssertEqual(certificate.font.pointSize, 18 * scale)
-            XCTAssertEqual(certificate.layer.borderWidth, 3 * scale)
-            XCTAssertEqual(certificate.frame.height, 36 * scale)
-            XCTAssertEqual(schedule.font.pointSize, 24 * scale)
-            XCTAssertEqual(schedule.frame.height, 52 * scale)
+            XCTAssertEqual(certificate.font.pointSize, 18 * metadataScale)
+            XCTAssertEqual(certificate.layer.borderWidth, 3 * metadataScale)
+            XCTAssertEqual(certificate.frame.height, 36 * metadataScale)
+            XCTAssertEqual(schedule.font.pointSize, 24 * metadataScale)
+            XCTAssertEqual(schedule.frame.height, 52 * metadataScale)
             XCTAssertEqual(pills.frame, buttonsFrame)
             XCTAssertGreaterThanOrEqual(schedule.frame.minY, 0)
             XCTAssertLessThanOrEqual(metadata.frame.maxY, description.frame.minY)

@@ -85,7 +85,8 @@ public struct HomeLayoutSwatch: View {
 
     private var spotlight: some View {
         let scale = PlozzTypography.scale(local: textSize.scale, app: baseTextScale)
-        let textTop: CGFloat = 686 - max(0, 40 * (scale - 1))
+        let metadataScale = PlozzTypography.heroMetadataScale(local: textSize.scale, app: baseTextScale)
+        let textTop: CGFloat = 686 - max(0, 22 * (metadataScale - 1) + 18 * (scale - 1))
         return ZStack(alignment: .topLeading) {
             HomePreviewBackdrop(style: .carousel, size: Self.screen)
             if let logoSize {
@@ -93,8 +94,8 @@ public struct HomeLayoutSwatch: View {
             } else {
                 block(144, textTop - 78, 500, 48, wordmark: true)
             }
-            block(144, textTop, 360 * scale, 22 * scale)
-            block(144, textTop + 22 * scale + 24, 280 * scale, 18 * scale)
+            block(144, textTop, 360 * metadataScale, 22 * metadataScale)
+            block(144, textTop + 22 * metadataScale + 24, 280 * scale, 18 * scale)
             // Play, then the round Watchlist, More Info and Next actions.
             Capsule().fill(Color.white).frame(width: 168, height: 74).offset(x: 140, y: 782)
             ForEach(0..<3, id: \.self) { index in
@@ -131,6 +132,7 @@ public struct HomeLayoutSwatch: View {
 
     private var immersive: some View {
         let scale = PlozzTypography.scale(local: textSize.scale, app: baseTextScale)
+        let metadataScale = PlozzTypography.heroMetadataScale(local: textSize.scale, app: baseTextScale)
         return ZStack(alignment: .topLeading) {
             HomePreviewBackdrop(style: .followsFocus, size: Self.screen)
             if let logoSize {
@@ -138,9 +140,9 @@ public struct HomeLayoutSwatch: View {
             } else {
                 block(144, 160, 420, 96, wordmark: true)
             }
-            block(144, 282, 300 * scale, 22 * scale)
-            block(144, 282 + 22 * scale + 22, min(640 * scale, Self.screen.width - 288), 18 * scale)
-            block(144, 282 + 40 * scale + 36, 480 * scale, 18 * scale)
+            block(144, 282, 300 * metadataScale, 22 * metadataScale)
+            block(144, 282 + 22 * metadataScale + 22, min(640 * scale, Self.screen.width - 288), 18 * scale)
+            block(144, 282 + 22 * metadataScale + 18 * scale + 36, 480 * scale, 18 * scale)
             block(144, 560, 280, 30)
             cards(y: 640, height: 270, focusedFirst: true)
             block(144, 976, 200, 30)

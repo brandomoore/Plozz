@@ -436,10 +436,12 @@ public struct HomeView: View {
         let height: CGFloat
         if let focusHeroSettings {
             // The scrolling shelf and the stationary details must fit at the same time.
-            let scale = PlozzTypography.scale(local: focusHeroSettings.showcaseTextSize.scale, app: heroBaseTextScale)
+            let local = focusHeroSettings.showcaseTextSize.scale
+            let scale = PlozzTypography.scale(local: local, app: heroBaseTextScale)
+            let metadataScale = PlozzTypography.heroMetadataScale(local: local, app: heroBaseTextScale)
             height = FocusHeroLayout.rowsBottom(rowSpacing: FocusHeroLayout.rowSpacing) - FocusHeroLayout.lowestSlotTop
                 + FocusHeroLayout.rowTitleTightening + FocusHeroLayout.rowBottomTightening - FocusHeroLayout.activeTitleLift
-                - FocusHeroLayout.additionalMetadataHeight(scale: scale)
+                - FocusHeroLayout.additionalMetadataHeight(scale: scale, metadataScale: metadataScale)
         } else {
             let lift = carouselSettings?.isActive == true ? Self.recedeRowLift : 0
             height = viewportHeight - lift - metrics.rowSpacing - FocusHeroLayout.nextRowPeek

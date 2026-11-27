@@ -53,6 +53,7 @@ public struct HeroLogoSizePreview: View {
 
     private var detailScene: some View {
         let scale = PlozzTypography.scale(local: textSize.scale, app: appTextScale)
+        let metadataScale = PlozzTypography.heroMetadataScale(local: textSize.scale, app: appTextScale)
         let description = PlozzTypography.heroDescription.scaled(by: scale)
         let episodeDescription = PlozzTypography.episodeDescription.scaled(by: scale)
         let episodeTitle = PlozzTypography.episodeTitle.scaled(by: scale)
@@ -63,7 +64,7 @@ public struct HeroLogoSizePreview: View {
             VStack(alignment: .leading, spacing: 24) {
                 HeroLogoPreviewWordmark(size: size, layout: layout)
                 Capsule().fill(.white.opacity(0.5))
-                    .frame(width: 300, height: PlozzTypography.heroMetadata.scaled(by: scale).pointSize * 0.7)
+                    .frame(width: 300, height: PlozzTypography.heroMetadata.scaled(by: metadataScale).pointSize * 0.7)
                 VStack(alignment: .leading, spacing: description.pointSize * 0.4 + description.lineSpacing) {
                     ForEach(0..<PlozzTypography.detailDescriptionLines, id: \.self) { line in
                         Capsule().fill(.white.opacity(0.35))
@@ -77,9 +78,9 @@ public struct HeroLogoSizePreview: View {
             }
             .frame(width: descriptionWidth, height: 900, alignment: .bottomLeading)
             .offset(x: 80)
-            VStack(alignment: .leading, spacing: 16 * scale) {
-                Capsule().fill(.white.opacity(0.4)).frame(width: 400, height: 18 * scale)
-                Capsule().fill(.white.opacity(0.4)).frame(width: 320, height: 18 * scale)
+            VStack(alignment: .leading, spacing: 16 * metadataScale) {
+                Capsule().fill(.white.opacity(0.4)).frame(width: 400, height: 18 * metadataScale)
+                Capsule().fill(.white.opacity(0.4)).frame(width: 320, height: 18 * metadataScale)
             }
             .frame(height: 900, alignment: .bottomLeading)
             .offset(x: 1400)
@@ -107,6 +108,7 @@ public struct HeroLogoSizePreview: View {
 
     private var standardScene: some View {
         let textScale = PlozzTypography.scale(local: textSize.scale, app: appTextScale)
+        let metadataScale = PlozzTypography.heroMetadataScale(local: textSize.scale, app: appTextScale)
         let leading: CGFloat = mobile ? 22 : 144
         let availableWidth = screen.width - leading * 2
         let minimumWidth: CGFloat = layout == .compact ? 500 : 0
@@ -123,7 +125,8 @@ public struct HeroLogoSizePreview: View {
         let fitted = wordmark.fittedSize
         let showsActions = surface != .showcase
         let railTop: CGFloat = showsActions ? 980 : 640
-        let detailsHeight: CGFloat = (3 * 18 + (showsActions ? 3 : 2) * 22) * textScale + (showsActions ? 76 : 0)
+        let detailsHeight: CGFloat = 18 * metadataScale + (2 * 18 + (showsActions ? 3 : 2) * 22) * textScale
+            + (showsActions ? 76 : 0)
         let baseline: CGFloat = mobile ? 205 : min(showsActions ? 640 : 300, railTop - 32 - detailsHeight - 28)
         let x = layout == .compact ? (screen.width - fitted.width) / 2 : leading
         return ZStack(alignment: .topLeading) {
@@ -147,7 +150,7 @@ public struct HeroLogoSizePreview: View {
                 .offset(x: x, y: baseline - fitted.height)
             VStack(alignment: .leading, spacing: (mobile ? 10 : 22) * textScale) {
                 Capsule().fill(.white.opacity(0.5))
-                    .frame(width: (mobile ? 160 : 300) * textScale, height: (mobile ? 5 : 18) * textScale)
+                    .frame(width: (mobile ? 160 : 300) * metadataScale, height: (mobile ? 5 : 18) * metadataScale)
                 Capsule().fill(.white.opacity(0.3))
                     .frame(width: (mobile ? 250 : 480) * descriptionScale, height: (mobile ? 5 : 18) * textScale)
                 Capsule().fill(.white.opacity(0.3))

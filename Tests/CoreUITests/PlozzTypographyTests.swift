@@ -42,6 +42,23 @@ final class PlozzTypographyTests: XCTestCase {
         #endif
     }
 
+    #if os(tvOS)
+    func testSecondaryHeroTextKeepsNativeScalingAndEveryLocalStep() throws {
+        let native = MetadataBadgeSpacing.textScale(for: .accessibility5)
+        let sizes = HeroTextSize.allSizes
+        let scales = sizes.map { PlozzTypography.heroMetadataScale(local: $0.scale, app: native) }
+        XCTAssertTrue(zip(scales, scales.dropFirst()).allSatisfy(<))
+        for (size, resolved) in zip(sizes, scales) {
+            if size.rawValue <= 0 {
+                XCTAssertEqual(resolved, native * size.scale, accuracy: 0.001)
+            } else {
+                XCTAssertEqual(resolved / PlozzTypography.heroMetadataScale(local: size.scale), native, accuracy: 0.001)
+            }
+        }
+        XCTAssertEqual(try XCTUnwrap(scales.last) / native, 1.125, accuracy: 0.001)
+    }
+    #endif
+
     func testHeightIncludesEveryInterlineGapAndScrimCoversTheLargerBlock() {
         let style = PlozzTypography.heroDescription.scaled(by: 1.5)
         XCTAssertEqual(style.height(lineHeight: 43, lines: 4), 185.5)

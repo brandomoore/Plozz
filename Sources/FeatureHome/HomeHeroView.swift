@@ -28,6 +28,7 @@ import MetadataKit
 struct HomeHeroView: View {
     @Environment(\.plozzHeroBaseTextScale) private var appTextScale
     private var textScale: CGFloat { PlozzTypography.scale(local: settings.textSize.scale, app: appTextScale) }
+    private var metadataScale: CGFloat { PlozzTypography.heroMetadataScale(local: settings.textSize.scale, app: appTextScale) }
     let items: [MediaItem]
     let settings: HeroSettings
     let backgroundSettings: HeroBackgroundSettings
@@ -1066,7 +1067,7 @@ struct HomeHeroView: View {
                 .padding(.bottom, 14)
 
                 metadataLine(for: item)
-                    .frame(maxWidth: textWidth * max(1, textScale), alignment: .leading)
+                    .frame(maxWidth: textWidth * max(1, metadataScale), alignment: .leading)
                     .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
 
                 if let heroText = HeroContentPolicy.homeDescription(
@@ -1102,7 +1103,7 @@ struct HomeHeroView: View {
                         .contentTransition(.opacity)
                 }
             }
-            .environment(\.metadataTextScale, textScale)
+            .environment(\.metadataTextScale, metadataScale)
             .opacity(metadataVisible ? 1 : 0)
             // Snap the metadata *hide* instantly (so the outgoing text vanishes as
             // the wipe starts instead of fading out over the incoming art) while
@@ -2032,13 +2033,13 @@ struct HomeHeroView: View {
                 Text("\(Int((progress * 100).rounded()))%")
                     .lineLimit(1)
             }
-            .font(.system(size: 28, weight: .semibold))
+            .font(.body)
         default:
             Label(
                 heroCTA(for: item).requestStatusTitle,
                 systemImage: heroCTA(for: item).requestStatusSystemImage
             )
-                .font(.system(size: 28, weight: .semibold))
+                .font(.body)
         }
     }
 
@@ -2097,12 +2098,12 @@ struct HomeHeroView: View {
                     separatesEpisodeText: item.startsWatching,
                     systemImage: item.opensExternalSource ? "arrow.up.forward.app" : "play.fill"
                 )
-                .font(.system(size: 28, weight: .semibold))
+                .font(.body)
             }
         case .request:
             heroPill(selected: selected, prominent: isProminentPrimary(.request, for: item)) {
                 Label(requestTitle(for: item), systemImage: requestSystemImage(for: item))
-                    .font(.system(size: 28, weight: .semibold))
+                    .font(.body)
             }
         case .downloadStatus:
             heroPill(selected: selected, prominent: isProminentPrimary(.downloadStatus, for: item)) {
@@ -2113,7 +2114,7 @@ struct HomeHeroView: View {
             heroPill(selected: selected, prominent: prominent) {
                 if prominent {
                     Label("More Info", systemImage: "info.circle")
-                        .font(.system(size: 28, weight: .semibold))
+                        .font(.body)
                 } else {
                     Image(systemName: "info.circle")
                         .font(.system(size: 28, weight: .semibold))
@@ -2173,7 +2174,8 @@ struct HomeHeroView: View {
             .foregroundStyle(bright ? Color.black : idleTint)
             .transaction { $0.animation = nil }
             .padding(.horizontal, 30)
-            .padding(.vertical, 18)
+            .padding(.vertical, HeroForegroundPillView.labelVerticalInset)
+            .frame(minHeight: HeroForegroundPillView.minimumHeight)
             .background {
                 ZStack {
                     heroPillIdleBackground(shape: shape)

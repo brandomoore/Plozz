@@ -109,7 +109,8 @@ final class HeroForegroundPillView: UIView {
     private let progressFill = UIView()
 
     private let hPadding: CGFloat = 30
-    private let vPadding: CGFloat = 18
+    static let minimumHeight: CGFloat = 70
+    static let labelVerticalInset: CGFloat = 4
     private let glyphTextGap: CGFloat = 12
     private let glyphSize: CGFloat = 30
     /// Half the former 150 — the resume trailing now also carries the "S5 E12 • "
@@ -125,6 +126,7 @@ final class HeroForegroundPillView: UIView {
     private var selected = false
     private var prominent = false
     private var progressFraction: CGFloat = 0
+    var onTextSizeChange: (() -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -153,7 +155,12 @@ final class HeroForegroundPillView: UIView {
 
         glyphView.contentMode = .scaleAspectFit
         glyphView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 28, weight: .semibold)
-        textLabel.font = .systemFont(ofSize: 28, weight: .semibold)
+        updateLabelFont()
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (view: HeroForegroundPillView, _) in
+            view.updateLabelFont()
+            view.setNeedsLayout()
+            view.onTextSizeChange?()
+        }
         progressTrack.backgroundColor = UIColor.white.withAlphaComponent(0.3)
         progressFill.backgroundColor = .white
         progressTrack.isHidden = true
@@ -164,6 +171,10 @@ final class HeroForegroundPillView: UIView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private func updateLabelFont() {
+        textLabel.font = .preferredFont(forTextStyle: .body, compatibleWith: traitCollection)
+    }
 
     func configure(_ pill: HeroForegroundModel.Pill, selected: Bool, locale: Locale = .current) {
         let selectionChanged = self.selected != selected
@@ -271,12 +282,11 @@ final class HeroForegroundPillView: UIView {
 
     /// The pill's natural size for the parent's manual row layout.
     func preferredSize() -> CGSize {
-        let height = max(glyphSize, textLabel.font.lineHeight) + vPadding * 2
         // Icon-only pills (no text, no progress bar) render as a perfect circle: a
         // square whose side equals the capsule height, so the height/2 corner radius
         // rounds it fully rather than leaving a stadium/oval.
         if textLabel.isHidden && progressTrack.isHidden {
-            return CGSize(width: height, height: height)
+            return CGSize(width: Self.minimumHeight, height: Self.minimumHeight)
         }
         var contentWidth: CGFloat = 0
         if !glyphView.isHidden { contentWidth += glyphSize }
@@ -289,6 +299,7 @@ final class HeroForegroundPillView: UIView {
             contentWidth += naturalTextWidth()
         }
         let width = contentWidth + hPadding * 2
+        let height = max(Self.minimumHeight, ceil(textLabel.font.lineHeight) + 2 * Self.labelVerticalInset)
         return CGSize(width: width, height: height)
     }
 
