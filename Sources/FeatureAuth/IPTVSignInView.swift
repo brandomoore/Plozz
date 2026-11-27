@@ -42,7 +42,6 @@ public struct IPTVSignInView: View {
                     OnboardingHeader(Text("Preparing your library"))
                     IPTVConnectionProgress(model: model)
                 } else {
-                    OnboardingHeader(Text("Connect your IPTV provider"))
                     IPTVConnectionFields(model: model, showsAdvanced: $showsAdvanced)
                     IPTVConnectionStatus(model: model)
                 }
@@ -104,21 +103,19 @@ private struct IPTVConnectionFields: View {
             .accessibilityIdentifier("iptv-connection-type")
 
             SettingsSectionGroup {
-                if model.mode != .file {
-                    IPTVAddressField(
-                        title: model.mode == .playlist ? "Playlist URL" : "Server address",
-                        value: $model.address
-                    )
+                if model.mode == .xtream {
+                    IPTVAddressField(title: "Server address", value: $model.address)
+                } else {
+                    #if os(iOS)
+                    IPTVPlaylistInput(model: model)
+                    #else
+                    if model.mode == .file {
+                        Text("Import this playlist file on an iPhone or iPad.")
+                    } else {
+                        IPTVAddressField(title: "Playlist URL", value: $model.address)
+                    }
+                    #endif
                 }
-                #if os(iOS)
-                if model.mode != .xtream {
-                    IPTVPlaylistFileFields(model: model)
-                }
-                #else
-                if model.mode == .file {
-                    Text("Import this playlist file on an iPhone or iPad.")
-                }
-                #endif
                 TextField("Name (optional)", text: $model.name)
                 if model.mode == .xtream {
                     IPTVLoginFields(username: $model.username, password: $model.password)
@@ -196,21 +193,30 @@ private struct IPTVPlaylistAuthenticationFields: View {
 }
 
 #if os(iOS)
-private struct IPTVPlaylistFileFields: View {
+private struct IPTVPlaylistInput: View {
     @Bindable var model: IPTVAuthViewModel
     @State private var showsFilePicker = false
     @State private var fileSelectionFailed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Button { showsFilePicker = true } label: {
+            HStack {
                 if let file = model.playlistFileURL {
                     Label { Text(verbatim: file.lastPathComponent) } icon: { Image(systemName: "doc") }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else if model.mode == .playlist {
+                    IPTVAddressField(title: "Playlist URL", value: $model.address)
                 } else {
-                    Label("Choose file…", systemImage: "folder")
+                    Text("Playlist file").frame(maxWidth: .infinity, alignment: .leading)
                 }
+                Button { showsFilePicker = true } label: {
+                    Label("Choose playlist file", systemImage: "folder")
+                        .labelStyle(.iconOnly)
+                        .settingsControlTarget()
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("iptv-choose-file")
             }
-            .accessibilityIdentifier("iptv-choose-file")
             if model.mode == .file {
                 Button("Use URL instead") {
                     model.playlistFileURL = nil

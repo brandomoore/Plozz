@@ -26,7 +26,14 @@ final class IPTVSetupInteractionTests: XCTestCase {
 
     func testPlaylistStartsQuietAndDisclosureDoesNotActAsASwitch() {
         launch()
-        XCTAssertTrue(app.textFields["Playlist URL"].exists)
+        let address = app.textFields["Playlist URL"]
+        let browse = app.buttons["iptv-choose-file"]
+        XCTAssertTrue(address.exists)
+        XCTAssertEqual(browse.label, "Choose playlist file")
+        XCTAssertGreaterThanOrEqual(browse.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(browse.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(browse.frame.minX, address.frame.maxX)
+        XCTAssertEqual(browse.frame.midY, address.frame.midY, accuracy: 1)
         XCTAssertTrue(app.textFields["Name (optional)"].exists)
         XCTAssertFalse(authentication.exists)
         XCTAssertTrue(app.textFields["EPG URL (optional)"].exists)
