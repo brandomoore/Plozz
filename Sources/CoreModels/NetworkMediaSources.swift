@@ -41,7 +41,7 @@ public enum MediaShareTransportKind: String, Codable, CaseIterable, Hashable, Se
 
     /// Short, user-facing label for the transport — shown as a badge on the
     /// shared drive icon in the Servers list. Dedicated media servers
-    /// (Jellyfin/Plex) use their branded logo instead of a badge.
+    /// use their branded logo instead of a badge.
     public var badgeLabel: String {
         switch self {
         case .smb: return "SMB"

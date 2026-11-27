@@ -113,6 +113,7 @@ struct LiveChannelOverlay: View {
     @Environment(\.locale) private var locale
     @State private var openMenu: LiveChannelTrackMenuKind?
     #if os(tvOS)
+    @Environment(\.layoutDirection) private var layoutDirection
     @State private var returningMenu: LiveChannelTrackMenuKind?
     #else
     @State private var menuReturnFocus: LiveChannelControl?
@@ -279,6 +280,7 @@ struct LiveChannelOverlay: View {
         }
         #endif
         #if os(tvOS)
+        .defaultFocus($focus, .timeline)
         .observingSystemPlaybackAudio(trackOptions.systemAudio, isVisible: true)
         .onChange(of: openMenu.map(hasTVMenu) ?? true) { _, available in
             if !available { closeMenu() }
@@ -559,6 +561,7 @@ struct LiveChannelOverlay: View {
 
     /// Everything the options panel shows, as one value to follow.
     private struct TrackOptionsSource: Equatable {
+        var volumeBoost: PlayerVolumeBoost
         var audio: [MediaTrack]
         var subtitles: [MediaTrack]
         var selectedAudio: Int?
@@ -570,6 +573,7 @@ struct LiveChannelOverlay: View {
 
     private var trackOptionsSource: TrackOptionsSource {
         TrackOptionsSource(
+            volumeBoost: tracks.volumeBoost,
             audio: tracks.audioTracks, subtitles: tracks.subtitleTracks,
             selectedAudio: tracks.selectedAudioID, selectedSubtitle: tracks.selectedSubtitleID,
             style: tracks.subtitles.style, isHDR: tracks.subtitles.isHDR,
@@ -598,6 +602,7 @@ struct LiveChannelOverlay: View {
         trackOptions.subtitlesRenderHDR = source.isHDR
         trackOptions.engineCapabilities = source.capabilities
         trackOptions.audioDelaySeconds = tracks.engine.audioDelaySeconds
+        trackOptions.volumeBoost = source.volumeBoost
         trackOptions.secondarySubtitleImagePrimaryFormat = TrackMenuBuilder.imagePrimaryFormat(
             selectedPrimaryID: source.selectedSubtitle, engineTracks: source.subtitles, providerTracks: []
         )
@@ -621,6 +626,12 @@ struct LiveChannelOverlay: View {
             )
         }
         actions.setSubtitleStyle = { tracks.setSubtitleStyle($0) }
+        actions.setVolumeBoost = { boost in
+            guard tracks.matchesSource(channelID: channelID, input: input),
+                  tracks.engine.capabilities.contains(.volumeBoost) else { return }
+            tracks.setVolumeBoost(boost)
+            trackOptions.volumeBoost = tracks.volumeBoost
+        }
         actions.setAudioDelay = { value in
             guard tracks.matchesSource(channelID: channelID, input: input),
                   tracks.engine.capabilities.contains(.audioDelay), value.isFinite else { return }
@@ -673,7 +684,7 @@ struct LiveChannelOverlay: View {
     // MARK: Badges
 
     private var showsAudio: Bool {
-        if trackOptions.engineCapabilities.contains(.audioDelay) { return true }
+        if !trackOptions.engineCapabilities.intersection([.audioDelay, .volumeBoost]).isEmpty { return true }
         #if os(tvOS)
         return Self.showsAudio(trackCount: tracks.audioTracks.count, systemAudio: trackOptions.systemAudio)
         #else
@@ -742,6 +753,16 @@ struct LiveChannelOverlay: View {
                     toggleMenu(.playback)
                 }
                 .accessibilityIdentifier("live-channel-playback")
+                #if os(tvOS)
+                .background {
+                    if openMenu == nil, !cardOpen {
+                        TVFocusActivityObserver(
+                            onActivity: {}, observesDirectionalPresses: false,
+                            onFailedMove: recoverMoveFromMore
+                        )
+                    }
+                }
+                #endif
             }
         }
         .reportSubtitleControlsFrame(
@@ -756,6 +777,26 @@ struct LiveChannelOverlay: View {
             if !cardOpen { badgesTop = top }
         }
     }
+
+    #if os(tvOS)
+    // Called only when UIKit couldn't move *from this button*. A successful
+    // move (including a swipe) and navigation inside the menu stay native.
+    private func recoverMoveFromMore(_ direction: MoveCommandDirection) {
+        guard openMenu == nil, !cardOpen else { return }
+        let destination: LiveChannelControl
+        switch direction {
+        case .left where layoutDirection == .leftToRight, .right where layoutDirection == .rightToLeft:
+            if showsSubtitles { destination = .subtitles }
+            else if showsAudio { destination = .audio }
+            else if canGoLive { destination = .goLive }
+            else { destination = .timeline }
+        case .down: destination = .timeline
+        default: return
+        }
+        returningMenu = nil
+        focus = destination
+    }
+    #endif
 
     private func badge(
         _ title: LocalizedStringResource, systemImage: String, control: LiveChannelControl,
@@ -1778,6 +1819,10 @@ extension LiveChannelOverlay {
         actions.setDialogueEnhancement = { enabled in
             tracks.engine.setDialogEnhanceEnabled(enabled)
             trackOptions.dialogEnhanceEnabled = enabled
+            onControlActivity()
+        }
+        actions.setVolumeBoost = { boost in
+            trackActions.setVolumeBoost(boost)
             onControlActivity()
         }
         return actions

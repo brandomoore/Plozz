@@ -120,8 +120,10 @@ checks, not an atomic transaction with either remote service.
 - `MediaItem` retains optional confirmed original language, series production
   status and whole-title catalog season/episode totals. These are independent
   of local ownership, unwatched counts, schedules and playable audio languages.
-- The dual-provider abstraction: `MediaProvider` protocol, `ProviderKind`,
+- The multi-source abstraction: `MediaProvider` protocol, `ProviderKind`,
   `ProviderRegistry` / `ProviderResolving`, `ResolvedAccount`.
+  The [supported-source inventory](../../.github/CONTRIBUTING.md#supported-sources)
+  distinguishes managed servers, network shares, IPTV and music-only Subsonic.
 - Cross-cutting UI state: `LoadState`, `AppError`.
 - `AppReleaseChannel.current` is the effective install channel for both diagnostics
   and beta features. Both app roots resolve it before constructing their models;
@@ -221,7 +223,7 @@ checks, not an atomic transaction with either remote service.
   pure-logic tests can run there. UI lives in `CoreUI` and feature modules.
 - **Never hold secrets.** Tokens are owned by `FeatureAuth` (Keychain). Types
   here (e.g. `Account`, `Profile`) carry only non-secret metadata.
-- **Provider-agnostic.** No type here may assume Jellyfin- or Plex-specific
+- **Provider-agnostic.** Shared contracts must not assume provider-specific
   behavior; the only provider seam is `MediaProvider`.
 - Provider-ID lookup preserves alias priority and the first nonempty normalized
   spelling without rebuilding the whole ID map for each lookup. ASCII keys use
@@ -411,6 +413,10 @@ snapshot. Home and Settings warm it through live library discovery. It never
 resolves credentials or authorizes a profile; callers supply currently resolved
 accounts. Profile-local providers, including downloaded-media projections, bypass
 both cache reads and writes so they cannot replace the server's full inventory.
+When Plex reads sections to match the server's Home layout, that same Home
+refresh can use the live result once, for the exact provider, account, viewer,
+and credential revision. A newer published inventory or access denial retires
+it. Navigation and later Home refreshes still contact the server.
 See [Libraries behavior](../FeatureSettings/README.md#responsibility) for
 refresh, error, and storage limits.
 

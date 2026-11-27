@@ -11,7 +11,11 @@ import RatingsService
 /// before merging a fresh curation into the live set.
 public struct HeroMetadataEnricher: Sendable {
     public typealias PinnedSeriesProvider = @MainActor @Sendable () -> [MediaItem]
-    @TaskLocal private static var pinnedSeriesProvider: PinnedSeriesProvider?
+    private enum Pins: Sendable {
+        case carousel(PinnedSeriesProvider)
+        case showcase([MediaItem])
+    }
+    @TaskLocal private static var pins: Pins?
 
     private struct Enrichment: Sendable {
         let root: MediaItem
@@ -51,7 +55,15 @@ public struct HeroMetadataEnricher: Sendable {
         _ presentations: @escaping PinnedSeriesProvider,
         operation: @Sendable () async -> [MediaItem]
     ) async -> [MediaItem] {
-        await $pinnedSeriesProvider.withValue(presentations, operation: operation)
+        await $pins.withValue(.carousel(presentations), operation: operation)
+    }
+
+    /// Showcase's row identities are fixed for the duration of a batch. Unlike
+    /// a carousel slide, a preserved row series never adopts the resolved episode.
+    public static func withShowcasePresentations(
+        _ items: [MediaItem], operation: @Sendable () async -> [MediaItem]
+    ) async -> [MediaItem] {
+        await $pins.withValue(.showcase(items), operation: operation)
     }
 
     public func enrich(
@@ -98,6 +110,12 @@ public struct HeroMetadataEnricher: Sendable {
             return await applyingCachedRatings(to: items)
         }
 
+        let fixedPins: [MediaItem]?
+        if preservingPinnedSeries == nil, case let .showcase(batch) = Self.pins {
+            fixedPins = batch
+        } else {
+            fixedPins = nil
+        }
         let concurrency = min(4, candidates.count)
         let details = await withTaskGroup(
             of: (Int, Enrichment?).self,
@@ -116,7 +134,7 @@ public struct HeroMetadataEnricher: Sendable {
                     (
                         index,
                         await resolve(
-                            target: target,
+                            target: target, original: items[index], fixedPins: fixedPins,
                             provider: provider,
                             accountID: accountID
                         )
@@ -141,7 +159,7 @@ public struct HeroMetadataEnricher: Sendable {
                         (
                             queuedIndex,
                             await resolve(
-                                target: target,
+                                target: target, original: items[queuedIndex], fixedPins: fixedPins,
                                 provider: provider,
                                 accountID: accountID
                             )
@@ -157,7 +175,14 @@ public struct HeroMetadataEnricher: Sendable {
 
         // Focus/auto-advance can change while metadata loads. Preserve the series
         // being viewed now, not the slide that was pinned when the request began.
-        let pinnedSeries = await (preservingPinnedSeries ?? Self.pinnedSeriesProvider)?() ?? []
+        let pinnedSeries: [MediaItem]
+        if let preservingPinnedSeries {
+            pinnedSeries = await preservingPinnedSeries()
+        } else if case let .carousel(current) = Self.pins {
+            pinnedSeries = await current()
+        } else {
+            pinnedSeries = fixedPins ?? []
+        }
         guard !Task.isCancelled else { return items }
         var enriched = items
         for (index, detail) in details {
@@ -357,7 +382,7 @@ public struct HeroMetadataEnricher: Sendable {
     }
 
     private func resolve(
-        target: MediaItem,
+        target: MediaItem, original: MediaItem, fixedPins: [MediaItem]?,
         provider: any MediaProvider,
         accountID: String
     ) async -> Enrichment? {
@@ -400,6 +425,9 @@ public struct HeroMetadataEnricher: Sendable {
         }
 
         hydratedTarget = await provider.applyingCachedServerRatings(to: hydratedTarget)
+        if let fixedPins, Self.preservesVerifiedSeries(original, root: hydratedTarget, whilePinned: fixedPins) {
+            return Enrichment(root: hydratedTarget, playTarget: nil)
+        }
         if hydratedTarget.kind.needsPlaybackTargetResolution {
             var playTarget = await HeroPlayTargetResolver.resolve(
                 item: hydratedTarget,

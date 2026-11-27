@@ -12,6 +12,7 @@ public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginPr
     public let session: UserSession
     public let accountID: String
     public let credentialRevision: CredentialRevision
+    package let homeInventoryProviderID = UUID()
     let client: PlexClient
     let liveTVLeases = PlexLiveTVLeaseStore()
     let playbackFailureDiagnostics: PlaybackFailureDiagnostics
@@ -172,7 +173,11 @@ public struct PlexProvider: LibraryItemBatchProviding, AuthenticatedHTTPOriginPr
     }
 
     public func libraries() async throws -> [MediaLibrary] {
-        try await client.sections().compactMap { dir in
+        try await mediaLibraries(client.sections())
+    }
+
+    func mediaLibraries(_ sections: [PlexDirectory]) -> [MediaLibrary] {
+        sections.compactMap { dir in
             guard let id = dir.key else { return nil }
             return MediaLibrary(
                 id: id,

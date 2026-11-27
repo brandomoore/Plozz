@@ -27,16 +27,39 @@ public struct ServerAccountGroup: Sendable {
 }
 
 public func serverGroups(from accounts: [Account]) -> [ServerAccountGroup] {
+    groupedAccounts(accounts, key: serverKey(for:), name: { $0.server.name })
+}
+
+/// Display grouping only. Connection management and profile mutations still
+/// address individual roots. Never compare credential revisions or secrets here.
+public func libraryPickerGroups(from accounts: [Account]) -> [ServerAccountGroup] {
+    func endpoint(_ account: Account) -> String? {
+        let url = account.server.baseURL
+        guard account.server.provider == .mediaShare, url.scheme?.lowercased() == "smb",
+              let host = url.host?.lowercased(), !host.isEmpty else { return nil }
+        return url.port.map { $0 == 445 ? host : "\(host):\($0)" } ?? host
+    }
+    return groupedAccounts(accounts, key: { account in
+        guard let host = endpoint(account) else { return serverKey(for: account) }
+        // Guest sessions have an empty username, distinct from a named "guest".
+        return [host, account.userID, account.userName].reduce("smb-picker:") {
+            $0 + "\($1.utf8.count):\($1)"
+        }
+    }, name: { endpoint($0) ?? $0.server.name })
+}
+
+private func groupedAccounts(_ accounts: [Account], key: (Account) -> String,
+                             name: (Account) -> String) -> [ServerAccountGroup] {
     var order: [String] = []
     var grouped: [String: ServerAccountGroup] = [:]
 
     for account in accounts {
-        let key = serverKey(for: account)
+        let key = key(account)
         if grouped[key] == nil {
             order.append(key)
             grouped[key] = ServerAccountGroup(
                 serverKey: key,
-                serverName: account.server.name,
+                serverName: name(account),
                 providerKind: account.server.provider,
                 accounts: []
             )

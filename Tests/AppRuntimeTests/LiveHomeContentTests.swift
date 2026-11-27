@@ -175,6 +175,84 @@ private actor LiveInventoryProjection {
 /// Read-only production-provider checks using a private, ephemeral credential broker.
 final class LiveHomeContentTests: XCTestCase {
     @MainActor
+    func testPerformanceJellyfinShowcaseSeries() async throws {
+        try PerformanceProbe.requireEnabled()
+        let discovery = try await provider(.jellyfin)
+        let libraries = try await discovery.libraries()
+        let shows = try XCTUnwrap(libraries.first { $0.kind == .series })
+        let page = try await discovery.items(in: shows.id, kind: .series, page: .init(limit: 1))
+        let accountID = discovery.session.server.id
+        let show = try XCTUnwrap(page.items.first { $0.kind == .series }).taggingSource(accountID)
+        let batch = [show]
+        var oldFirst = false
+        try await PerformanceProbe.measure(self, scenario: "showcase-series-live-jellyfin") {
+            func run(fixed: Bool) async throws -> (calls: Int, bytes: Int, micros: Int, presented: MediaItem) {
+                let http = ShowcaseReads()
+                let provider = JellyfinProvider(session: discovery.session, accountID: accountID,
+                                                http: http, interactiveHTTP: http, addressProbe: http)
+                let account = ResolvedAccount(account: .init(id: accountID, from: provider.session), provider: provider)
+                let enricher = HeroMetadataEnricher(accounts: [account], targetSelector: { $0 })
+                let started = ContinuousClock.now
+                let output: [MediaItem]
+                if fixed {
+                    output = await HeroMetadataEnricher.withShowcasePresentations(batch) { await enricher.enrich(batch) }
+                } else {
+                    // This is the pinning behavior used by Showcase before #472, in the same binary.
+                    output = await HeroMetadataEnricher.withPinnedSeries({ batch }) { await enricher.enrich(batch) }
+                }
+                let micros = Self.nanoseconds(started.duration(to: .now)) / 1_000
+                guard output.count == 1, let presented = output.first, presented.kind == .series,
+                      presented.id == show.id else { throw AppError.invalidResponse }
+                let counts = try await http.result()
+                return (counts.calls, counts.bytes, micros, presented)
+            }
+            oldFirst.toggle()
+            let first = try await run(fixed: !oldFirst)
+            let second = try await run(fixed: oldFirst)
+            let (old, new) = oldFirst ? (first, second) : (second, first)
+            XCTAssertTrue(old.presented == new.presented, "Both paths must preserve the same presentation.")
+            XCTAssertGreaterThan(old.calls, new.calls)
+            XCTAssertGreaterThan(new.calls, 0)
+            return ["priorCalls": old.calls, "fixedCalls": new.calls,
+                    "priorBytes": old.bytes, "fixedBytes": new.bytes,
+                    "priorMicroseconds": old.micros, "fixedMicroseconds": new.micros]
+        }
+    }
+
+    private actor ShowcaseReads: HTTPClient {
+        private let session: URLSession
+        private let client: URLSessionHTTPClient
+        private var calls = 0, bytes = 0, failures = 0
+
+        init() {
+            let config = URLSessionConfiguration.ephemeral
+            config.urlCache = nil
+            session = URLSession(configuration: config)
+            client = URLSessionHTTPClient(session: session)
+        }
+
+        deinit { session.invalidateAndCancel() }
+
+        func send(_ endpoint: Endpoint, baseURL: URL) async throws -> (Data, HTTPURLResponse) {
+            calls += 1
+            do {
+                guard calls <= 24, endpoint.method == .get, endpoint.body == nil else { throw AppError.invalidResponse }
+                let result = try await client.send(endpoint, baseURL: baseURL)
+                bytes += result.0.count
+                return result
+            } catch {
+                failures += 1
+                throw error
+            }
+        }
+
+        func result() throws -> (calls: Int, bytes: Int) {
+            guard failures == 0, bytes > 0 else { throw AppError.invalidResponse }
+            return (calls, bytes)
+        }
+    }
+
+    @MainActor
     func testPerformancePlexEagerInventory() async throws {
         try await measureInventoryTradeoff([.plex], scenario: "home-live-plex-eager-inventory", deferred: false)
     }

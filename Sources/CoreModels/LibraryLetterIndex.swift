@@ -25,8 +25,8 @@ public struct LibraryLetterIndexEntry: Equatable, Sendable {
 }
 
 /// Builds a library's alphabet fast-scroll index from per-letter counts. Kept a
-/// pure, provider-agnostic value type so both backends (Jellyfin's per-letter
-/// `NameLessThan` counts, Plex's `firstCharacter` facet) assemble the same
+/// pure, provider-agnostic value type so sources with per-letter counts (such as
+/// Jellyfin's `NameLessThan` counts or Plex's `firstCharacter` facet) assemble the same
 /// ascending `(letter, count)` buckets and share this offset math — and so the
 /// tricky ascending-vs-descending index arithmetic is unit-testable without a
 /// network.

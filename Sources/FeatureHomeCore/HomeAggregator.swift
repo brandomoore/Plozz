@@ -61,6 +61,7 @@ public struct HomeAggregator: Sendable {
         watchlistLimit: Int = 10_000,
         visibility: HomeLibraryVisibility = .default,
         forceLibraryScoping: Bool = false,
+        homeLoad: HomeLoadLibraryInventory? = nil,
         identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef] = { _ in [] },
         onContinueWatching: @escaping @Sendable (String, [MediaItem]) async -> Void = { _, _ in },
         onProgress: @escaping @Sendable (Progress) async -> Void = { _ in }
@@ -69,7 +70,7 @@ public struct HomeAggregator: Sendable {
             from: accounts, policy: policy,
             continueWatchingLimit: continueWatchingLimit ?? policy.rowLimit,
             latestLimit: latestLimit, watchlistLimit: watchlistLimit,
-            perLibraryLimit: nil, visibility: visibility,
+            perLibraryLimit: nil, visibility: visibility, homeLoad: homeLoad,
             forceLibraryScoping: forceLibraryScoping,
             identitySources: identitySources,
             onContinueWatching: onContinueWatching, onProgress: onProgress
@@ -252,6 +253,7 @@ public struct HomeAggregator: Sendable {
         watchlistLimit: Int = 10_000,
         perLibraryLimit: Int = 20,
         visibility: HomeLibraryVisibility = .default,
+        homeLoad: HomeLoadLibraryInventory? = nil,
         identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef] = { _ in [] },
         onContinueWatching: @escaping @Sendable (String, [MediaItem]) async -> Void = { _, _ in },
         onProgress: @escaping @Sendable (Progress) async -> Void = { _ in }
@@ -260,7 +262,7 @@ public struct HomeAggregator: Sendable {
             from: accounts, policy: policy,
             continueWatchingLimit: continueWatchingLimit ?? policy.rowLimit,
             latestLimit: latestLimit, watchlistLimit: watchlistLimit,
-            perLibraryLimit: perLibraryLimit, visibility: visibility,
+            perLibraryLimit: perLibraryLimit, visibility: visibility, homeLoad: homeLoad,
             identitySources: identitySources,
             onContinueWatching: onContinueWatching, onProgress: onProgress
         )
@@ -381,7 +383,7 @@ public struct HomeAggregator: Sendable {
     }
 
     private enum Request: Sendable {
-        case libraries(Int)
+        case libraries(Int, LibraryInventoryStore.Publication?)
         case feed(Int, Feed, libraryIDs: [String]?)
         case library(Int, AggregatedLibrary, LibraryHomeRowKind)
         case server(Int, [HomeServerRowDefinition])
@@ -458,6 +460,7 @@ public struct HomeAggregator: Sendable {
         watchlistLimit: Int,
         perLibraryLimit: Int?,
         visibility: HomeLibraryVisibility,
+        homeLoad: HomeLoadLibraryInventory?,
         forceLibraryScoping: Bool = false,
         identitySources: @escaping @Sendable (MediaItem) -> [MediaSourceRef],
         onContinueWatching: @escaping @Sendable (String, [MediaItem]) async -> Void,
@@ -467,6 +470,7 @@ public struct HomeAggregator: Sendable {
         let clock = ContinuousClock()
         let started = clock.now
         let serverInfo = accounts.sourceServerInfo()
+        let preparedLibraries = await homeLoad?.take(for: accounts) ?? [:]
         let seriesIdentities = accounts.map { _ in SeriesIdentities() }
         let scopedDiscoveryAccounts = Set(accounts.indices.filter { index in
             forceLibraryScoping || visibility.disabledKeys.contains {
@@ -480,7 +484,7 @@ public struct HomeAggregator: Sendable {
                     accounts: accounts, visibility: visibility, cachesPages: true,
                     homeSnapshot: { _ in throw AppError.notFound }
                 )
-                var requests = accounts.indices.map(Request.libraries)
+                var requests = accounts.indices.map { Request.libraries($0, preparedLibraries[$0]) }
                 for index in accounts.indices {
                     for feed in Feed.allCases where feed != .latest || !scopedDiscoveryAccounts.contains(index) {
                         requests.append(.feed(index, feed, libraryIDs: nil))
@@ -774,10 +778,11 @@ public struct HomeAggregator: Sendable {
     ) async -> Response {
         let previewRequestLimit = perLibraryLimit < .max ? perLibraryLimit + 1 : perLibraryLimit
         switch request {
-        case let .libraries(index):
+        case let .libraries(index, prepared):
             let resolved = accounts[index]
             return .libraries(index, await fetch("libraries", from: resolved) {
-                try await libraryInventory(from: resolved)
+                if let libraries = prepared?.currentLibraries { return libraries }
+                return try await libraryInventory(from: resolved)
             })
         case let .feed(index, feed, libraryIDs):
             let resolved = accounts[index]

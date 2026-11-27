@@ -574,6 +574,17 @@ the output/content; availability and preference acknowledgement are not proof of
 processing for every engine route. Undocumented integration carries OS
 compatibility and App Review risk. This system-preference bridge is tvOS-only.
 
+**Volume Boost** is a separate player adjustment, off for each new playback
+session. On Apple TV, focus its Audio row and press left or right; on iPhone
+and iPad, choose a percentage in Audio. Percentages are added signal amplitude
+(100% doubles it), not device volume. Plozzigen applies gain before its peak
+limiter, and turns shaping off at Off. Rapid presses settle into one adjustment.
+Boost is offered only where the engine can rebuild at the playhead. It is
+hidden for player-managed audio and on remuxed titles with any E-AC-3 track:
+the track can carry spatial audio even when its metadata doesn't say so.
+If the boosted pipeline drops audio, the player restores unboosted playback.
+Opening a new disc playlist or clip resets Boost to Off.
+
 On iPhone and iPad, VOD and Live TV share adaptive native `PlayerMoreMenuButton`
 controls. Portrait uses one ellipsis. Landscape shows Audio, Subtitles, the
 current speed (on demand), and an ellipsis, omitting unavailable controls.
@@ -2849,6 +2860,11 @@ including its embedded guide; standalone guide and library styling is unchanged.
 
 Channels change only on the remote's Channel Up / Down buttons (`.pageUp` /
 `.pageDown`, see `LiveChannelRemotePresses`), never on Left/Right.
+
+The tvOS transport declares the timeline as its default focus. If native
+navigation stalls on More, pressing toward the other toolbar buttons requests
+the nearest one, or the timeline if there are no others. Down requests the
+timeline. This recovery does not run inside the More menu.
 
 Guide opens `LiveChannelGuideOverlay`, the player's own lineup over the playing
 picture. It is modelled on the Multiview picker but is not the browse guide:

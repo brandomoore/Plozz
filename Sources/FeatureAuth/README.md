@@ -1,8 +1,10 @@
 # FeatureAuth
 
-Sign-in for Plex, Jellyfin, and Emby, an explicit session state machine that
-keeps the UI free of ad-hoc boolean flags, and Keychain-backed account /
-session persistence.
+Sign-in and source setup for Plozz's
+[supported servers, shares and IPTV](../../.github/CONTRIBUTING.md#supported-sources),
+including development/TestFlight Navidrome/Subsonic sign-in. An explicit session
+state machine keeps the UI free of ad-hoc boolean flags, with Keychain-backed
+account/session persistence.
 
 ## Responsibility
 

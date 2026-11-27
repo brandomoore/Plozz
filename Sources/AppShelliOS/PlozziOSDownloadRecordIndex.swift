@@ -17,12 +17,14 @@ final class PlozziOSDownloadRecordIndex {
 
     private var entries: [String: Entry] = [:]
     private(set) var library = PlozziOSDownloadLibrary(movies: [], shows: [])
-    @ObservationIgnored private var snapshot: [DownloadedMediaRecord] = []
+    @ObservationIgnored private var keysBySourceID: [String: [String]] = [:]
 
     // Lookup routing observes membership; only the selected entry observes progress.
-    var records: [DownloadedMediaRecord] {
+    var isEmpty: Bool { entries.isEmpty }
+
+    func fallbackKeys(forSourceID id: String) -> [String] {
         _ = entries
-        return snapshot
+        return keysBySourceID[id] ?? []
     }
 
     func record(forKey key: String) -> DownloadedMediaRecord? {
@@ -41,13 +43,26 @@ final class PlozziOSDownloadRecordIndex {
                     || previous.identity != record.identity
                     || previous.versionID != record.versionID
                     || previous.snapshot.sourceItemID != record.snapshot.sourceItemID
+                    || previous.snapshot.sourceAccountID != record.snapshot.sourceAccountID
+                    || previous.snapshot.kind != record.snapshot.kind
                 entry.record = record
             } else {
                 next[record.identityKey] = Entry(record)
             }
         }
-        snapshot = records
         if membershipChanged {
+            var routes: [String: [String]] = [:]
+            for record in records {
+                if let id = record.snapshot.sourceItemID {
+                    routes[id, default: []].append(record.identityKey)
+                }
+                // An old account-scoped key can survive missing or repaired snapshot metadata.
+                if case let .external(source, id) = record.identity,
+                   source.hasPrefix(DownloadMediaIdentity.accountSourcePrefix), id != record.snapshot.sourceItemID {
+                    routes[id, default: []].append(record.identityKey)
+                }
+            }
+            keysBySourceID = routes
             entries = next.filter { keys.contains($0.key) }
         }
     }

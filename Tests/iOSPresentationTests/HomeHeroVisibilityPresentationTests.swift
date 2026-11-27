@@ -1,6 +1,7 @@
 #if os(iOS)
 import CoreModels
 import CoreUI
+import FeatureAuth
 import FeatureHomeCore
 @testable import MetadataKit
 import Observation
@@ -13,6 +14,54 @@ import XCTest
 
 @MainActor
 final class HomeHeroVisibilityPresentationTests: XCTestCase {
+    func testHomeMovieHeroUsesFetchedTitleWithoutASecondRootLookup() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "MovieRoot-\(UUID())"))
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
+        let sparse = MediaItem(
+            id: "movie", title: "Signal", kind: .movie,
+            allowsTitleBasedMetadataMatching: false, sourceAccountID: "header-fixture"
+        )
+        let reads = Mutex<[String]>([])
+        let provider = SeriesHeaderMobileProvider(itemLookup: { id in
+            reads.withLock { $0.append(id) }
+            guard id == sparse.id else { throw AppError.notFound }
+            var movie = sparse
+            movie.title = "Mountain"
+            return movie
+        })
+        let account = Account(
+            id: "header-fixture", server: provider.session.server, userID: "fixture",
+            userName: "Fixture", deviceID: "fixture"
+        )
+        app.accountsProviders.registry.register(.jellyfin) { _ in provider }
+        try app.accountsProviders.accountStore.add(account, token: "fixture")
+        app.accountsProviders.reloadAccounts()
+        let content = NavigationStack {
+            PlozziOSHomeHeroCarousel(
+                items: [sparse], autoAdvance: false, autoAdvanceSeconds: 30,
+                onPlay: { _ in }, pullModel: PlozziOSHomeHeroPullModel()
+            )
+        }
+        .environment(app)
+        .environment(HeroTrailerController())
+        .environment(PlozziOSSidebarGeometryModel())
+        try await withWindow(content, sizeClass: .compact) { window in
+            let deadline = ContinuousClock.now + .seconds(5)
+            var text = ""
+            repeat {
+                try await self.settle(window)
+                text = try self.renderedText(in: window)
+            } while !text.localizedCaseInsensitiveContains("Mountain") && ContinuousClock.now < deadline
+            XCTAssertTrue(text.localizedCaseInsensitiveContains("Mountain"), "Rendered hero: \(text)")
+            let movieReads = reads.withLock { $0.filter { $0 == sparse.id }.count }
+            XCTAssertGreaterThan(movieReads, 0)
+            XCTAssertLessThanOrEqual(movieReads, 2, "The root and Play target may each hydrate the movie once.")
+        }
+    }
+
     func testCompactDetailKeepsTitleAtArtworkBottomAndGrowsBelowIt() async throws {
         let app = PlozziOSAppModel()
         let original = app.profiles.activeProfileID
@@ -146,7 +195,11 @@ final class HomeHeroVisibilityPresentationTests: XCTestCase {
     }
 
     func testSeriesDetailsKeepSeriesMetadataAcrossEntryRoutesAndSizeClasses() async throws {
-        let app = PlozziOSAppModel()
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "SeriesHeader-\(UUID())"))
+        let app = PlozziOSAppModel(
+            accountStore: AccountStore(secureStore: InMemorySecureStore()),
+            profileStore: ProfileStore(defaults: defaults)
+        )
         let original = app.profiles.activeProfileID
         let profile = app.profiles.add(name: "Series header fixture", isAwaitingSetup: false)
         app.selectProfile(profile.id)
@@ -1047,6 +1100,7 @@ private struct HomeWidthFixture: View {
 struct SeriesHeaderMobileProvider: MediaProvider {
     var artworkURL: URL? = nil
     var latestItems: [MediaItem] = []
+    var itemLookup: (@Sendable (String) throws -> MediaItem)?
     var kind: ProviderKind { .jellyfin }
     var session: UserSession {
         UserSession(
@@ -1080,6 +1134,7 @@ struct SeriesHeaderMobileProvider: MediaProvider {
         )
     }
     func item(id: String) async throws -> MediaItem {
+        if let itemLookup { return try itemLookup(id) }
         guard let item = [show, season, episode].first(where: { $0.id == id }) else { throw AppError.notFound }
         return item
     }

@@ -72,7 +72,10 @@ private struct LiveJellyfinOnboardingFixture: View {
 
 @main
 struct FocusHostApp: App {
+    private let firstFrame: SignInFirstFrameRun?
+
     init() {
+        firstFrame = SignInFirstFrameRun.requested()
         if ProcessInfo.processInfo.arguments.contains("--live-root-fixture") {
             URLProtocol.registerClass(SourceSmokeNetworkBlocker.self)
         }
@@ -80,7 +83,9 @@ struct FocusHostApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.arguments.contains("--tracker-history-import-fixture") {
+            if let firstFrame {
+                SignInFirstFrameFixture(run: firstFrame)
+            } else if ProcessInfo.processInfo.arguments.contains("--tracker-history-import-fixture") {
                 TrackerHistoryImportFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--publicmetadb-pairing-fixture") {
                 PublicMetaDBPairingFixture()
@@ -204,6 +209,8 @@ struct FocusHostApp: App {
                 }
             } else if ProcessInfo.processInfo.arguments.contains("--live-jellyfin-home") {
                 LiveJellyfinHomeFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--stale-showcase-entry") {
+                StaleShowcaseEntryFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--native-sidebar-detail-fixture") {
                 NativeSidebarDetailFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--production-home-fixture") {

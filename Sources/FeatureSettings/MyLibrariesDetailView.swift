@@ -26,7 +26,7 @@ public struct MyLibrariesDetailView: View {
     public init(scope: ProfileLibrariesScope) { self.scope = scope }
 
     public var body: some View {
-        MyLibrariesContentView(scope: scope, allGroups: serverGroups(from: scope.accounts))
+        MyLibrariesContentView(scope: scope, allGroups: libraryPickerGroups(from: scope.accounts))
     }
 }
 
@@ -97,8 +97,20 @@ private struct MyLibrariesContentView: View {
                         emptyInventoryState
                             .settingsWorkspaceEntry()
                     } else {
-                        ForEach(allGroups, id: \.serverKey) {
-                            serverCard($0, scrollProxy: scrollProxy)
+                        ForEach(allGroups, id: \.serverKey) { group in
+                            if group.transportKind == .smb {
+                                SMBProfileLibrarySection(
+                                    group: group, libraries: Dictionary(grouping: scope.discoveredLibraries.value ?? [], by: \.accountID),
+                                    visibility: scope.homeVisibility, included: scope.isAccountIncludedInActiveProfile,
+                                    setIncluded: { id, included in
+                                        scope.onSetAccountIncluded(id, included)
+                                        revision += 1
+                                    }, failures: scope.libraryFailures,
+                                    retry: scope.reloadLibraries, first: group.serverKey == allGroups.first?.serverKey
+                                )
+                            } else {
+                                serverCard(group, scrollProxy: scrollProxy)
+                            }
                         }
                     }
                     addServerSection

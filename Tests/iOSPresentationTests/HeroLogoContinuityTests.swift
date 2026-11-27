@@ -48,13 +48,19 @@ final class HeroLogoContinuityTests: XCTestCase {
     }
 
     func testHomeOnlyFadesTheFirstContentAfterAVisibleEmptyPage() async throws {
-        for (warm, reduced) in [(true, false), (false, true), (false, false)] {
+        for (warm, reduced, covered) in [
+            (true, false, false), (false, true, false), (false, false, false), (false, false, true)
+        ] {
             let fixture = try Fixture(size: CGSize(width: 390, height: 844))
             defer { fixture.close() }
             let state = PlayState()
             state.isPlaceholder = !warm
+            let ready: (@MainActor (String) -> Void)?
+            if covered { ready = { _ in } } else { ready = nil }
             fixture.host.rootView = AnyView(
-                HomeEntranceFixture(state: state).environment(\._accessibilityReduceMotion, reduced)
+                HomeEntranceFixture(state: state)
+                    .environment(\._accessibilityReduceMotion, reduced)
+                    .environment(\.plozzHomeEntranceReady, ready)
             )
             if !warm {
                 try await Task.sleep(for: .milliseconds(100))
@@ -67,7 +73,7 @@ final class HeroLogoContinuityTests: XCTestCase {
                 partial = partial || (hero > 10 && hero < 240)
                 return hero > 250
             }
-            XCTAssertEqual(partial, !warm && !reduced)
+            XCTAssertEqual(partial, !warm && !reduced && !covered)
             state.isPlaceholder = true
             try await Task.sleep(for: .milliseconds(50))
             state.isPlaceholder = false

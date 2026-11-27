@@ -398,7 +398,25 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             canReanchor: engine.canSeek,
             canReload: engine.sessionReloadRefusal == nil
         ) { result.insert(.audioDelay) }
+        if engine.canSeek, engine.sessionReloadRefusal == nil,
+           !liveOutputPolicy.sharesAudioSession, engine.playbackBackend != .audio,
+           Self.supportsVolumeBoost(route: engine.videoRoute, delivery: engine.audioDelivery,
+                                    tracks: engine.audioTracks) {
+            result.insert(.volumeBoost)
+        }
         return result
+    }
+
+    nonisolated static func supportsVolumeBoost(route: VideoRoute, delivery: AudioDelivery, tracks: [TrackInfo]) -> Bool {
+        guard !tracks.isEmpty else { return false }
+        switch (route, delivery) {
+        case (.software, .decoded): return true
+        case (.loopback, .streamCopy), (.loopback, .bridged):
+            // isAtmos == false is not a negative JOC verdict. Shaping survives
+            // track switches, so an unprobed alternate matters just as much.
+            return !tracks.contains { $0.codec.lowercased() == "eac3" }
+        default: return false
+        }
     }
 
     nonisolated static func supportsAudioDelay(
@@ -454,6 +472,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     deinit {
+        volumeBoostCommit?.cancel()
         progressTimer?.cancel()
         liveSourceResetCancellable?.cancel()
         outputPolicyReload?.cancel()
@@ -785,6 +804,9 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
                             guard let self, self.outputLoadGeneration == outputGeneration, !Task.isCancelled else {
                                 throw CancellationError()
                             }
+                            // The new clip reopens with the disc's original (unboosted)
+                            // options. Discard even a still-debouncing remote press.
+                            self.resetVolumeBoost()
                             var selectionOptions = discOptions
                             if let clip {
                                 let opened = await Task.detached { selected.openDiscFile(clip.path) }.value
@@ -1108,6 +1130,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     private func beginOutputLoad() async -> UUID? {
+        resetVolumeBoost()
         allowsVideoUpscalingOverride = false
         outputLoadGeneration = UUID()
         let generation = outputLoadGeneration
@@ -1221,6 +1244,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             audioBridgeMode: losslessAudioEnabled ? .lossless : .surroundCompat
         )
         options.objectAudioRendering = .off
+        options.readsContainerAttachmentsAtOpen = true
         options.preferDualLayerDolbyVision = false
         let convertsFEL = dolbyVisionFELConversion && AppReleaseChannel.current.isBeta
             && AEEngine.OptionalComponent.dolbyVisionFelCurves.isBuiltIn
@@ -1282,6 +1306,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             nativeRemoteHLSIngestFallback: true
         )
         options.foldsDolbyVisionFEL = false
+        options.readsContainerAttachmentsAtOpen = true
         options.dolbyVisionHandling = .profile7MELOnly
         applyVideoUpscaling(videoUpscaling, to: &options)
         return options
@@ -1609,6 +1634,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     private func stopEngine(resetDisplayCriteria: Bool) {
+        resetVolumeBoost()
         #if PLOZZ_FRAME_ASS
         resetFrameArtwork()
         nextFrameSelection = nil
@@ -1677,6 +1703,70 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     public var maximumPlaybackSpeed: Double { Double(engine.maxSupportedRate) }
+
+    public private(set) var volumeBoost: PlayerVolumeBoost = .off
+    private var volumeBoostCommit: Task<Void, Never>?
+
+    private func resetVolumeBoost() {
+        volumeBoostCommit?.cancel()
+        volumeBoostCommit = nil
+        volumeBoost = .off
+    }
+
+    private var canEditVolumeBoost: Bool {
+        !outputLoadInProgress && discMenu?.isOpening != true && capabilities.contains(.volumeBoost)
+    }
+
+    nonisolated static func audioShapingRestoringDroppedAudio(
+        shaping: AudioShaping, delivery: AudioDelivery, isReady: Bool, state: PlaybackState
+    ) -> AudioShaping? {
+        guard isReady, state == .playing || state == .paused,
+              delivery == .droppedNoPipeline, shaping.compressor != nil else { return nil }
+        var restored = shaping
+        restored.compressor = nil
+        return restored
+    }
+
+    private func recoverDroppedBoostAudio() {
+        guard !outputLoadInProgress, discMenu?.isOpening != true,
+              let restored = Self.audioShapingRestoringDroppedAudio(
+                shaping: engine.audioShaping, delivery: engine.audioDelivery,
+                isReady: engine.isSessionReady, state: engine.state
+              ) else { return }
+        resetVolumeBoost()
+        // A dropped pipeline no longer advertises Boost. Undo the change
+        // directly, rather than requiring a user to find an unavailable row.
+        PlozzLog.playback.error("Volume boost dropped the audio pipeline; restoring unboosted audio")
+        engine.setAudioShaping(restored)
+        onTracksChanged?()
+    }
+
+    nonisolated static func volumeBoostCompressor(_ boost: PlayerVolumeBoost) -> AudioShaping.Compressor? {
+        // A unity ratio applies only makeup gain. Aether's shaping graph adds
+        // the peak limiter after it; Off bypasses both stages.
+        boost == .off ? nil : .init(thresholdDB: 0, ratio: 1, makeupGainDB: boost.gainDB)
+    }
+
+    public func setVolumeBoost(_ boost: PlayerVolumeBoost) {
+        guard canEditVolumeBoost, volumeBoost != boost else { return }
+        volumeBoostCommit?.cancel()
+        volumeBoost = boost
+        // One playhead-preserving rebuild after a burst of remote presses.
+        volumeBoostCommit = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled, let self else { return }
+            self.volumeBoostCommit = nil
+            guard self.canEditVolumeBoost else {
+                let applied = self.engine.audioShaping.compressor?.makeupGainDB ?? 0
+                self.volumeBoost = PlayerVolumeBoost.allCases.first { $0.gainDB == applied } ?? .off
+                self.onTracksChanged?()
+                return
+            }
+            var shaping = self.engine.audioShaping
+            shaping.compressor = Self.volumeBoostCompressor(boost)
+            self.engine.setAudioShaping(shaping)
+        }
+    }
 
     public func setAudioDelay(_ seconds: TimeInterval) {
         guard capabilities.contains(.audioDelay) else { return }
@@ -2329,6 +2419,10 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
     }
 
     private func observeEngine() {
+        engine.$audioDelivery.combineLatest(engine.$isSessionReady, engine.$state)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.recoverDroppedBoostAudio() }
+            .store(in: &cancellables)
         engine.$hasFirstFrameReadyForDisplay
             .combineLatest(engine.$isSessionReady, engine.$playbackBackend)
             .receive(on: DispatchQueue.main)

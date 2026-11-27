@@ -53,6 +53,21 @@ public struct PlayerEngineCapabilities: OptionSet, Sendable {
     public static let dualSubtitleDecode = PlayerEngineCapabilities(rawValue: 1 << 4)
     /// The shared host can proportionally resize the video-only surface.
     public static let videoZoom = PlayerEngineCapabilities(rawValue: 1 << 5)
+    public static let volumeBoost = PlayerEngineCapabilities(rawValue: 1 << 6)
+}
+
+/// Added signal amplitude, not device volume or a perceived-loudness target.
+public enum PlayerVolumeBoost: Int, CaseIterable, Sendable {
+    case off = 0, quarter = 25, half = 50, threeQuarters = 75, double = 100
+    case extra150 = 150, extra200 = 200, extra250 = 250, extra300 = 300
+
+    public var gainDB: Double { 20 * log10(1 + Double(rawValue) / 100) }
+
+    func stepped(_ direction: Int) -> Self {
+        let levels = Self.allCases
+        guard let index = levels.firstIndex(of: self) else { return self }
+        return levels[min(levels.count - 1, max(0, index + direction.signum()))]
+    }
 }
 
 /// A primary authored ASS frame replaces the preceding frame at `itemTime`
@@ -199,6 +214,8 @@ public protocol VideoEngine: AnyObject {
     /// Attempt immediate audio-only correction; false never triggers a seek/reload.
     func setAudioDelayLive(_ seconds: TimeInterval) -> Bool
     var audioDelaySeconds: TimeInterval { get }
+    var volumeBoost: PlayerVolumeBoost { get }
+    func setVolumeBoost(_ boost: PlayerVolumeBoost)
 
     /// Shifts subtitles relative to video by `seconds` (positive = subs later,
     /// negative = subs earlier). No-op when the engine doesn't advertise
@@ -535,6 +552,8 @@ public extension VideoEngine {
     func setAudioDelay(_ seconds: TimeInterval) {}
     func setAudioDelayLive(_ seconds: TimeInterval) -> Bool { false }
     var audioDelaySeconds: TimeInterval { 0 }
+    var volumeBoost: PlayerVolumeBoost { .off }
+    func setVolumeBoost(_ boost: PlayerVolumeBoost) {}
     func setSubtitleDelay(_ seconds: TimeInterval) {}
     func updateSubtitleStyle(_ style: SubtitleStyle) {}
     func setDialogEnhanceEnabled(_ enabled: Bool) {}

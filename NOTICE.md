@@ -21,9 +21,9 @@ embedded in the app bundle as frameworks (`AetherLibavcodec.framework`,
 
 | Component | Source (pinned) | License |
 |---|---|---|
-| AetherEngine (media engine; "Plozzigen") | `github.com/brandomoore/AetherEngine` @ `5d8bd5bddf09c7bfe4155dc62bb04ece62b63c03` | LGPL-3.0 with Apple Store exception |
-| FFmpeg `libav*` (demux / decode / audio bridge / HLS-fMP4 mux) | `github.com/superuser404notfound/FFmpegBuild` @ `3.18.0` (FFmpeg **n8.1.3**) | **LGPL-2.1-or-later** |
-| dav1d 1.5.4 (AV1 software decoder, separate xcframework) | bundled by FFmpegBuild | BSD-2-Clause (permissive) |
+| AetherEngine (media engine; "Plozzigen") | `github.com/brandomoore/AetherEngine` @ `6c5bc85ad3507cea9cfff762e2090dd0d45d5813` | LGPL-3.0 with Apple Store exception |
+| FFmpeg `libav*` (demux / decode / audio bridge / HLS-fMP4 mux) | `github.com/superuser404notfound/FFmpegBuild` @ `3.19.1` (FFmpeg **n8.1.3**) | **LGPL-2.1-or-later** |
+| dav1d 1.5.5 (AV1 software decoder, separate xcframework) | bundled by FFmpegBuild | BSD-2-Clause (permissive) |
 | zimg 3.0.6 (image scaling and color conversion) | bundled by FFmpegBuild | WTFPL |
 | libzvbi 0.2.46 (teletext decoder) | bundled by FFmpegBuild; GPL sources excluded by its build recipe | LGPL-2.0-or-later, conveyed under LGPL-2.1; `ure.c` MIT |
 | libdovi (Dolby Vision RPU parser) | `github.com/superuser404notfound/LibDovi` @ `2.2.0` | MIT |
@@ -55,7 +55,7 @@ not imply that height-channel conversion remains available.
 
 ## FFmpeg license facts
 
-Upstream FFmpeg `libav*` and FFmpegBuild 3.18.0 are **LGPL-2.1-or-later**.
+Upstream FFmpeg `libav*` and FFmpegBuild 3.19.1 are **LGPL-2.1-or-later**.
 The build enables neither `--enable-gpl` nor `--enable-version3`; the exact
 component licenses and notices live in the release's `LICENSES/` directory.
 The build is scoped to demux, decode, selected filters and the AVPlayer bridge.

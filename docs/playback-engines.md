@@ -850,17 +850,19 @@ headers when updating the vendored sources, and update sources, public headers,
 binary checksums, and bundled notices together.
 
 Plozz pins the playback-corrected
-[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/5d8bd5bddf09c7bfe4155dc62bb04ece62b63c03)
-at commit `5d8bd5bddf09c7bfe4155dc62bb04ece62b63c03`, integrating upstream
-**7.72.1** (`c182640a855b1c3ec941e87e37777782946f5d25`).
-Playback diagnostics show `AetherEngine v7.72.1`, read from the linked engine
+[AetherEngine fork](https://github.com/brandomoore/AetherEngine/tree/6c5bc85ad3507cea9cfff762e2090dd0d45d5813)
+at commit `6c5bc85ad3507cea9cfff762e2090dd0d45d5813`, integrating upstream
+**7.75.0** (`1257b90d759f3bc3f0026f167b19db9eb6d5e201`).
+Playback diagnostics show `AetherEngine v7.75.0`, read from the linked engine
 rather than a duplicated version constant. The exact fork commit remains in
 attributions because the upstream version does not identify Plozz's patches.
 Native audio readback and subtitle selection use bounded off-main media-selection
 reads, so an unresponsive media service does not block the UI actor. Plozz treats
 AVFoundation's media-services reset as one fresh same-engine recovery, not a
 codec failure, and retains numeric audio-session failure evidence.
-The 7.72.1 integration advances FFmpegBuild to 3.18.0; LibDovi remains at 2.2.0.
+The 7.75.0 integration advances FFmpegBuild to 3.19.1; LibDovi remains at 2.2.0.
+Plozz keeps reading embedded fonts at open so the overlay and frame renderer
+both have the authored typefaces for the first subtitle.
 VC-1 and WMV3 software decoding now uses frame threads. The fork retains
 AAC compensation and shaped EOF tails across the upstream audio refactor,
 source-preparation decoder limits, native selection ownership and active-picture

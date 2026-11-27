@@ -121,6 +121,13 @@ final class ProfilePickerInteractionTests: XCTestCase {
         let result = app.staticTexts["fixture-selection-result"]
         XCTAssertTrue(result.wait(for: \.isHittable, toEqual: true, timeout: 8), app.debugDescription)
         XCTAssertEqual(result.label, "Selected")
+
+        app.buttons["Open picker"].tap()
+        let current = app.buttons["Protected"]
+        XCTAssertTrue(current.wait(for: \.isHittable, toEqual: true, timeout: 5))
+        current.tap()
+        XCTAssertTrue(result.wait(for: \.isHittable, toEqual: true, timeout: 5),
+                      "Reselecting the unlocked profile should close the picker without either PIN.")
     }
 
     func testDisabledPlexSourceDoesNotAdvertiseOrAskForPIN() {

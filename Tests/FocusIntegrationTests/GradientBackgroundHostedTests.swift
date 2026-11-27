@@ -204,6 +204,20 @@ final class GradientBackgroundHostedTests: XCTestCase {
                 attachment.name = "pin-surface-\(name)-gradient-\(gradient)-reduced-\(reduced)"
                 attachment.lifetime = .keepAlways
                 add(attachment)
+                if reduced {
+                    let frame = try XCTUnwrap(NavigationRowFocusRequester.frame(of: focused, relativeTo: window))
+                    let center = CGPoint(x: frame.midX, y: frame.midY)
+                    let plate = try pixel(image, at: CGPoint(x: center.x + PINMetrics.keyDiameter * 0.30, y: center.y))
+                    XCTAssertTrue(plate.allSatisfy { $0 > 210 }, "Expected the bright focused key.")
+                    var darkSamples = 0
+                    for dx in stride(from: -12, through: 12, by: 2) {
+                        for dy in stride(from: -16, through: 16, by: 2) {
+                            let ink = try pixel(image, at: CGPoint(x: center.x + CGFloat(dx), y: center.y + CGFloat(dy)))
+                            if ink.allSatisfy({ $0 < 95 }) { darkSamples += 1 }
+                        }
+                    }
+                    XCTAssertGreaterThan(darkSamples, 8, "The focused key must paint a readable dark glyph on its bright plate.")
+                }
             }
         }
     }

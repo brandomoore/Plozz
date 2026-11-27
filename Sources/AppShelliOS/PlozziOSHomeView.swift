@@ -30,9 +30,23 @@ private struct PlozziOSHomeIsFrontmostKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
+    @Entry var plozzHomeEntranceReady: (@MainActor (String) -> Void)? = nil
+
     var plozziOSHomeIsFrontmost: Bool {
         get { self[PlozziOSHomeIsFrontmostKey.self] }
         set { self[PlozziOSHomeIsFrontmostKey.self] = newValue }
+    }
+}
+
+private struct HomeEntranceReadiness: ViewModifier {
+    @Environment(\.plozzHomeEntranceReady) private var report
+    let profileID: String
+    let ready: Bool
+
+    func body(content: Content) -> some View {
+        content.onChange(of: ready && report != nil ? profileID : nil, initial: true) { _, id in
+            if let id { report?(id) }
+        }
     }
 }
 
@@ -255,6 +269,7 @@ struct PlozziOSHomeView: View {
     @State private var editingHomeRow: PlozziOSHomeRowSettingsRoute?
     @State private var heroFreshnessRefresh = HeroFreshnessRefreshDriver()
     private let appModel: PlozziOSAppModel
+    private let entranceProfileID: String
     private let onAddServer: () -> Void
     private let onShowSettings: () -> Void
     private let heroMetadataEnricher: HeroMetadataEnricher
@@ -275,6 +290,7 @@ struct PlozziOSHomeView: View {
         onShowSettings: @escaping () -> Void
     ) {
         self.appModel = appModel
+        entranceProfileID = appModel.profiles.activeProfileID
         self.onAddServer = onAddServer
         self.onShowSettings = onShowSettings
         let heroAccounts = appModel.accountsProviders.resolvedActiveAccounts
@@ -393,9 +409,10 @@ struct PlozziOSHomeView: View {
         .task(id: viewModel.state.diagnosticName) {
             seedHeroFromCachedRowsIfNeeded()
         }
+        .modifier(HomeEntranceReadiness(profileID: entranceProfileID, ready: !hasScrollingContent))
         .modifier(
             HomePresentationDiagnostics(
-                frameKey: frameTelemetryKey,
+                frameKey: FanoutDiagnostics.isEnabled ? frameTelemetryKey : nil,
                 cwCount: viewModel.state.value?.continueWatching.count ?? -1,
                 cwPlaceholder: viewModel.loadingRows.contains(.continueWatching),
                 cachedSnapshot: viewModel.isShowingCachedSnapshot
@@ -971,6 +988,10 @@ struct PlozziOSHomeView: View {
         }
         return scroll
             .id(ObjectIdentifier(viewModel))
+            .modifier(HomeEntranceReadiness(
+                profileID: entranceProfileID,
+                ready: heroSlotState == .content || presentationRows.first?.showsHomeMedia == true
+            ))
             .modifier(PlozziOSObserveHomeContent(
                 entrance: $contentEntrance, visibleContent: homePageIsVisible ? hasMedia : nil
             ))
@@ -2192,6 +2213,7 @@ struct PlozziOSHomeHeroCarousel: View {
         }
         .task(id: currentItem.map { resolutionKey(for: $0) }) {
             guard let currentItem else { return }
+            if await resolveLibraryPlayableTogether(for: currentItem) { return }
             async let root: Void = resolveRootItem(for: currentItem)
             async let play: Void = resolvePlayTarget(for: currentItem)
             _ = await (root, play)
@@ -2439,6 +2461,40 @@ struct PlozziOSHomeHeroCarousel: View {
         }
     }
 
+    private func resolveLibraryPlayableTogether(for item: MediaItem) async -> Bool {
+        guard (item.kind == .movie || item.kind == .episode), item.discoverySources.isEmpty else { return false }
+        let key = resolutionKey(for: item)
+        guard rootItems[item.id]?.value(for: key) == nil,
+              playTargets[item.id]?.value(for: key) == nil else { return false }
+        let target = bestLibraryItem(for: item)
+        guard target.kind == item.kind, target.discoverySources.isEmpty,
+              let accountID = target.sourceAccountID, !accountID.isEmpty,
+              let provider = provider(for: target) else { return false }
+        let response = try? await provider.item(id: target.id)
+        guard !Task.isCancelled, resolutionKey(for: item) == key else { return true }
+        if let response, response.id == target.id, response.kind == target.kind,
+           response.discoverySources.isEmpty,
+           response.selectedSourceAccountID == nil || response.selectedSourceAccountID == accountID,
+           let playable = HeroDiscoveryPlaybackTarget.validatedHydration(response, original: item, selected: target),
+           playable.sourceAccountID == accountID {
+            let entry = HeroResolutionCacheEntry(key: key, item: playable)
+            playTargets[item.id] = entry
+            if playable.kind == .movie {
+                rootItems[item.id] = entry
+            } else {
+                // An episode is the Play target; its parent still owns the hero title.
+                await finishRootItem(for: item, target: target, key: key, provider: provider, response: response)
+            }
+        } else {
+            // Count the unsuccessful or contradictory read as the root's first attempt.
+            // Play still gets its own lookup; it doesn't wait for the root to recover.
+            async let root: Void = finishRootItem(for: item, target: target, key: key, provider: provider, response: response)
+            await resolvePlayTarget(for: item)
+            await root
+        }
+        return true
+    }
+
     private func resolveRootItem(for item: MediaItem) async {
         guard item.discoverySources.isEmpty || item.locallyValidatedPlayableSource else { return }
         let key = resolutionKey(for: item)
@@ -2449,11 +2505,23 @@ struct PlozziOSHomeHeroCarousel: View {
             rootItems[item.id] = HeroResolutionCacheEntry(key: key, item: item)
             return
         }
-        let response = (try? await provider.item(id: target.id)) ?? target
+        let response = try? await provider.item(id: target.id)
+        await finishRootItem(for: item, target: target, key: key, provider: provider, response: response)
+    }
+
+    private func finishRootItem(
+        for item: MediaItem, target: MediaItem, key: HeroPlaybackResolutionKey,
+        provider: any MediaProvider, response: MediaItem?
+    ) async {
         guard !Task.isCancelled,
               let hydrated = HeroDiscoveryPlaybackTarget.validatedHydration(
-                response, original: item, selected: target
+                response ?? target, original: item, selected: target
               ) else { return }
+        if response != nil, hydrated.kind == .movie, hydrated.id == target.id,
+           hydrated.sourceAccountID == target.sourceAccountID {
+            rootItems[item.id] = HeroResolutionCacheEntry(key: key, item: hydrated)
+            return
+        }
         let metadataID: String
         if (hydrated.kind == .episode || hydrated.kind == .season),
            let seriesID = hydrated.seriesID {
@@ -2464,7 +2532,7 @@ struct PlozziOSHomeHeroCarousel: View {
 
         do {
             var root = try await provider.item(id: metadataID)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, resolutionKey(for: item) == key else { return }
             if root.sourceAccountID == nil,
                let sourceAccountID = target.sourceAccountID {
                 root = root.taggingSource(sourceAccountID)
@@ -3800,13 +3868,28 @@ private final class PlozziOSArtworkPrefetchTasks {
     }
 }
 
+/// Only directly playable cards depend on the page's changing Play handler.
+private struct PlozziOSHomePlayButton<Label: View, Fallback: View>: View {
+    @Environment(\.plozziOSRailPlay) private var railPlay
+    let playItem: () -> MediaItem
+    @ViewBuilder let label: () -> Label
+    @ViewBuilder let fallback: () -> Fallback
+
+    var body: some View {
+        if let railPlay {
+            Button { railPlay(playItem()) } label: { label() }
+                .buttonStyle(.plain)
+        } else {
+            fallback()
+        }
+    }
+}
+
 struct PlozziOSHomeMediaCard: View {
     #if DEBUG
     static var routingResolutionCount = 0
     #endif
     @Environment(PlozziOSAppModel.self) private var appModel
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
     let item: MediaItem
     let isLandscape: Bool
     var interaction: PlozziOSRailInteraction = .openDetail
@@ -3815,42 +3898,35 @@ struct PlozziOSHomeMediaCard: View {
     var isPendingRemoval: Bool = false
     let provider: (any MediaProvider)?
     var revisit: PlozziOSDetailArtworkRevisit? = nil
-    @State private var downloadRecord: DownloadedMediaRecord?
-    @Environment(\.plozziOSRailPlay) private var railPlay
-
     var body: some View {
-        let playsDirectly = interaction == .play && railPlay != nil && item.isPlayableNow
-        Group {
-            // Direct play needs a handler installed by the page that owns the player,
-            // and an item that is actually playable — a discovery/request stub has
-            // nothing to run — so both fall back to the detail push rather than
-            // opening a broken player.
-            if playsDirectly, let railPlay {
-                Button {
-                    railPlay(Self.resolvedItem(item, appModel: appModel, playsDirectly: true))
-                } label: { card }
-                    .buttonStyle(.plain)
-            } else if provider != nil || !appModel.accountsProviders.resolvedActiveAccounts.isEmpty {
-                MediaArtworkZoomLink(id: item.stablePresentationID) {
-                    PlozziOSHomeCardDetail(
-                        item: item, fallbackProvider: provider
-                    )
-                    .environment(\.plozzMetrics, PlozziOSMediaLayout.metrics(
-                        density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize,
-                        isRunningOnMac: isRunningOnMac))
-                    .environment(\.plozzCardCaptionView, .related)
-                } label: {
-                    card
-                }
-                .buttonStyle(.plain)
-                .task(id: revisit, priority: .utility) {
-                    guard let revisit, revisit.scope == appModel.detailArtworkScopeID else { return }
-                    await revisit.prepare(for: item, snapshots: appModel.detailSnapshotCache,
-                                          replay: appModel.detailArtworkReplay)
-                }
-            } else {
+        if interaction == .play && item.isPlayableNow {
+            PlozziOSHomePlayButton {
+                Self.resolvedItem(item, appModel: appModel, playsDirectly: true)
+            } label: {
+                card
+            } fallback: {
+                detailLink
+            }
+        } else {
+            detailLink
+        }
+    }
+
+    @ViewBuilder private var detailLink: some View {
+        if provider != nil || !appModel.accountsProviders.resolvedActiveAccounts.isEmpty {
+            MediaArtworkZoomLink(id: item.stablePresentationID) {
+                HomeRailDetailDestination(item: item, provider: provider)
+            } label: {
                 card
             }
+            .buttonStyle(.plain)
+            .task(id: revisit, priority: .utility) {
+                guard !Task.isCancelled, let revisit,
+                      let resources = appModel.detailRevisitResources(for: revisit.scope) else { return }
+                await revisit.prepare(for: item, snapshots: resources.snapshots, replay: resources.replay)
+            }
+        } else {
+            card
         }
     }
 
@@ -3887,7 +3963,7 @@ struct PlozziOSHomeMediaCard: View {
             // "landscape means playable" rule, so presentation and behaviour stay
             // independently controlled.
             showsResumeChip: item.kind != .collection && (showsResumeChip || (isLandscape && !item.isPersonalVideo) || interaction == .play),
-            downloadState: liveDownloadRecord?.badgeState,
+            downloadState: appModel.downloads.cachedRecord(forSelectedVersionOf: item)?.badgeState,
             // No visible "…" while browsing: the actions people actually reach for
             // live on the detail page, which is far more discoverable than a tiny
             // glyph on artwork. Press-and-hold still opens the menu here. The
@@ -3896,19 +3972,22 @@ struct PlozziOSHomeMediaCard: View {
             showsActionsMenu: false,
             isPendingRemoval: isPendingRemoval
         )
-        .task(id: "\(item.id)|\(item.selectedVersionID ?? "")") {
-            downloadRecord = await appModel.downloads.record(forSelectedVersionOf: item)
-        }
     }
+}
 
-    /// Re-read from the live registry so an in-flight transfer's progress updates,
-    /// falling back to the value the task fetched. Same pattern the episode rows
-    /// on the detail page use.
-    private var liveDownloadRecord: DownloadedMediaRecord? {
-        guard let downloadRecord else { return nil }
-        return appModel.downloads.records.first {
-            $0.identityKey == downloadRecord.identityKey
-        } ?? downloadRecord
+private struct HomeRailDetailDestination: View {
+    @Environment(PlozziOSAppModel.self) private var appModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.plozziOSIsRunningOnMac) private var isRunningOnMac
+    let item: MediaItem
+    let provider: (any MediaProvider)?
+
+    var body: some View {
+        PlozziOSHomeCardDetail(item: item, fallbackProvider: provider)
+            .environment(\.plozzMetrics, PlozziOSMediaLayout.metrics(
+                density: appModel.settings.density.density, dynamicTypeSize: dynamicTypeSize,
+                isRunningOnMac: isRunningOnMac))
+            .environment(\.plozzCardCaptionView, .related)
     }
 }
 
@@ -4316,7 +4395,7 @@ private struct PlozziOSScreenshotPlaybackRegistration: ViewModifier {
 /// `PLZXFAN_STDOUT=1` and prints counts, kinds and hashes only — never titles,
 /// ids or URLs.
 private struct HomePresentationDiagnostics: ViewModifier {
-    let frameKey: String
+    let frameKey: String?
     let cwCount: Int
     let cwPlaceholder: Bool
     let cachedSnapshot: Bool
@@ -4324,7 +4403,7 @@ private struct HomePresentationDiagnostics: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onChange(of: frameKey, initial: true) { _, key in
-                guard FanoutDiagnostics.isEnabled else { return }
+                guard let key, FanoutDiagnostics.isEnabled else { return }
                 let stamp: Int = Int(ProcessInfo.processInfo.systemUptime * 1000)
                 FanoutDiagnostics.emit("HOMEFRAME t=\(stamp) \(key)")
             }

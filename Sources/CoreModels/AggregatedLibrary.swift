@@ -44,6 +44,18 @@ public struct AggregatedLibrary: Codable, Hashable, Identifiable, Sendable {
 
     public var id: String { key }
 
+    /// For one SMB root, prefer indexed views to the redundant file-browser
+    /// shortcut. A files-only root remains selectable, including before indexing.
+    public static func smbPickerChoices(_ libraries: [Self], rootName: String) -> [Self] {
+        let indexed = libraries.filter { $0.library.synthesizedName != .browseFiles }
+        var choices = indexed.isEmpty ? libraries : indexed
+        if choices.count == 1 {
+            choices[0].library.title = rootName
+            choices[0].library.synthesizedName = nil
+        }
+        return choices
+    }
+
     /// Older snapshots contain synthetic Plex collection libraries. Collections
     /// now live inside the real library browser instead of separate shortcuts.
     public var isRetiredCollectionShortcut: Bool {

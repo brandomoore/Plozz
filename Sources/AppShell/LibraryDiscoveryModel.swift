@@ -13,6 +13,7 @@ import FeatureSettings
 @Observable
 final class LibraryDiscoveryModel {
     private(set) var state: LoadState<[AggregatedLibrary]> = .idle
+    private(set) var failures: [String: AppError] = [:]
     private(set) var canSkipSelection = false
 
     private let aggregator = HomeAggregator()
@@ -79,6 +80,7 @@ final class LibraryDiscoveryModel {
     ) async {
         let generation = UUID()
         loadGeneration = generation
+        failures = [:]
         let cached = cachedLibraries(from: accounts)
         state = cached.libraries.isEmpty
             ? (Set(accounts.map(\.account.id)).union(expectedAccountIDs).isSubset(of: cached.accountIDs) ? .empty : .loading)
@@ -87,6 +89,7 @@ final class LibraryDiscoveryModel {
         let discovery = await aggregator.libraryDiscovery(from: accounts, expectedAccountIDs: expectedAccountIDs)
         guard !Task.isCancelled, generation == loadGeneration, isCurrent() else { return }
         canSkipSelection = discovery.canSkipSelection(for: accounts)
+        failures = discovery.failures
         if discovery.libraries.isEmpty, !discovery.unreachableAccountIDs.isEmpty {
             state = .failed(.serverUnreachable)
         } else {

@@ -6,6 +6,12 @@ import SwiftUI
 import CoreModels
 import CoreUI
 
+@MainActor @Observable
+private final class PlayerAudioEffects {
+    var volumeBoost: PlayerVolumeBoost = .off
+    var dialogEnhanceEnabled = false
+}
+
 @MainActor
 @Observable
 public final class PlayerUpscalingModel {
@@ -537,6 +543,11 @@ public final class PlayerControlsModel {
     public var playbackSpeed: Double = 1.0
     /// Audio offset in seconds (positive = audio later than video).
     public var audioDelaySeconds: TimeInterval = 0
+    private let audioEffects = PlayerAudioEffects()
+    public var volumeBoost: PlayerVolumeBoost {
+        get { audioEffects.volumeBoost }
+        set { audioEffects.volumeBoost = newValue }
+    }
     public let audioSyncAdjustment: PlayerAudioSyncEditor
     public static let audioDelayRange = PlayerAudioSyncAdjustment.range
     public var audioSyncHint: LocalizedStringResource {
@@ -557,7 +568,10 @@ public final class PlayerControlsModel {
     /// text track we can't shift. Gates the in-player "Sync" control.
     public var subtitleDelayAdjustable: Bool = false
     /// Whether the dialog-enhance audio filter is engaged (when supported).
-    public var dialogEnhanceEnabled: Bool = false
+    public var dialogEnhanceEnabled: Bool {
+        get { audioEffects.dialogEnhanceEnabled }
+        set { audioEffects.dialogEnhanceEnabled = newValue }
+    }
 
     // MARK: Transport UI state (written by the input controller)
     public var controlsVisible: Bool = false {
@@ -659,7 +673,7 @@ public final class PlayerControlsModel {
         #if os(tvOS)
         if !systemAudio.availableSettings.isEmpty { return true }
         #endif
-        return hasSelectableAudio || !engineCapabilities.intersection([.dialogEnhance, .audioDelay]).isEmpty
+        return hasSelectableAudio || !engineCapabilities.intersection([.dialogEnhance, .audioDelay, .volumeBoost]).isEmpty
     }
     public var hasSelectableSubtitles: Bool { !subtitleOptions.isEmpty }
 

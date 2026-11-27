@@ -18,6 +18,7 @@ struct PlayerOptionsActions {
     var setDolbyVisionFELConversion: (Bool) -> Void = { _ in }
     var setVideoUpscaling: (VideoUpscaling) -> Void = { _ in }
     var setAudioDelay: (TimeInterval) -> Void = { _ in }
+    var setVolumeBoost: (PlayerVolumeBoost) -> Void = { _ in }
     var setAudioDelayLive: (TimeInterval) -> Bool = { _ in false }
     var setSubtitleDelay: (TimeInterval) -> Void = { _ in }
     var setDialogEnhance: (Bool) -> Void = { _ in }

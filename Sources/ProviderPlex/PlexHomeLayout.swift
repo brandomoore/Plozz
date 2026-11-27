@@ -3,7 +3,7 @@ import CryptoKit
 import CoreModels
 import CoreNetworking
 
-extension PlexProvider {
+extension PlexProvider: HomeLayoutInventoryProviding {
     public func libraryRecentlyAddedPage(
         in libraryID: String, kind: MediaItemKind, startIndex: Int, limit: Int
     ) async throws -> HomeRowPage {
@@ -113,7 +113,20 @@ extension PlexProvider {
     }
 
     public func serverHomeLayout() async throws -> ServerHomeLayout? {
-        let libraries = try await client.sections()
+        try await serverHomeLayout(from: client.sections())
+    }
+
+    package func serverHomeLayoutWithInventory(for source: ResolvedAccount) async throws
+        -> (layout: ServerHomeLayout, inventory: LibraryInventoryStore.Publication?) {
+        let read = try await LibraryInventoryStore.shared.refresh(for: source, inventory: { mediaLibraries($0) }) {
+            try await client.sections()
+        }
+        // Even a cloud-confirmed no-grant clears an older publication. Don't hand that
+        // empty answer on: aggregation must perform its own authorization check.
+        return (try await serverHomeLayout(from: read.value), read.value.isEmpty ? nil : read.publication)
+    }
+
+    private func serverHomeLayout(from libraries: [PlexDirectory]) async throws -> ServerHomeLayout {
         var layout = ServerHomeLayout(
             sections: [], source: .promotedHubs,
             omitsMusic: libraries.contains { $0.type == "artist" }

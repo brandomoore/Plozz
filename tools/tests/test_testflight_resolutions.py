@@ -541,7 +541,8 @@ class DiscordResolutionTests(unittest.TestCase):
         for linked_thread in self.discord.threads:
             self.assertTrue(linked_thread["thread_metadata"]["archived"])
             embeds = [m["embeds"][0] for m in self.discord.messages[linked_thread["id"]] if m.get("embeds")]
-            self.assertTrue(any("fixed in **build 59.4**" in e["description"] for e in embeds))
+            self.assertTrue(any("**Apple TV:**" in e["description"] and "(build 59.4)" in e["description"]
+                                and e["title"] == "Available in TestFlight" for e in embeds))
             self.assertFalse(any(BRIDGE.RESOLUTION_HEADER in e["description"] for e in embeds))
         count = len(self.discord.writes)
         self.sync()
@@ -561,7 +562,10 @@ class DiscordResolutionTests(unittest.TestCase):
         for identifier in (THREAD, SECOND):
             messages = [m for m in self.discord.messages[identifier] if m.get("embeds")]
             self.assertEqual(len(messages), 3)
-            self.assertEqual(len(BRIDGE.discord_records(messages, f"resolution:{self.number}:{FIX['commit']}:awaiting_release")), 1)
+            pending, = BRIDGE.discord_records(messages, f"resolution:{self.number}:{FIX['commit']}:awaiting_release")
+            self.assertEqual(pending["embeds"][0]["title"], "Waiting for TestFlight")
+            self.assertIn("when you can try it on Apple TV", pending["embeds"][0]["description"])
+            self.assertNotIn("Additional context", pending["embeds"][0]["description"])
             self.assertEqual(len(BRIDGE.discord_records(messages, f"resolution:{self.number}:{FIX['commit']}:delivered")), 1)
 
     def test_new_link_baselines_existing_resolution_without_historical_announcements(self):
@@ -572,6 +576,24 @@ class DiscordResolutionTests(unittest.TestCase):
         self.sync()
         for identifier in (THREAD, SECOND):
             self.assertEqual(sum(bool(m.get("embeds")) for m in self.discord.messages[identifier]), 1)
+
+    def test_feature_update_names_each_platforms_verified_build(self):
+        forum = next(key for key, kind in BRIDGE.FORUMS.items() if kind == "enhancement")
+        feature = thread(parent_id=forum)
+        receipt = {"platforms": ["tvOS", "iOS"], "status": "awaiting_release", "deliveries": {
+            "tvOS": {"version": "2026.11.20", "build": "59.4"},
+        }}
+        title, text = BRIDGE.testflight_update(feature, receipt)
+        self.assertEqual(title, "Waiting for TestFlight")
+        self.assertIn("feature", text)
+        self.assertIn("iPhone and iPad", text)
+        self.assertNotIn("Apple TV", text)
+        receipt["status"] = "delivered"
+        receipt["deliveries"]["iOS"] = {"version": "2026.11.21", "build": "60"}
+        title, text = BRIDGE.testflight_update(feature, receipt)
+        self.assertEqual(title, "Available in TestFlight")
+        self.assertIn("**Apple TV:** Plozz 2026.11.20 (build 59.4)", text)
+        self.assertIn("**iPhone and iPad:** Plozz 2026.11.21 (build 60)", text)
 
     def test_legacy_resolution_message_is_reused_then_delivery_gets_new_message(self):
         self.receipt(delivered=False)
@@ -590,6 +612,18 @@ class DiscordResolutionTests(unittest.TestCase):
         self.receipt()
         self.sync()
         self.assertEqual(sum(method == "POST" for method, _, _ in self.discord.writes), 2)
+
+    def test_old_baseline_is_reworded_without_posting_a_historical_milestone(self):
+        self.receipt()
+        commit = FIX["commit"]
+        for identifier in (THREAD, SECOND):
+            card, = BRIDGE.discord_records(self.discord.messages[identifier], f"issue:{self.number}")
+            card["embeds"][0]["fields"] = [{"name": "Implementation", "value":
+                f"[{commit[:7]}](https://github.com/{BRIDGE.REPO}/commit/{commit}) - Available in TestFlight"}]
+        self.discord.writes.clear()
+        self.sync()
+        self.sync()
+        self.assertEqual([method for method, _, _ in self.discord.writes], ["PATCH", "PATCH"])
 
     def test_failed_milestone_keeps_previous_baseline_and_does_not_archive(self):
         self.receipt()

@@ -22,8 +22,9 @@ configuration and credentials out of committed guidance.
 - Put shared behavior in the appropriate `Feature*Core`, core, or runtime
   module; keep the app shells thin. See the
   [architecture map](.github/CONTRIBUTING.md#architecture).
-- Use `MediaProvider` above the provider layer. Jellyfin and Plex are co-equal
-  backends; preserve the other supported providers and report intentional
+- Use `MediaProvider` above the provider layer. Follow the
+  [supported-source inventory](.github/CONTRIBUTING.md#supported-sources), not a
+  Jellyfin/Plex-only model. Preserve every affected source and report intentional
   capability differences rather than silently dropping support.
 - Preserve profile, account, server-user, and parental-authorization boundaries,
   including after asynchronous work. Reuse the existing settings models and

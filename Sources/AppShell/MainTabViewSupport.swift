@@ -169,9 +169,9 @@ func seerRequestResult(_ outcome: SeerRequestOutcome, actingName: String?) -> Me
     }
 }
 
-/// Builds the Home hero's Random source fetcher (dual-provider): given a set of
+/// Builds the Home hero's provider-agnostic Random source fetcher: given a set of
 /// already-resolved library descriptors (selected from Home's loaded catalog), it
-/// fetches server-shuffled pages from Jellyfin and Plex with bounded concurrency.
+/// fetches randomly sorted pages through each source with bounded concurrency.
 /// Home carries each library's kind into this seam, so Random no longer repeats a
 /// `provider.libraries()` request before it can issue the typed item query.
 func makeHeroRandomProvider(

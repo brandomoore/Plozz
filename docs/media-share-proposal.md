@@ -7,21 +7,25 @@ Windows PC discovery uses IPv4 WS-Discovery alongside Bonjour. Set the Info.plis
 Boolean `PlozzWindowsDiscoveryEnabled` only on targets signed with the
 `com.apple.developer.networking.multicast` entitlement.
 
-**Status:** Still just a design for the provider/library side, BUT — the scary part
-(Phase 1, getting SMB to actually play on the Apple TV) now works. A file off my
-NAS plays end to end: playback, seeking forward/back, guest login and a real
-password login. It goes through AetherEngine's normal `SMBIOReader` path, so
-nothing weird. The thing that ate a bunch of time — libsmb2 throwing `EPERM` on
-tvOS — is figured out and fixed by not using libsmb2 (see **§5.1**). Everything
-below is still the plan for the third, second-class backend next to Plex/Jellyfin.
-**Scope:** Let a user point Plozz at a "dumb" file share (NAS over SMB2/3, or a
-WebDAV/HTTP file server) and get a browsable, playable library with artwork,
-metadata, resume, and watched state — without a Plex/Jellyfin server in the path.
+**Status:** Historical design record, not the current support matrix. Media-share
+libraries are implemented on Apple TV, iPhone and iPad over SMB, WebDAV, NFS,
+SFTP and FTP/FTPS. Plozz owns their catalog, metadata enrichment and watch state;
+shares cannot offer a managed server's transcoding API. See
+[supported sources](../.github/CONTRIBUTING.md#supported-sources),
+[current scan policy](media-share-work-scope.md) and
+[current playback paths](playback-engines.md).
+
+The original proposal below preserves the SMB spike, phased work and old
+"second-class" positioning as historical rationale, not present-day product
+scope or a list of unfinished features.
+**Original scope:** Let a user point Plozz at a file share and get a browsable,
+playable library with artwork, metadata, resume and watched state, without a
+managed media server.
 **Owning constraint:** Everything above the provider layer talks to the
 `MediaProvider` protocol in `CoreModels`, never to a backend directly. A media
 share must preserve that seam and stay **invisible to users who don't add one**.
-Plex and Jellyfin remain the first-class, "king" experiences; a share is a
-deliberately smaller, opt-in citizen.
+Shares participate in the same provider abstraction; metadata ownership and
+source capabilities differ from managed servers.
 
 ---
 

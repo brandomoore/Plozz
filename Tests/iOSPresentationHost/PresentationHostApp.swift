@@ -328,6 +328,8 @@ struct PresentationHostApp: App {
                 HeroRequestControlsFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--theme-mute-fixture") {
                 ThemeMusicMuteFixture()
+            } else if ProcessInfo.processInfo.arguments.contains("--dense-home-scroll") {
+                DenseHomeScrollFixture()
             } else if ProcessInfo.processInfo.arguments.contains("--home-hero-fixture") {
                 HomeHeroInteractionFixture()
                     .fixtureNavigationBarAxis()

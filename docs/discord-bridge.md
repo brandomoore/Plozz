@@ -28,23 +28,21 @@ variable, a public-posting notice, and the workflow on `main`.
   no default is configured. Unique non-bot voters are counted across all Discord
   posts linked to an issue. Normal and burst reactions from the same person count
   once. The total is a bot-owned GitHub comment, not impersonated GitHub reactions.
-- One editable Discord status message shows the GitHub link, open/closed state,
-  latest validated automated assessment, latest human GitHub comment, and known
-  implementation/delivery status. Routine discussion and triage edits update
-  this message instead of posting another reply. Longer text is explicitly
-  excerpted with links to the complete GitHub discussion; structured triage JSON
-  is never copied. Comment creation time and ID determine the latest comment,
-  not edit time. Bot imports do not bounce between services.
-  New messages are reserved for bot-verified implementation and external
-  TestFlight milestones, not keyword guesses from ordinary comments.
-  Ordinary report mirroring never closes or reopens a GitHub issue.
-  The separate delivery watcher below closes explicitly declared fixes only
-  after external TestFlight availability.
+- The first Discord reply links the GitHub issue and says whether the bot created
+  it or linked the post to an existing issue. Automated assessments and new
+  GitHub discussion stay on GitHub. Existing tracking replies are edited in place.
+- A separate reply says when a fix or feature is ready but waiting for TestFlight.
+  Once external testers can install it on all affected platforms, another reply
+  names the devices, Plozz versions, and builds to try. The tracking reply also
+  shows the latest milestone. Closing an issue or mentioning a release in a
+  comment does not trigger either update. These threads do not announce App Store releases.
+  Ordinary report mirroring never closes or reopens a GitHub issue; the
+  [delivery watcher](#delivery-gated-issue-resolution) handles declared fixes.
 - Other channels, private threads, bot-created posts, and posts created before
   the published activation timestamp are excluded.
 
-New GitHub-to-Discord messages use the issue number rather than a username in the
-bot heading. Thread/message identifiers still maintain mappings, edits and votes;
+New GitHub-to-Discord messages link the issue rather than naming the reporter.
+Thread/message identifiers still maintain mappings, edits and votes;
 names are not required for synchronization. This is not anonymization: original
 links, user-written text and screenshots can still identify people.
 
@@ -486,7 +484,7 @@ For each declaration it:
    erase its recorded delivery history, but a delivery announcement still requires a qualifying
    currently available build on every affected platform.
 4. Posts a new build-specific delivery comment, removes `awaiting release`, then
-   mirrors that comment and archives every already-linked Discord report.
+   announces the verified builds and archives every already-linked Discord report.
    Archival is not deletion or locking: history remains accessible, and a new
    reply can reopen an unlocked Discord post.
 

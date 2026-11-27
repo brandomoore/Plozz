@@ -31,6 +31,8 @@ final class DetailSnapshotCacheScopeTests: XCTestCase {
         XCTAssertEqual(first, second)
         XCTAssertEqual(first.digest, second.digest)
         XCTAssertEqual(first.directoryComponent, second.directoryComponent)
+        XCTAssertEqual(first.directoryComponent, "05ecba4b8ac758f8b95605ba407e084c49ce8e5123ffc979668747da43ae1832",
+                       "An encoding change must not orphan existing detail snapshots.")
     }
 
     func testDigestIsFixedLengthLowercaseHex() {

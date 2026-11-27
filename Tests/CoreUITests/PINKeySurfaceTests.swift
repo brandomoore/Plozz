@@ -72,6 +72,9 @@ final class PINKeySurfaceTests: XCTestCase {
     }
 
     private func surface(_ palette: ThemePalette, gradient: Bool, reduced: Bool) -> SurfaceStyle {
+        #if os(tvOS)
+        if reduced && gradient { return palette.opaqueGradientSurface }
+        #endif
         if reduced { return palette.raised }
         if gradient { return palette.gradientSurface }
         if #available(iOS 26.0, tvOS 26.0, *) { return palette.raised }

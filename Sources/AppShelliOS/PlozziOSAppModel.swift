@@ -53,7 +53,10 @@ final class PlozziOSAppModel {
     }
 
     var detailArtworkReplay: ArtworkBitmapReplay {
-        let scope = detailCacheScope.digest
+        detailArtworkReplay(for: detailCacheScope.digest)
+    }
+
+    private func detailArtworkReplay(for scope: String) -> ArtworkBitmapReplay {
         if let recentDetailArtwork, recentDetailArtwork.scope == scope { return recentDetailArtwork.replay }
         let replay = ArtworkBitmapReplay()
         recentDetailArtwork = (scope, replay)
@@ -61,6 +64,13 @@ final class PlozziOSAppModel {
     }
 
     var detailArtworkScopeID: String { detailCacheScope.digest }
+
+    /// Resolve the active viewer once, so validation and both caches use the same identity.
+    func detailRevisitResources(for expectedScope: String) -> (snapshots: DetailSnapshotCache, replay: ArtworkBitmapReplay)? {
+        let scope = detailCacheScope
+        guard scope.digest == expectedScope else { return nil }
+        return (detailCacheFactory.cache(for: scope), detailArtworkReplay(for: scope.digest))
+    }
 
     private var detailCacheScope: DetailSnapshotCacheScope {
         let accounts = accountsProviders.homeAccounts.map(\.account)
@@ -126,6 +136,13 @@ final class PlozziOSAppModel {
 
     var allowsHomeContentAccess: Bool {
         isActiveProfileAuthorized && !profiles.activeProfile.needsSetup
+    }
+
+    /// A manual switch hasn't changed the viewer yet. Keep the outgoing tabs
+    /// behind the picker, but never use this to authorize content or a new shell.
+    var isAwaitingOtherProfilePIN: Bool {
+        guard !mustChooseProfile, let request = parentalSwitch ?? lockedSwitch else { return false }
+        return request.target.id != profiles.activeProfileID
     }
     var allowsHomeContentLoading: Bool { allowsHomeContentAccess && !isSettingsPresented }
     var allowsStandalonePlayback: Bool { admissionContext.explicitStandaloneChoice }

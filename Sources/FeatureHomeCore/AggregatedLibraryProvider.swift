@@ -16,7 +16,7 @@ public struct AggregatedLibrarySource: Sendable {
     /// holds the same kind, so the caller's kind is right for all of them. The
     /// combined "All Libraries" browse is the case that needs it — it pages a movie
     /// library and a TV library side by side, and asking a movie section for series
-    /// returns nothing on both backends.
+    /// cannot supply that library's movies.
     public let kind: MediaItemKind?
 
     public init(

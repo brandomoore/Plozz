@@ -1910,6 +1910,7 @@ final class LiveChannelPlayerModel {
     /// From this attempt's tune to its first frame on screen, for Playback Info.
     @ObservationIgnored private(set) var tuneToFirstFrameSeconds: TimeInterval?
     var audioTracks: [MediaTrack] { trackState.audioTracks }
+    private(set) var volumeBoost: PlayerVolumeBoost = .off
     var subtitleTracks: [MediaTrack] { trackState.subtitleTracks }
     var selectedAudioID: Int? { trackState.selectedAudioID }
     var selectedSubtitleID: Int? { trackState.selectedSubtitleID }
@@ -2292,7 +2293,13 @@ final class LiveChannelPlayerModel {
         trackState.setSubtitleStyle(style, engine: engine)
     }
 
+    func setVolumeBoost(_ boost: PlayerVolumeBoost) {
+        engine.setVolumeBoost(boost)
+        volumeBoost = engine.volumeBoost
+    }
+
     private func refreshTracks() {
+        volumeBoost = engine.volumeBoost
         trackState.refresh(engine: engine, isReady: !isLoading && hasPresentedFrame)
     }
 
@@ -2778,6 +2785,7 @@ final class LiveChannelPlayerModel {
     }
 
     private func resetProgrammeTracks() {
+        volumeBoost = .off
         trackState.resetProgramme()
     }
 

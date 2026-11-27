@@ -13,11 +13,26 @@ public final class LibraryInventoryStore: @unchecked Sendable {
     private struct Entry: Codable {
         let libraries: [MediaLibrary]
         let updatedAt: Date
+        // Live publication order only; an entry restored from disk cannot validate a handoff.
+        var sequence: Int?
+        private enum CodingKeys: String, CodingKey { case libraries, updatedAt }
     }
 
-    private struct Request {
+    fileprivate struct Request: Sendable {
         let scope: String
         let sequence: Int
+    }
+
+    package struct Publication: Sendable {
+        fileprivate let store: LibraryInventoryStore
+        fileprivate let request: Request
+        fileprivate let libraries: [MediaLibrary]
+
+        package var currentLibraries: [MediaLibrary]? {
+            store.lock.withLock {
+                store.entries?[request.scope]?.sequence == request.sequence ? libraries : nil
+            }
+        }
     }
 
     private static let maximumBytes = 2 * 1_024 * 1_024
@@ -53,18 +68,27 @@ public final class LibraryInventoryStore: @unchecked Sendable {
         for account: ResolvedAccount,
         load: @Sendable () async throws -> [MediaLibrary]
     ) async throws -> [MediaLibrary] {
+        try await refresh(for: account, inventory: { $0 }, load: load).value
+    }
+
+    /// Start ordering at the actual provider read, not later when Home consumes it.
+    package func refresh<Value: Sendable>(
+        for account: ResolvedAccount, inventory: @Sendable (Value) -> [MediaLibrary],
+        load: @Sendable () async throws -> Value
+    ) async throws -> (value: Value, publication: Publication?) {
         try Task.checkCancellation()
         guard account.provider.sharesLibraryInventoryAcrossProfiles else {
-            let libraries = try await load()
+            let value = try await load()
             try Task.checkCancellation()
-            return libraries
+            return (value, nil)
         }
         let request = beginRefresh(for: account)
         do {
-            let libraries = try await load()
+            let value = try await load()
             try Task.checkCancellation()
+            let libraries = inventory(value)
             finishRefresh(request, libraries: libraries)
-            return libraries
+            return (value, Publication(store: self, request: request, libraries: libraries))
         } catch {
             finishRefresh(request, error: Task.isCancelled ? .cancelled : error as? AppError)
             throw error
@@ -91,15 +115,18 @@ public final class LibraryInventoryStore: @unchecked Sendable {
             }
         }
         guard request.sequence > (published[request.scope] ?? 0) else { return }
+        let denied = error?.requiresSignIn == true || error == .accessRestricted
+        guard denied || libraries != nil else { return }
+        published[request.scope] = request.sequence
+        // Retire the prior witness even if encoding the replacement display entry fails.
+        entries?[request.scope]?.sequence = nil
         var values = readEntries()
-        if error?.requiresSignIn == true || error == .accessRestricted {
-            published[request.scope] = request.sequence
+        if denied {
             values[request.scope] = nil
             persist(values)
             return
         }
         guard let libraries else { return }
-        published[request.scope] = request.sequence
         // Do not persist artwork URLs, credentials, or merged cross-account routes.
         let names = libraries.prefix(512).map {
             MediaLibrary(
@@ -109,7 +136,7 @@ public final class LibraryInventoryStore: @unchecked Sendable {
             )
         }
         let unchanged = values[request.scope]?.libraries == names
-        values[request.scope] = Entry(libraries: names, updatedAt: Date())
+        values[request.scope] = Entry(libraries: names, updatedAt: Date(), sequence: request.sequence)
         if unchanged {
             entries = values
             return

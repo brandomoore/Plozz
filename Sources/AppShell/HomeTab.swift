@@ -328,7 +328,7 @@ struct HomeTab: View {
                 contentStore: homeContentStore,
                 identitySources: identitySources,
                 currentVisibility: { homeVisibility.visibility },
-                prepareVisibility: { await homeVisibility.prepareServerDefaults(accounts: accounts) },
+                prepareHomeVisibility: { await homeVisibility.prepareServerDefaults(accounts: accounts, homeLoad: $0) },
                 sectionDiagnostics: homeVisibility.sectionDiagnostics,
                 pendingWatchMutations: pendingWatchMutations,
                 recentlyAppliedRecency: appliedWatchRecency,
