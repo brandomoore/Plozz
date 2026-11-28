@@ -457,7 +457,15 @@ private struct SettingsSearchNativeReveal: UIViewRepresentable {
                 if view is UICollectionViewCell || view is UITableViewCell {
                     nativeListRow = true
                 }
-                if let scroll = view as? UIScrollView, scroll.isScrollEnabled {
+                if let scroll = view as? UIScrollView {
+                    // A fixed-height reorder list is scrolled by its page. A disabled
+                    // standalone control still needs its own scroll view to reveal it.
+                    if nativeListRow, !scroll.isScrollEnabled,
+                       let parent = scroll.superview,
+                       sequence(first: parent, next: \.superview).contains(where: { $0 is UIScrollView }) {
+                        ancestor = parent
+                        continue
+                    }
                     let rect = convert(bounds, to: scroll)
                     let insets = scroll.adjustedContentInset
                     let visibleHeight = scroll.bounds.height - insets.top - insets.bottom
