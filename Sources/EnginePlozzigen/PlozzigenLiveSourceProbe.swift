@@ -90,6 +90,12 @@ final class PlozzigenLiveSourceProbe: Sendable {
         try IPTVCredential.validate(headers: headers)
         var request = URLRequest(url: url)
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        if url.host == "127.0.0.1" {
+            // Signals the local IPTVPlaybackProxy to hand off this already-open upstream
+            // connection (or rewritten manifest) to the immediately following engine load
+            // instead of tearing down and reconnecting a second upstream stream.
+            request.setValue("1", forHTTPHeaderField: "X-Plozz-Format-Probe")
+        }
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
         // A live origin may legitimately ignore Range. No seek support is needed
         // to identify a prefix, and an endless response must never be downloaded.

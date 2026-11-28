@@ -107,6 +107,55 @@ final class IPTVPlaybackHostedTests: XCTestCase {
         XCTAssertEqual(peak, 1, "Classification and playback must not occupy two provider streams.")
     }
 
+    func testExtensionlessFormatProbeHandsOffSingleUpstreamConnection() async throws {
+        let file = try XCTUnwrap(Bundle(for: Self.self).url(
+            forResource: "iptv", withExtension: "ts", subdirectory: "Fixtures"
+        ))
+        let expectedTS = try Data(contentsOf: file)
+        let tsServer = try IPTVTestHTTPServer { _ in
+            .init(data: expectedTS, headers: ["Content-Type": "application/octet-stream"])
+        }
+        addTeardownBlock { await tsServer.stop() }
+        let tsOrigin = try await tsServer.start().appendingPathComponent("channel")
+        let tsProxy = try IPTVPlaybackProxy(origin: tsOrigin, headers: [:])
+        addTeardownBlock { await tsProxy.stop() }
+        let tsURL = try await tsProxy.start()
+
+        var probeRequest = URLRequest(url: tsURL)
+        probeRequest.setValue("1", forHTTPHeaderField: "X-Plozz-Format-Probe")
+        let (probeData, probeResponse) = try await URLSession.shared.data(for: probeRequest)
+        XCTAssertEqual((probeResponse as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertGreaterThanOrEqual(probeData.count, 377)
+
+        var playerRequest = URLRequest(url: tsURL)
+        playerRequest.setValue("bytes=0-", forHTTPHeaderField: "Range")
+        let (streamData, streamResponse) = try await URLSession.shared.data(for: playerRequest)
+        XCTAssertEqual((streamResponse as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertEqual(streamData, expectedTS, "Handed-off stream must deliver identical bytes from byte 0.")
+        let tsRequests = await tsServer.requestCount
+        XCTAssertEqual(tsRequests, 1, "Probe + Range: bytes=0- player load must open only 1 upstream TS stream.")
+
+        let hlsServer = try IPTVTestHTTPServer { _ in
+            .init(
+                data: Data("#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2.0,\nseg0.ts\n".utf8),
+                headers: ["Content-Type": "application/vnd.apple.mpegurl"]
+            )
+        }
+        addTeardownBlock { await hlsServer.stop() }
+        let hlsOrigin = try await hlsServer.start().appendingPathComponent("channel")
+        let hlsProxy = try IPTVPlaybackProxy(origin: hlsOrigin, headers: [:])
+        addTeardownBlock { await hlsProxy.stop() }
+        let hlsURL = try await hlsProxy.start()
+
+        var hlsProbe = URLRequest(url: hlsURL)
+        hlsProbe.setValue("1", forHTTPHeaderField: "X-Plozz-Format-Probe")
+        let (hlsProbeData, _) = try await URLSession.shared.data(for: hlsProbe)
+        let (hlsPlayerData, _) = try await URLSession.shared.data(from: hlsURL)
+        XCTAssertEqual(hlsProbeData, hlsPlayerData)
+        let hlsRequests = await hlsServer.requestCount
+        XCTAssertEqual(hlsRequests, 1, "Probe + player manifest load must fetch upstream HLS manifest only once.")
+    }
+
     func testDirectUndeclaredTransportStreamAlsoUsesContentInsteadOfItsAddress() async throws {
         let file = try XCTUnwrap(Bundle(for: Self.self).url(
             forResource: "iptv", withExtension: "ts", subdirectory: "Fixtures"

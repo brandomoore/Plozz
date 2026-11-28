@@ -611,6 +611,10 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         return IPTVLiveLease(locator: locator, sessions: playback)
     }
 
+    public func warmLiveTVConnection() async {
+        await playback.warmConnection()
+    }
+
     public func teardown() async {
         await guideIndex?.cancel()
         await client.cancel()
@@ -625,7 +629,7 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
             resource: AuthenticatedHTTPResource(pathBase: .configuredBaseURL, path: "iptv/" + session),
             playSessionID: session
         )
-        try await playback.register(locator, isLive: record.isLive)
+        try await playback.register(locator, isLive: record.isLive, record: record)
         return locator
     }
 
@@ -676,6 +680,9 @@ private struct IPTVLiveLease: LiveTVStreamLease {
     let sessions: IPTVPlaybackSessions
     var playbackSource: PlaybackSource { .authenticatedHTTP(locator) }
     func report(_ update: LiveTVPlaybackUpdate) async {}
+    func preconnectIfSupported() async {
+        if let id = locator.playSessionID { await sessions.preconnect(id) }
+    }
     func close() async {
         if let id = locator.playSessionID { await sessions.close(id) }
     }
@@ -689,12 +696,19 @@ private actor IPTVPlaybackSessions {
     private struct Entry {
         let locator: AuthenticatedHTTPPlaybackLocator
         let isLive: Bool
+        var record: IPTVRecord?
         var pending: Task<Delivery, Error>?
         var delivery: Delivery?
         var started = false
     }
     private let client: IPTVClient
     private let configuration: URLSessionConfiguration?
+    /// Per-account pooled playback HTTP client so channel switches reuse DNS, TCP sockets,
+    /// and TLS session tickets on the same IPTV origin without sharing state across accounts.
+    private var sharedPlaybackHTTP: IPTVHTTP?
+    private var lastWarmedAt: TimeInterval?
+    private var warmupTask: Task<Void, Never>?
+    private var warmupID: UUID?
     private var entries: [String: Entry] = [:]
 
     init(client: IPTVClient, configuration: URLSessionConfiguration?) {
@@ -702,9 +716,55 @@ private actor IPTVPlaybackSessions {
         self.configuration = configuration
     }
 
-    func register(_ locator: AuthenticatedHTTPPlaybackLocator, isLive: Bool) throws {
+    private func playbackHTTP(sensitiveValues: [String]) -> IPTVHTTP {
+        if let sharedPlaybackHTTP { return sharedPlaybackHTTP }
+        let http = IPTVHTTP(
+            configuration: configuration, resourceTimeout: 86_400,
+            sensitiveValues: sensitiveValues, redirectScope: .playback
+        )
+        sharedPlaybackHTTP = http
+        return http
+    }
+
+    /// Pre-authenticates Xtream (0 stream slots) and warms the pooled playback URLSession's
+    /// DNS/TCP/TLS keep-alive connection on the bare Xtream origin so the first channel tune
+    /// starts already connected without sending credentials or hitting playlist URLs.
+    func warmConnection() async {
+        if let warmupTask {
+            await warmupTask.value
+            return
+        }
+        guard !entries.values.contains(where: { $0.isLive }) else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        if let lastWarmedAt, now - lastWarmedAt < 30 { return }
+        let credential = await client.credential
+        guard credential.mode == .xtream else { return }
+        let pooledHTTP = playbackHTTP(sensitiveValues: [credential.password])
+        let id = UUID()
+        let task = Task { [client, pooledHTTP, credential] in
+            do {
+                try await client.authenticate()
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await pooledHTTP.warmOrigin(credential.address)
+        }
+        warmupID = id
+        warmupTask = task
+        await task.value
+        if warmupID == id {
+            warmupID = nil
+            warmupTask = nil
+            if !task.isCancelled {
+                lastWarmedAt = ProcessInfo.processInfo.systemUptime
+            }
+        }
+    }
+
+    func register(_ locator: AuthenticatedHTTPPlaybackLocator, isLive: Bool, record: IPTVRecord? = nil) throws {
         guard let id = locator.playSessionID, entries.count < 32 else { throw AppError.invalidResponse }
-        entries[id] = Entry(locator: locator, isLive: isLive)
+        entries[id] = Entry(locator: locator, isLive: isLive, record: record)
     }
 
     func resolve(_ locator: AuthenticatedHTTPPlaybackLocator) async throws -> URL {
@@ -715,11 +775,20 @@ private actor IPTVPlaybackSessions {
         let task: Task<Delivery, Error>
         if let pending = entry.pending { task = pending }
         else {
-            task = Task { [client, configuration, isLive = entry.isLive] in
-                let (url, headers, formatHint) = try await client.delivery(locator.itemID)
-                let credential = await client.credential
+            let cachedRecord = entry.record
+            entries[id]?.record = nil
+            let credential = await client.credential
+            let pooledHTTP = playbackHTTP(sensitiveValues: [credential.password])
+            task = Task { [client, pooledHTTP, cachedRecord, isLive = entry.isLive] in
+                let (url, headers, formatHint): (URL, [String: String], MediaFormatHint)
+                if let cachedRecord {
+                    (url, headers, formatHint) = try await client.delivery(for: cachedRecord)
+                } else {
+                    (url, headers, formatHint) = try await client.delivery(locator.itemID)
+                }
                 let proxy = try IPTVPlaybackProxy(
-                    origin: url, headers: headers, formatHint: formatHint, configuration: configuration,
+                    origin: url, headers: headers, formatHint: formatHint,
+                    sharedHTTP: pooledHTTP,
                     sensitiveValues: [credential.password], content: isLive ? .live : .onDemand
                 )
                 do { return try await Delivery(url: proxy.start(), proxy: proxy) }
@@ -756,6 +825,11 @@ private actor IPTVPlaybackSessions {
         return entry.started
     }
 
+    func preconnect(_ id: String) async {
+        guard let entry = entries[id], entry.isLive, let proxy = entry.delivery?.proxy else { return }
+        await proxy.preconnectDirectLive()
+    }
+
     func close(_ id: String) async {
         guard let entry = entries.removeValue(forKey: id) else { return }
         entry.pending?.cancel()
@@ -766,6 +840,14 @@ private actor IPTVPlaybackSessions {
     }
 
     func closeAll() async {
+        let pendingWarmup = warmupTask
+        warmupID = nil
+        warmupTask = nil
+        lastWarmedAt = nil
+        pendingWarmup?.cancel()
+        await pendingWarmup?.value
         for id in Array(entries.keys) { await close(id) }
+        sharedPlaybackHTTP?.cancel()
+        sharedPlaybackHTTP = nil
     }
 }

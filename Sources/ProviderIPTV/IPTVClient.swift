@@ -21,6 +21,8 @@ actor IPTVClient: ApplicationStorageParticipant {
     private let storageLifecycle: ApplicationStorageLifecycle
     private var guideDiscoveryResult: Result<Void, Error>?
     private var authenticatedAt: Date?
+    private var backgroundAuthTask: Task<Void, Never>?
+    private var backgroundAuthRetryAfter: Date?
     private var liveExtension = "ts"
     private var cachedGuide: (url: URL, data: Data, expires: Date)?
     private var guideCacheExpiry: Task<Void, Never>?
@@ -102,6 +104,8 @@ actor IPTVClient: ApplicationStorageParticipant {
     func prepareForSuspension() {
         guard !storageLifecycle.isActive else { return }
         refresh?.cancel()
+        backgroundAuthTask?.cancel()
+        backgroundAuthTask = nil
         cancelRefreshAdmissions()
         didReclaimJournal = false
         cachedLineup = nil
@@ -155,6 +159,7 @@ actor IPTVClient: ApplicationStorageParticipant {
         let formats = user.array("allowed_output_formats").compactMap(\.text)
         liveExtension = formats.contains("m3u8") ? "m3u8" : "ts"
         authenticatedAt = Date()
+        backgroundAuthRetryAfter = nil
     }
 
     func ensureCatalog(_ library: String, force: Bool = false) async throws {
@@ -918,12 +923,61 @@ actor IPTVClient: ApplicationStorageParticipant {
         catch { PlozzLog.networking.info("IPTV lineup copy was not prepared") }
     }
 
+    #if DEBUG
+    func backdateAuthenticationForTesting(by seconds: TimeInterval) {
+        authenticatedAt = authenticatedAt?.addingTimeInterval(-seconds)
+        backgroundAuthRetryAfter = nil
+    }
+
+    func awaitBackgroundAuthenticationForTesting() async {
+        await backgroundAuthTask?.value
+    }
+    #endif
+
+    private func ensureDeliveryAuthentication(isLive: Bool) async throws {
+        guard let authenticatedAt else {
+            try await authenticate()
+            return
+        }
+        guard Date().timeIntervalSince(authenticatedAt) > 300 else { return }
+        guard isLive else {
+            try await authenticate()
+            return
+        }
+        guard backgroundAuthTask == nil, !isClosed else { return }
+        if let retryAfter = backgroundAuthRetryAfter, retryAfter > Date() { return }
+        // Refresh Xtream account status in the background so live channel zaps do not stall on
+        // player_api.php, while revoking stale auth if credentials or subscription expired.
+        backgroundAuthTask = Task {
+            await self.runBackgroundAuthentication()
+        }
+    }
+
+    private func runBackgroundAuthentication() async {
+        defer { backgroundAuthTask = nil }
+        do {
+            try await authenticate()
+        } catch is CancellationError {
+            return
+        } catch IPTVError.authentication, IPTVError.expired, AppError.unauthorized, AppError.invalidCredentials {
+            authenticatedAt = nil
+            backgroundAuthRetryAfter = nil
+        } catch {
+            let nsError = error as NSError
+            if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled { return }
+            backgroundAuthRetryAfter = Date().addingTimeInterval(15)
+        }
+    }
+
     func delivery(_ id: String) async throws -> (url: URL, headers: [String: String], formatHint: MediaFormatHint) {
-        let record = try await record(id)
+        try await delivery(for: try await record(id))
+    }
+
+    func delivery(for record: IPTVRecord) async throws -> (url: URL, headers: [String: String], formatHint: MediaFormatHint) {
         let url: URL
         if let address = record.streamURL { url = address }
         else if let nativeID = record.streamID {
-            if authenticatedAt.map({ Date().timeIntervalSince($0) > 300 }) != false { try await authenticate() }
+            try await ensureDeliveryAuthentication(isLive: record.isLive)
             let group = record.isLive ? "live" : record.item.kind == .episode ? "series" : "movie"
             let fileExtension = record.isLive ? liveExtension : record.container ?? "mp4"
             let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
@@ -1296,6 +1350,8 @@ actor IPTVClient: ApplicationStorageParticipant {
     func cancel() {
         isClosed = true
         refresh?.cancel()
+        backgroundAuthTask?.cancel()
+        backgroundAuthTask = nil
         cancelRefreshAdmissions()
         clearGuideCache()
         guideRefreshes.removeAll()

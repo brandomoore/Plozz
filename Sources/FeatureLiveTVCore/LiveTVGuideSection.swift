@@ -22,7 +22,7 @@ public struct LiveTVGuideChannel: Identifiable, Equatable, Sendable {
 }
 
 /// Keep transport order stable while successful watching reorders Recents.
-public struct LiveTVChannelSequence {
+public struct LiveTVChannelSequence: Sendable {
     private let ids: [String]
 
     public init(channels: [LiveTVPrototypeChannel]) {

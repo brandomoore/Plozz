@@ -404,6 +404,122 @@ final class IPTVPlaybackDiagnosticsTests: XCTestCase {
             "#EXT-X-KEY:METHOD=NONE,URI=\"https://private.test/key,METHOD=AES-128\""
         ).hasEncryption)
     }
+
+    func testPreconnectRefusalsAndNonVideoBodiesRecordDiagnosticsWithoutSecondUpstreamRequest() async throws {
+        struct Case {
+            let label: String
+            let status: Int
+            let headers: [String: String]
+            let body: Data
+            let expectedLoopbackStatus: Int
+            let expectedError: AppError?
+        }
+        let cases: [Case] = [
+            Case(
+                label: "401", status: 401, headers: ["Content-Type": "text/html"],
+                body: Data("private-401".utf8), expectedLoopbackStatus: 401, expectedError: .unauthorized
+            ),
+            Case(
+                label: "429", status: 429, headers: ["Retry-After": "30"],
+                body: Data("private-429".utf8), expectedLoopbackStatus: 429,
+                expectedError: .rateLimited(retryAfter: 30)
+            ),
+            Case(
+                label: "451", status: 451, headers: [:],
+                body: Data("private-451".utf8), expectedLoopbackStatus: 451,
+                expectedError: .accessRestricted
+            ),
+            Case(
+                label: "503-limit", status: 503, headers: ["Content-Type": "application/json"],
+                body: Data(#"{"error":"All active M3U profiles have reached maximum connection limits","secret":"private"}"#.utf8),
+                expectedLoopbackStatus: 503, expectedError: .conflict
+            ),
+            Case(
+                label: "200-html", status: 200, headers: ["Content-Type": "video/mp2t"],
+                body: Data("<!DOCTYPE html><html>private-login</html>".utf8),
+                expectedLoopbackStatus: 502, expectedError: .invalidResponse
+            ),
+            Case(
+                label: "200-empty", status: 200, headers: ["Content-Type": "video/mp2t"],
+                body: Data(), expectedLoopbackStatus: 502, expectedError: .invalidResponse
+            ),
+            Case(
+                label: "404-recoverable", status: 404, headers: ["Content-Type": "text/plain"],
+                body: Data("private-404".utf8), expectedLoopbackStatus: 404, expectedError: nil
+            )
+        ]
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        for item in cases {
+            IPTVFixture.state.reset()
+            IPTVFixture.state.handler = { _ in (item.status, item.headers, item.body) }
+            let buffer = ProxyDiagnosticBuffer()
+            let diagnostics = PlaybackFailureDiagnostics()
+            diagnostics.start { buffer.append($0) }
+            let proxy = try IPTVPlaybackProxy(
+                origin: XCTUnwrap(URL(string: "https://provider.test/private/live.ts")),
+                headers: ["Authorization": "Bearer private-secret"],
+                configuration: IPTVFixture.configuration(), diagnostics: diagnostics
+            )
+            addTeardownBlock { await proxy.stop() }
+            let url = try await proxy.start()
+            let state = try XCTUnwrap(PlaybackDeliveryFailure.state(for: url))
+
+            await proxy.preconnectDirectLive()
+            let (body, response) = try await session.data(from: url)
+            let http = try XCTUnwrap(response as? HTTPURLResponse)
+            XCTAssertEqual(http.statusCode, item.expectedLoopbackStatus, item.label)
+            XCTAssertTrue(body.isEmpty, item.label)
+            if item.status == 429 {
+                XCTAssertNotNil(http.value(forHTTPHeaderField: "Retry-After"), item.label)
+            }
+            XCTAssertEqual(
+                IPTVFixture.state.requests.count, 1,
+                "\(item.label): preconnect failure must not trigger a duplicate upstream request."
+            )
+            XCTAssertEqual(state.error, item.expectedError, item.label)
+            XCTAssertEqual(buffer.values.count, 1, item.label)
+            XCTAssertEqual(state.evidence.firstFailure?.outcome, .upstreamFailure, item.label)
+            let encoded = String(decoding: try JSONEncoder().encode(state.evidence), as: UTF8.self)
+            XCTAssertFalse(encoded.contains("private"), item.label)
+            await proxy.stop()
+        }
+    }
+
+    func testAdoptedPreconnectMidStreamTruncationFinalizesOriginalRequestEvidence() async throws {
+        var payload = Data(repeating: 0x00, count: 4_096)
+        for index in stride(from: 0, to: payload.count, by: 188) { payload[index] = 0x47 }
+        let source = try IPTVTestHTTPServer { _ in
+            .init(data: payload, headers: ["Content-Type": "video/mp2t"], cutoff: 1_024, chunkSize: 512)
+        }
+        let origin = try await source.start().appendingPathComponent("live.ts")
+        addTeardownBlock { await source.stop() }
+        let proxy = try IPTVPlaybackProxy(origin: origin, headers: [:])
+        addTeardownBlock { await proxy.stop() }
+        let url = try await proxy.start()
+        let state = try XCTUnwrap(PlaybackDeliveryFailure.state(for: url))
+
+        await proxy.preconnectDirectLive()
+        let deadline = ContinuousClock.now + .seconds(5)
+        while await source.requestCount == 0, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        _ = try? await session.data(from: url)
+
+        let requests = await source.requestCount
+        XCTAssertEqual(requests, 1)
+        let settleDeadline = ContinuousClock.now + .seconds(2)
+        while state.evidence.recent.last?.outcome == .receiving, ContinuousClock.now < settleDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let recorded = try XCTUnwrap(state.evidence.recent.last)
+        XCTAssertEqual(recorded.status, 200)
+        XCTAssertEqual(recorded.outcome, .upstreamFailure)
+        XCTAssertEqual(recorded.receivedBytes, 1_024)
+    }
 }
 
 private final class ProxyDiagnosticBuffer: @unchecked Sendable {

@@ -107,6 +107,78 @@ final class IPTVHTTPLifecycleTests: XCTestCase {
         XCTAssertEqual(body, Data("body".utf8))
     }
 
+    func testChunkStreamAppliesBackpressureDrainsCleanlyAndCancelsOnShutdown() async throws {
+        let totalBytes = 6 * 1_024 * 1_024
+        let payload = Data((0..<totalBytes).map { UInt8($0 & 0xff) })
+        let server = try IPTVTestHTTPServer { _ in
+            .init(data: payload, headers: ["Content-Type": "video/mp2t"], chunkSize: 65_536)
+        }
+        let url = try await server.start().appendingPathComponent("stream.ts")
+        addTeardownBlock { await server.stop() }
+        let http = IPTVHTTP(redirectScope: .playback)
+        defer { http.cancel() }
+
+        let (stream, response) = try await http.chunks(url: url, headers: [:])
+        XCTAssertEqual(response.statusCode, 200)
+        try await Task.sleep(for: .milliseconds(250))
+        let pausedSent = await server.bodyBytesSent
+        XCTAssertLessThan(pausedSent, totalBytes, "High-water backpressure must suspend upstream before buffering all 6 MiB.")
+
+        var received = Data()
+        received.reserveCapacity(totalBytes)
+        while let chunk = try await stream.nextChunk() {
+            received.append(chunk)
+        }
+        XCTAssertEqual(received.count, totalBytes)
+        XCTAssertEqual(received, payload)
+
+        let slowServer = try IPTVTestHTTPServer { _ in
+            .init(data: Data(repeating: 0x47, count: 131_072), delay: .seconds(30), chunkSize: 1_024)
+        }
+        let slowURL = try await slowServer.start().appendingPathComponent("slow.ts")
+        addTeardownBlock { await slowServer.stop() }
+        let cancellableHTTP = IPTVHTTP(redirectScope: .playback)
+        let (slowStream, _) = try await cancellableHTTP.chunks(url: slowURL, headers: [:])
+        cancellableHTTP.cancel()
+        do {
+            _ = try await slowStream.nextChunk()
+            XCTFail("Session shutdown must cancel an active chunk stream.")
+        } catch {
+            XCTAssertTrue(error is CancellationError || (error as? URLError)?.code == .cancelled)
+        }
+    }
+
+    func testWarmOriginStripsPathQueryCredentialsAndRefusesRedirects() async throws {
+        let redirectTarget = try IPTVTestHTTPServer { _ in .init(data: Data()) }
+        let targetURL = try await redirectTarget.start()
+        addTeardownBlock { await redirectTarget.stop() }
+        let rawRequests = IPTVRecordedRawRequests()
+        let originServer = try IPTVTestHTTPServer { request in
+            rawRequests.append(request)
+            return .init(status: 302, headers: ["Location": targetURL.absoluteString])
+        }
+        let originURL = try await originServer.start()
+        addTeardownBlock { await originServer.stop() }
+
+        var dirty = try XCTUnwrap(URLComponents(url: originURL, resolvingAgainstBaseURL: false))
+        dirty.user = "viewer"
+        dirty.password = "secret-pass"
+        dirty.path = "/player_api.php"
+        dirty.queryItems = [URLQueryItem(name: "password", value: "secret-pass")]
+        let http = IPTVHTTP(sensitiveValues: ["secret-pass"], redirectScope: .playback)
+        defer { http.cancel() }
+
+        await http.warmOrigin(try XCTUnwrap(dirty.url))
+        let count = await originServer.requestCount
+        let redirectedCount = await redirectTarget.requestCount
+        XCTAssertEqual(count, 1)
+        XCTAssertEqual(redirectedCount, 0, "Origin warmup must never follow HTTP redirects.")
+        let recorded = try XCTUnwrap(rawRequests.values.first)
+        XCTAssertTrue(recorded.hasPrefix("HEAD / HTTP/1.1\r\n"))
+        XCTAssertFalse(recorded.contains("secret-pass"))
+        XCTAssertFalse(recorded.contains("viewer"))
+    }
+
     private func waitForRequest(_ server: IPTVTestHTTPServer) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while await server.requestCount == 0, ContinuousClock.now < deadline {
@@ -115,4 +187,11 @@ final class IPTVHTTPLifecycleTests: XCTestCase {
         let count = await server.requestCount
         XCTAssertGreaterThan(count, 0)
     }
+}
+
+private final class IPTVRecordedRawRequests: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String] = []
+    var values: [String] { lock.withLock { storage } }
+    func append(_ value: String) { lock.withLock { storage.append(value) } }
 }
