@@ -116,6 +116,9 @@ public struct HeroLogoSizeControl: View {
                 .settingsSearchAnchor("\(searchPrefix)-text-size")
             }
         }
+        #if os(iOS)
+        .padding(.bottom, MobileSettingsMetrics.rowInset - MobileSettingsMetrics.controlVerticalInset)
+        #endif
         .accessibilityElement(children: .contain)
         #endif
     }

@@ -2413,45 +2413,75 @@ private struct PlozziOSDetailPageSettingsView: View {
 
 private struct PlozziOSDetailRatingPriorityView: View {
     @Bindable var model: DetailPageSettingsModel
+    @State private var measuredListHeight: CGFloat?
+    @Environment(\.themePalette) private var palette
 
     var body: some View {
-        List {
-            Section {
-                ForEach(model.settings.orderedSources, id: \.self) { source in
-                    Toggle(isOn: Binding(
-                        get: { model.settings.enabledRatingSources.contains(source) },
-                        set: { enabled in
-                            if enabled {
-                                model.settings.enabledRatingSources.insert(source)
-                            } else {
-                                model.settings.enabledRatingSources.remove(source)
-                            }
-                        }
-                    )) {
-                        switch source {
-                        case .community: Text("Community")
-                        case .critic: Text("Critics")
-                        default: Text(verbatim: source.displayName)
-                        }
+        let sources = model.settings.orderedSources
+        SettingsPageScroll {
+            VStack(alignment: .leading, spacing: 8) {
+                List {
+                    ForEach(sources, id: \.self) { source in
+                        ratingToggle(source, first: source == sources.first)
+                            .listRowSeparator(.hidden, edges: source == sources.last ? .bottom : [])
+                            .listRowSeparatorTint(palette.separator)
+                            .listRowInsets(EdgeInsets(
+                                top: MobileSettingsMetrics.controlVerticalInset, leading: MobileSettingsMetrics.rowInset,
+                                bottom: MobileSettingsMetrics.controlVerticalInset, trailing: MobileSettingsMetrics.rowInset
+                            ))
+                            .settingsSearchGroup(
+                                ["rating-source-\(source.rawValue)"] + (source == sources.first ? ["rating-source-enabled"] : [])
+                            )
                     }
-                    .settingsSearchAnchor(
-                        "rating-source-\(source.rawValue)",
-                        fallbackFor: source == model.settings.orderedSources.first ? ["rating-source-enabled"] : []
-                    )
+                    .onMove { offsets, destination in
+                        var order = sources
+                        order.move(fromOffsets: offsets, toOffset: destination)
+                        model.settings.ratingSourceOrder = order
+                    }
                 }
-                .onMove { offsets, destination in
-                    var order = model.settings.orderedSources
-                    order.move(fromOffsets: offsets, toOffset: destination)
-                    model.settings.ratingSourceOrder = order
+                .listStyle(.plain)
+                .listRowSpacing(0)
+                .scrollContentBackground(.hidden)
+                .contentMargins(.vertical, 0, for: .scrollContent)
+                .environment(\.defaultMinListRowHeight, MobileSettingsMetrics.rowMinHeight)
+                .scrollDisabled(true)
+                // The page scrolls as one piece; let native rows grow for larger text and edit handles.
+                .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, height in
+                    if height > 0 { measuredListHeight = height }
                 }
-            } footer: {
+                .frame(height: measuredListHeight ?? CGFloat(sources.count) * MobileSettingsMetrics.rowMinHeight)
+                .clipShape(RoundedRectangle(cornerRadius: MobileSettingsMetrics.groupCornerRadius))
+                .settingsGroupSurface(cornerRadius: MobileSettingsMetrics.groupCornerRadius)
                 Text("Enable as many sources as you want, then tap Edit to set their priority. Not every title has every score. The header shows the first available enabled sources, up to your chosen maximum. AniList is used only for anime.")
+                    .settingsHelperText()
+                    .padding(.horizontal, MobileSettingsMetrics.rowInset)
             }
         }
-        .toggleStyle(SettingsSwitchToggleStyle())
-        .settingsPageSurface()
         .navigationTitle("Rating sources & order")
         .toolbar { EditButton().settingsSearchAnchor("rating-source-order") }
+    }
+
+    private func ratingToggle(_ source: RatingSource, first: Bool) -> some View {
+        Toggle(isOn: Binding(
+            get: { model.settings.enabledRatingSources.contains(source) },
+            set: { enabled in
+                if enabled {
+                    model.settings.enabledRatingSources.insert(source)
+                } else {
+                    model.settings.enabledRatingSources.remove(source)
+                }
+            }
+        )) {
+            switch source {
+            case .community: Text("Community")
+            case .critic: Text("Critics")
+            default: Text(verbatim: source.displayName)
+            }
+        }
+        .settingsSearchAnchor(
+            "rating-source-\(source.rawValue)", fallbackFor: first ? ["rating-source-enabled"] : [],
+            clearListRowBackground: true
+        )
     }
 }
 

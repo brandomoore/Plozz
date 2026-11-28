@@ -652,8 +652,12 @@ The complete preview-and-controls group is one native tvOS focus section, so
 vertical navigation reaches the size controls even from the preview's side.
 Artwork shares the layout picker's backdrop: Showcase fades in from the right,
 while Home and detail previews use edge-to-edge artwork.
-Mobile Home keeps native sliders beside their labels and one stacked preview.
+On iPhone and iPad, the Hero preview stacks above the native size sliders.
+The last slider has the same inset below it as the preview has on either side.
 No artwork lookup is needed for these fictional previews.
+
+On iPhone and iPad, **Rating sources & order** keeps the switches and native
+reorder handles inside one shared Settings card.
 
 Movie & show details theme music uses the shared `ThemeMusicVolumeControl` on TV and mobile:
 0–100%, with native touch sliders and the shared remote-adjustable Settings stepper.

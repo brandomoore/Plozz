@@ -35,6 +35,39 @@ final class NativeSettingsToggleTests: XCTestCase {
         func resolve(_ locator: AuthenticatedHTTPPlaybackLocator) async throws -> URL { throw AppError.notFound }
     }
 
+    func testDetailHeroTextSizeHasRoomBelowTheLastSlider() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 900)
+        var cardBounds = CGRect.zero
+        let card = SettingsPageList {
+            SettingsSectionGroup {
+                HeroLogoSizeControl(size: .constant(.default), textSize: .constant(.default), surface: .detail)
+            }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { cardBounds = $0 }
+        }
+        .frame(width: 390)
+        .environment(\.themePalette, .dark)
+        .environment(\.colorScheme, .dark)
+        .environment(\.locale, Locale(identifier: "en_US"))
+        .background(.black)
+        window.rootViewController = UIHostingController(rootView: card)
+        window.makeKeyAndVisible()
+        try await settle(window)
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        add(XCTAttachment(image: image))
+        let text = try XCTUnwrap(HeroTextInk.frames(in: image, terms: ["Text size"])["Text size"])
+        XCTAssertGreaterThanOrEqual(cardBounds.maxY - text.maxY, MobileSettingsMetrics.rowInset)
+    }
+
     func testVideoUpscalingShowsProfileSelectionOnPhoneAndTablet() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -917,7 +950,7 @@ final class NativeSettingsToggleTests: XCTestCase {
                 ("group-scroll", "menu"), ("group-scroll", "stepper"),
                 ("group-scroll", "slider"), ("group-scroll", "button"),
                 ("nested-group-scroll", "toggle"), ("nested-anchor-scroll", "menu"),
-                ("native-list", "toggle"), ("native-form", "menu"),
+                ("native-list", "toggle"), ("native-clear-row", "toggle"), ("native-form", "menu"),
                 ("native-nested-anchor", "toggle"), ("hero-scroll", "toggle"),
                 ("standalone-scroll", "button"), ("accessibility-scroll", "menu"),
                 ("disabled-scroll", "toggle")
@@ -936,7 +969,7 @@ final class NativeSettingsToggleTests: XCTestCase {
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
                         model.controlBounds = $0
                     }
-                let target = rawTarget.settingsSearchAnchor("target")
+                let target = rawTarget.settingsSearchAnchor("target", clearListRowBackground: layout == "native-clear-row")
                 let anchoredTarget = Group {
                     if layout.contains("nested-anchor") {
                         target.settingsSearchAnchor("another-target")
@@ -1867,6 +1900,48 @@ final class NativeSettingsToggleTests: XCTestCase {
         var body: some View {
             Color.clear.onAppear { model.searchRequest = request }
         }
+    }
+
+    func testSearchScrollsThePageForARowInANonScrollingList() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        let model = Model()
+        var target = CGRect.zero
+        let page = SettingsPageScroll {
+            List {
+                ForEach(0..<16) { index in
+                    Text(verbatim: "Source \(index)")
+                }
+                Text(verbatim: "Final source")
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { target = $0 }
+                    .settingsSearchAnchor("final-source", clearListRowBackground: true)
+            }
+            .environment(\.defaultMinListRowHeight, 52)
+            .listRowSpacing(0)
+            .scrollDisabled(true)
+            .frame(height: 17 * 52)
+        }
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 480)
+        window.rootViewController = UIHostingController(rootView: page)
+        window.makeKeyAndVisible()
+        try await settle(window)
+        XCTAssertGreaterThan(target.minY, window.bounds.maxY)
+        window.rootViewController = UIHostingController(rootView: SettingsSearchLanding(targetID: "final-source") {
+            page.background { SearchLandingProbe(model: model) }
+        })
+        let deadline = ContinuousClock.now + .seconds(5)
+        while model.searchRequest?.revealed != true, ContinuousClock.now < deadline {
+            try await settle(window)
+        }
+        XCTAssertEqual(model.searchRequest?.revealed, true)
+        XCTAssertFalse(target.isEmpty)
+        XCTAssertTrue(window.bounds.contains(target), "Offscreen search landing: \(target)")
     }
 
     func testSubtitleSearchRevealsOffscreenNativeFormRowsWithoutEditing() async throws {

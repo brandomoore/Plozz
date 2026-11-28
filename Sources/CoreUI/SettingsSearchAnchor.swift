@@ -57,9 +57,11 @@ private extension EnvironmentValues {
 
 public extension View {
     func settingsSearchAnchor(
-        _ id: String, fallbackFor: [String] = [], focusAction: (@MainActor () -> Void)? = nil
+        _ id: String, fallbackFor: [String] = [], clearListRowBackground: Bool = false,
+        focusAction: (@MainActor () -> Void)? = nil
     ) -> some View {
-        modifier(SettingsSearchAnchor(anchorID: id, fallbackFor: fallbackFor, focusAction: focusAction))
+        modifier(SettingsSearchAnchor(anchorID: id, fallbackFor: fallbackFor,
+                                      clearListRowBackground: clearListRowBackground, focusAction: focusAction))
     }
 
     /// Register the containing native List cell before its lazy controls are created.
@@ -81,6 +83,7 @@ private struct SettingsSearchGroup: ViewModifier {
 private struct SettingsSearchAnchor: ViewModifier {
     let anchorID: String
     let fallbackFor: [String]
+    let clearListRowBackground: Bool
     var focusAction: (@MainActor () -> Void)?
     @Environment(SettingsSearchRequest.self) private var request: SettingsSearchRequest?
     @Environment(\.settingsSearchScroll) private var scroll
@@ -145,7 +148,7 @@ private struct SettingsSearchAnchor: ViewModifier {
             // Native List can retain its initial background across a navigation push.
             // Install the target's background once, then update its bindings in place.
             .listRowBackground(
-                request?.targetID == id && !rowOwnsHighlight && (request?.revealed == false || highlighted)
+                clearListRowBackground || (request?.targetID == id && !rowOwnsHighlight && (request?.revealed == false || highlighted))
                     ? SettingsSearchNativeRowHighlight(highlighted: $highlighted, isNativeListRow: $isNativeListRow) : nil
             )
             #endif
@@ -385,8 +388,10 @@ private struct SettingsSearchNativeRowHighlight: View {
     @Binding var isNativeListRow: Bool
 
     var body: some View {
-        if highlighted && isNativeListRow {
-            SettingsSearchGlow(shape: Rectangle())
+        Color.clear.overlay {
+            if highlighted && isNativeListRow {
+                SettingsSearchGlow(shape: Rectangle())
+            }
         }
     }
 }
@@ -452,7 +457,7 @@ private struct SettingsSearchNativeReveal: UIViewRepresentable {
                 if view is UICollectionViewCell || view is UITableViewCell {
                     nativeListRow = true
                 }
-                if let scroll = view as? UIScrollView {
+                if let scroll = view as? UIScrollView, scroll.isScrollEnabled {
                     let rect = convert(bounds, to: scroll)
                     let insets = scroll.adjustedContentInset
                     let visibleHeight = scroll.bounds.height - insets.top - insets.bottom
