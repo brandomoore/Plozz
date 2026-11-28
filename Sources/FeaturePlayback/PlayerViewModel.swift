@@ -2471,7 +2471,7 @@ public final class PlayerViewModel {
         controls.skipSegments.dismissedSegmentID = segment.id
         controls.skipSegments.dismissedWindow = .init(segment)
         controls.skipSegments.skippedLanding = segment.end
-        requestSeek(to: segment.end, origin: "skip-segment")
+        requestSeek(to: segment.end, origin: "skip-segment", undo: .skip)
     }
 
     /// Dismisses the skip button for the active segment without seeking (Menu /
@@ -2493,7 +2493,7 @@ public final class PlayerViewModel {
         controls.skipSegments.dismissedWindow = .init(segment)
         controls.skipSegments.skippedLanding = segment.end
         controls.autoSkipNotice = AutoSkipNotice(label: segment.kind.autoSkippedLabel)
-        requestSeek(to: segment.end, origin: "auto-skip-segment")
+        requestSeek(to: segment.end, origin: "auto-skip-segment", undo: .skip)
         autoSkipNoticeTask?.cancel()
         autoSkipNoticeTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 1_800_000_000)
@@ -2610,7 +2610,7 @@ public final class PlayerViewModel {
             PlozzLog.playback.error("Ignoring a chapter selection outside the active playback timeline.")
             return
         }
-        requestSeek(to: chapter.start, origin: "chapter")
+        requestSeek(to: chapter.start, origin: "chapter", undo: .skip)
     }
 
     /// Listens to the playing audio (the engine's decoded-audio tap, not
@@ -2660,7 +2660,7 @@ public final class PlayerViewModel {
     /// commit; owned by ``SeekScrubCoordinator``. See that type for the full
     /// coalescing / resume-confirm semantics. `origin` names the caller in the
     /// persistent playback trace, so an unexpected jump (issue #61) is traceable.
-    public func requestSeek(to seconds: TimeInterval, origin: String = "transport") {
+    public func requestSeek(to seconds: TimeInterval, origin: String = "transport", undo: PlaybackSeekUndo = .none) {
         endTemporarySpeedBoost()
         HandoffDiagnostics.emit(
             "session SEEK_INTENT vm=\(instanceID) origin=\(origin)"
@@ -2669,11 +2669,21 @@ public final class PlayerViewModel {
                 + " engineLoading=\(engine.status == .loading)"
                 + " recovering=\(isRecoveringAfterForeground)"
         )
-        seekCoordinator.requestSeek(to: seconds)
+        guard seekCoordinator.requestSeek(to: seconds, undo: undo) else { return }
         foregroundReload.noteUserSeek(to: controls.pendingSeekTarget ?? seconds)
         // What was heard before the jump belongs to another part of the film.
         stopSongWatch(preserveAvailability: true)
         nowPlaying?.refresh()
+    }
+
+    public func undoSkip() {
+        guard phase == .ready, !controls.isScrubbing,
+              let position = controls.skipUndoPosition else { return }
+        requestSeek(to: position, origin: "undoSkip")
+    }
+
+    public func dismissSkipUndo() {
+        seekCoordinator.dismissSkipUndo()
     }
 
     /// Legacy direct-seek path retained for callers (e.g. resume on load) that
@@ -3786,7 +3796,9 @@ extension PlayerViewModel: VideoNowPlayingHost {
     /// the transport or counts as a press's echo.
     func nowPlayingResigned() { applyPaused(true, origin: "system-resign") }
 
-    func nowPlayingSeek(to seconds: TimeInterval) { requestSeek(to: seconds, origin: "now-playing") }
+    func nowPlayingSeek(to seconds: TimeInterval, undo: PlaybackSeekUndo) {
+        requestSeek(to: seconds, origin: "now-playing", undo: undo)
+    }
     func nowPlayingPlayEpisode(_ item: MediaItem) { playEpisode(item) }
     func nowPlayingStop() {
         nowPlaying?.end()

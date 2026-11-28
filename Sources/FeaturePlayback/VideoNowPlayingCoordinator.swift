@@ -24,7 +24,7 @@ protocol VideoNowPlayingHost: AnyObject {
     var nowPlayingForwardInterval: TimeInterval { get }
     func nowPlayingSetPaused(_ paused: Bool)
     func nowPlayingResigned()
-    func nowPlayingSeek(to seconds: TimeInterval)
+    func nowPlayingSeek(to seconds: TimeInterval, undo: PlaybackSeekUndo)
     func nowPlayingPlayEpisode(_ item: MediaItem)
     func nowPlayingStop()
 }
@@ -215,18 +215,18 @@ final class VideoNowPlayingCoordinator {
                 host.nowPlayingPlayEpisode(previous)
             }
         case .seek(let position):
-            seek(position, host: host)
+            seek(position, undo: .largeJump, host: host)
         case .skip(let interval):
             let position = host.nowPlayingPendingSeek ?? host.nowPlayingTime
-            seek(position + interval, host: host)
+            seek(position + interval, undo: .skip, host: host)
         }
         refresh()
     }
 
-    private func seek(_ position: TimeInterval, host: any VideoNowPlayingHost) {
+    private func seek(_ position: TimeInterval, undo: PlaybackSeekUndo, host: any VideoNowPlayingHost) {
         guard host.nowPlayingReady, position.isFinite,
               let duration = Self.duration(engine: host.nowPlayingDuration, fallback: item?.runtime) else { return }
-        host.nowPlayingSeek(to: max(0, min(duration, position)))
+        host.nowPlayingSeek(to: max(0, min(duration, position)), undo: undo)
     }
 
     static func duration(engine: TimeInterval, fallback: TimeInterval?) -> TimeInterval? {

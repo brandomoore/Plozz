@@ -622,6 +622,9 @@ public final class PlayerControlsModel {
     /// Feedback for the seek/skip gesture: the per-profile intervals and the
     /// transient ±Ns indicator.
     public let skipGesture = SkipGestureModel()
+    public internal(set) var skipUndoPosition: TimeInterval?
+    static let skipUndoDuration: Duration = .seconds(7)
+    var skipUndoDeadline: ContinuousClock.Instant?
     /// Server-detected intro/credits segments and the Skip button's presentation.
     public let skipSegments = SkipSegmentsModel()
 

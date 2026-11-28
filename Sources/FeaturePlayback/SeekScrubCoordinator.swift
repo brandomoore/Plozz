@@ -2,6 +2,15 @@ import CoreModels
 import CoreNetworking
 import Foundation
 
+/// Which playback jumps should offer Go Back.
+public enum PlaybackSeekUndo {
+    case none
+    case skip
+    case largeJump
+
+    fileprivate static let largeJumpThreshold: TimeInterval = 30
+}
+
 /// Seam back to the owner (``PlayerViewModel``) for the pieces of transport
 /// intent that live outside the seek pipeline itself. The coordinator holds a
 /// *weak* reference so it never retains the view model (which SwiftUI owns).
@@ -123,8 +132,25 @@ final class SeekScrubCoordinator {
     /// and `.exact` for the final settle. The `pendingSeekTarget` flag pins
     /// the on-screen position so the refresh loop can't snap the bar backward
     /// to a stale `engine.currentTime` while the seek resolves.
-    func requestSeek(to seconds: TimeInterval) {
+    @discardableResult
+    func requestSeek(to seconds: TimeInterval, undo: PlaybackSeekUndo = .none) -> Bool {
         let target = clampedSeekTarget(seconds)
+        let start = controls.pendingSeekTarget ?? controls.currentSeconds
+        let distance = abs(target - start)
+        if undo != .none, !distance.isFinite || distance == 0 { return false }
+        if undo == .skip || (undo == .largeJump && distance >= PlaybackSeekUndo.largeJumpThreshold) {
+            controls.skipUndoPosition = start
+            let deadline = ContinuousClock.now.advanced(by: PlayerControlsModel.skipUndoDuration)
+            controls.skipUndoDeadline = deadline
+            undoExpiry?.cancel()
+            undoExpiry = Task { [weak self] in
+                try? await Task.sleep(until: deadline, clock: .continuous)
+                guard !Task.isCancelled else { return }
+                self?.dismissSkipUndo()
+            }
+        } else {
+            dismissSkipUndo()
+        }
         lastRequestedTarget = target
         requestRevision &+= 1
         let intendsPlayback = host?.seekIntendsPlayback ?? true
@@ -151,6 +177,7 @@ final class SeekScrubCoordinator {
         // delay is invisible. A loop already draining picks up the new target on
         // its own, so `scheduleSeekCommit` only starts one when idle.
         scheduleSeekCommit()
+        return true
     }
 
     /// Classifies a committed seek's landing relative to the skippable segments so
@@ -403,11 +430,21 @@ final class SeekScrubCoordinator {
     /// Teardown: cancels the commit timer, the drain loop and the resume
     /// confirmation. Called from ``PlayerViewModel/stop(preserveDisplayMode:)``.
     func cancelAll() {
+        dismissSkipUndo()
         requestRevision &+= 1
         cancelSeekCommit()
         seekTask?.cancel()
         seekTask = nil
         cancelResumeConfirm()
+    }
+
+    private var undoExpiry: Task<Void, Never>?
+
+    func dismissSkipUndo() {
+        undoExpiry?.cancel()
+        undoExpiry = nil
+        controls.skipUndoPosition = nil
+        controls.skipUndoDeadline = nil
     }
 
     private func takeLatestSeekTarget() -> TimeInterval? {
@@ -419,6 +456,7 @@ final class SeekScrubCoordinator {
     /// Legacy direct-seek path retained for callers (e.g. resume on load) that
     /// want a one-shot await. New transport input goes through `requestSeek`.
     func seek(to seconds: TimeInterval) async {
+        dismissSkipUndo()
         lastRequestedTarget = max(0, seconds)
         requestRevision &+= 1
         controls.isSeeking = true

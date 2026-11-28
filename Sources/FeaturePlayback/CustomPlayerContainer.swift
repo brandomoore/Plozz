@@ -14,6 +14,7 @@ struct PlayerActions {
     /// calls into a single in-flight seek that always targets the latest
     /// requested time, so rapid left/right skips can NEVER race or snap back.
     var seek: (TimeInterval) -> Void = { _ in }
+    var skip: ((TimeInterval) -> Void)?
     var togglePlayPause: () -> Void = {}
     var selectAudio: (Int) -> Void = { _ in }
     var selectSubtitle: (Int) -> Void = { _ in }
@@ -756,6 +757,8 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         }
     }
 
+    private var lastSkipUndoDeadline: ContinuousClock.Instant?
+
     private func refreshFromEngine() {
         #if !os(iOS)
         // An advancing preview is active transport even though its video is paused.
@@ -779,6 +782,13 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
         if let isPaused = resolution.isPaused { model.isPaused = isPaused }
 
         if resolution.shouldEvaluateSkip { evaluateSkipPresentation() }
+
+        // Chapter jumps, automatic segment skips and system commands can bypass
+        // the remote's transport flash. Reveal the prompt without taking focus.
+        if model.skipUndoDeadline != lastSkipUndoDeadline {
+            lastSkipUndoDeadline = model.skipUndoDeadline
+            if lastSkipUndoDeadline != nil, focusContext == .surface { flashControls() }
+        }
 
         // While focus lives in the control bar, treat any focus/menu activity as a
         // reason to restart the idle countdown so the transport never hides mid-
@@ -1643,7 +1653,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
             // them into one final seek.
             let base = model.pendingSeekTarget ?? model.currentSeconds
             let target = min(max(0, base + seconds), model.duration)
-            actions.seek(target)
+            (actions.skip ?? actions.seek)(target)
             flashControls()
             flashSkipHint(forward: seconds > 0)
         }
@@ -1888,7 +1898,7 @@ final class PlayerInputViewController: UIViewController, UIGestureRecognizerDele
     private func hasControlBarContent(for entry: ControlBarEntryModel.Entry) -> Bool {
         switch entry {
         case .info: return true
-        case .trackControls: return !model.trackControlCategories.isEmpty
+        case .trackControls: return model.skipUndoPosition != nil || !model.trackControlCategories.isEmpty
         }
     }
 

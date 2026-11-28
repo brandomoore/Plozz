@@ -62,6 +62,50 @@ final class SeekScrubCoordinatorTests: XCTestCase {
 
     // MARK: End-guard clamp (network-file EOF-fault guard)
 
+    func testUndoAfterRapidSkipsSeeksExactlyToTheLatestDeparture() async throws {
+        let (sut, _, engine, controls) = makeSUT(intendsPlayback: false, commitDebounce: 50_000_000)
+        engine.duration = 300
+        controls.currentSeconds = 40.25
+        sut.requestSeek(to: 50.25, undo: .skip)
+        sut.requestSeek(to: 30.25, undo: .skip)
+
+        let departure = try XCTUnwrap(controls.skipUndoPosition)
+        XCTAssertEqual(departure, 50.25)
+        sut.requestSeek(to: departure)
+
+        XCTAssertNil(controls.skipUndoPosition, "Undo consumes the saved position")
+        await waitUntil { !controls.isSeeking }
+        XCTAssertEqual(engine.currentTime, 50.25)
+    }
+
+    func testOtherSeeksAndTeardownClearUndoAndAnEndClampedSkipDoesNotReplaceIt() {
+        let (sut, _, engine, controls) = makeSUT(intendsPlayback: false)
+        engine.duration = 100
+        controls.currentSeconds = 95
+        sut.requestSeek(to: 105, undo: .skip)
+        XCTAssertFalse(sut.requestSeek(to: 109, undo: .skip))
+        XCTAssertEqual(controls.skipUndoPosition, 95)
+
+        sut.requestSeek(to: 30)
+        XCTAssertNil(controls.skipUndoPosition)
+        sut.requestSeek(to: 40, undo: .skip)
+        sut.cancelAll()
+        XCTAssertNil(controls.skipUndoPosition)
+    }
+
+    func testOnlyLargeTimelineJumpsLeaveAnUndoPositionInEitherDirection() {
+        let (sut, _, engine, controls) = makeSUT(intendsPlayback: false)
+        engine.duration = 300
+        controls.currentSeconds = 100
+        sut.requestSeek(to: 130, undo: .largeJump)
+        XCTAssertEqual(controls.skipUndoPosition, 100)
+        sut.requestSeek(to: 95, undo: .largeJump)
+        XCTAssertEqual(controls.skipUndoPosition, 130)
+        sut.requestSeek(to: 85, undo: .largeJump)
+        XCTAssertNil(controls.skipUndoPosition)
+        XCTAssertEqual(controls.pendingSeekTarget, 85)
+    }
+
     func testCommittedSeekPastEndClampsBelowDuration() {
         // Scrubbing to the very end must not drop the engine exactly on EOF: a
         // network-file source faults its demuxer there. The committed target lands

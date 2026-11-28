@@ -404,7 +404,8 @@ public struct PlayerView: View {
             model: viewModel.controls,
             subtitleModel: viewModel.liveSubtitles,
             actions: PlayerActions(
-                seek: { target in viewModel.requestSeek(to: target) },
+                seek: { viewModel.requestSeek(to: $0, undo: .largeJump) },
+                skip: { viewModel.requestSeek(to: $0, undo: .skip) },
                 togglePlayPause: { viewModel.togglePlayPause() },
                 selectAudio: { viewModel.selectAudioOption(id: $0) },
                 selectSubtitle: { viewModel.selectSubtitleOption(id: $0) },
@@ -423,7 +424,7 @@ public struct PlayerView: View {
                 downloadRemoteSubtitle: { viewModel.downloadAndLoadRemoteSubtitle($0) },
                 playNextEpisode: { if let next = viewModel.nextEpisode { viewModel.playEpisode(next) } },
                 playPreviousEpisode: { if let prev = viewModel.previousEpisode { viewModel.playEpisode(prev) } },
-                restart: { viewModel.requestSeek(to: 0, origin: "restart") },
+                restart: { viewModel.requestSeek(to: 0, origin: "restart", undo: .largeJump) },
                 skipSegment: { viewModel.skipActiveSegment() },
                 autoSkipSegment: { viewModel.autoSkipActiveSegment() },
                 dismissSkip: { viewModel.dismissActiveSkipSegment() },
