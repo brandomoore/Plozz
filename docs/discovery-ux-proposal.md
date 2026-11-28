@@ -1,6 +1,12 @@
 # Media-Share Onboarding — UX Research + Proposal
 
-**Status:** Research + proposal for review. **No production code in this pass.**
+**Status:** Historical onboarding research and proposal, not a current feature
+inventory. The unified media-share flow and all five transports are implemented.
+Use [supported sources](../.github/CONTRIBUTING.md#supported-sources),
+[`FeatureAuth`](../Sources/FeatureAuth/README.md) and
+[`FeatureDiscovery`](../Sources/FeatureDiscovery/README.md) for current behavior.
+References below to separate screens or pending transport work describe the
+original design baseline.
 **Scope (expanded charter):** THE ONE UNIFIED "Add a Media Share" experience,
 end-to-end, for **all five transports** (SMB, WebDAV, NFS, SFTP, FTP). The
 transport branches ship **headless** transports only; this branch owns the
@@ -478,7 +484,7 @@ rules are **already codified**. The UI just has to render that model generically
 | **WebDAV** | anonymous, password, bearer | TLS leaf (optional, TOFU) | yes on `http://` |
 | **SFTP** | password, generated key | SSH host key (**required**, TOFU) | — (SSH encrypts) |
 | **NFS** | *none* (`noCredentials`) | — | — |
-| **FTP** *(planned; not yet in the enum)* | anonymous, password | — | **yes** (FTP is plaintext) |
+| **FTP/FTPS** | anonymous, password | TLS leaf for FTPS | **yes** for plain FTP; FTPS encrypts credentials |
 
 - **`AddWebDAVShareViewModel` is the state-machine template**: an immutable
   `Attempt` snapshot (so editing mid-flight can't send new creds to the old

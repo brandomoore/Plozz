@@ -18,6 +18,66 @@ import CoreNetworking
 /// captions stayed perfectly correct — which is what made it read as an artwork
 /// bug rather than a URL one.
 final class PlexAbsoluteArtworkURLTests: XCTestCase {
+    func testOtherVideosUseTheirOwnFramesAcrossBrowseRecommendedAndRecentlyAdded() async throws {
+        let http = StubHTTPClient()
+        http.stub(pathSuffix: "/library/sections", json: """
+        {"MediaContainer":{"Directory":[
+          {"key":"7","type":"movie","title":"Concerts","agent":"com.plexapp.agents.none","scanner":"Plex Video Files Scanner"},
+          {"key":"8","type":"movie","title":"Other Videos","agent":"tv.plex.agents.movie","scanner":"Plex Movie"}]}}
+        """)
+        let records = (1...3).map { id in
+            let thumb = id == 1 ? #""thumb":"https://art.example/selected.jpg","# : ""
+            return """
+            {"ratingKey":"\(id)","type":"movie","title":"Set \(id)",\(thumb)
+             "Image":[{"type":"coverPoster","url":"https://art.example/cover.jpg"},
+                      {"type":"snapshot","url":"https://art.example/\(id).jpg"}]}
+            """
+        }.joined(separator: ",")
+        http.stub(pathSuffix: "/library/sections/7/all", json: """
+        {"MediaContainer":{"totalSize":3,"Metadata":[\(records)]}}
+        """)
+        http.stub(pathSuffix: "/hubs/sections/7", json: """
+        {"MediaContainer":{"Hub":[
+          {"hubIdentifier":"curated","title":"Picks","Metadata":[\(records)]},
+          {"hubIdentifier":"movie.recentlyadded","Metadata":[\(records)]}]}}
+        """)
+        let provider = PlexProvider(session: makeProvider().session, http: http)
+        let browse = try await provider.items(in: "7", kind: .movie, page: .init())
+        let recommended = try await provider.libraryHubs(libraryID: "7", kind: .movie, limit: 3)
+        let recent = try await provider.libraryRecentlyAddedPage(in: "7", kind: .movie, startIndex: 0, limit: 3)
+        XCTAssertTrue(provider.libraryQueryCapabilities(in: "7", kind: .movie).isPersonalVideoLibrary)
+        XCTAssertFalse(provider.libraryQueryCapabilities(in: "8", kind: .movie).isPersonalVideoLibrary)
+        for items in [browse.items, try XCTUnwrap(recommended.first).items, recent.items] {
+            XCTAssertEqual(items.map(\.posterURL?.lastPathComponent), ["selected.jpg", "2.jpg", "3.jpg"])
+            XCTAssertTrue(items.allSatisfy { $0.isPersonalVideo && !$0.allowsTitleBasedMetadataMatching })
+            let restored = try JSONDecoder().decode([MediaItem].self, from: JSONEncoder().encode(items))
+            XCTAssertTrue(restored.allSatisfy { !$0.supportsExternalArtworkLookup && $0.kind == .movie })
+            var sameName = try XCTUnwrap(restored.first)
+            sameName.productionYear = 2025
+            XCTAssertTrue(MediaItemIdentity.identities(for: sameName).isEmpty)
+        }
+        let movie = try JSONDecoder().decode(PlexMetadata.self, from: Data("""
+        {"ratingKey":"11","type":"movie","guid":"local://11","librarySectionID":8}
+        """.utf8))
+        XCTAssertFalse(provider.map(metadata: movie, libraryID: "7").isPersonalVideo)
+        XCTAssertTrue(provider.map(metadata: movie).allowsTitleBasedMetadataMatching)
+        XCTAssertEqual(http.sentPaths.filter { $0 == "/library/sections" }.count, 1)
+    }
+
+    func testPersonalAgentGUIDsIdentifyFramesWithoutASectionOrCatalogMatch() throws {
+        let provider = makeProvider()
+        for scheme in ["tv.plex.agents.none", "com.plexapp.agents.none", "local", "plex"] {
+            let json = """
+            {"ratingKey":"42","type":"movie","guid":"\(scheme)://movie/42","Image":[{"type":"snapshot","url":"/still"}]}
+            """
+            let dto = try JSONDecoder().decode(PlexMetadata.self, from: Data(json.utf8))
+            let item = provider.map(metadata: dto)
+            let isPersonal = scheme.hasSuffix(".none")
+            XCTAssertEqual(item.isPersonalVideo, isPersonal, scheme)
+            XCTAssertEqual(item.posterURL != nil, isPersonal, scheme)
+        }
+    }
+
     func testLibraryCardsKeepTypedPostersAndEpisodeStillsWhenThumbIsMissing() throws {
         let provider = makeProvider()
         let thumb = "https://art.example/selected.jpg"

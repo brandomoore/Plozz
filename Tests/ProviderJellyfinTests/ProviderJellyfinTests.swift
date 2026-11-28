@@ -225,14 +225,15 @@ final class JellyfinProviderMappingTests: XCTestCase {
 
     private func makeSession(
         baseURL: URL = URL(string: "http://host:8096")!,
-        token: String = "TOKEN"
+        token: String = "TOKEN",
+        provider: ProviderKind = .jellyfin
     ) -> UserSession {
         UserSession(
             server: MediaServer(
                 id: "s",
                 name: "Home",
                 baseURL: baseURL,
-                provider: .jellyfin
+                provider: provider
             ),
             userID: "u1",
             userName: "Alice",
@@ -1309,23 +1310,58 @@ final class JellyfinProviderMappingTests: XCTestCase {
         XCTAssertFalse(item.ratings.contains { $0.source == .critic })
     }
 
-    func testEpisodeChildrenPreserveCombinedRangesAndExcludeVirtualPlayback() async throws {
+    func testSeasonChildrenOmitFiveVirtualEpisodesButKeepAllFiveLibraryIDs() async throws {
+        let missing = (6...10).map { number in
+            """
+            {"Id":"missing-\(number)","Name":"Episode \(number)","Type":"Episode","IndexNumber":\(number),
+             "Overview":"Synopsis for another cut","LocationType":"Virtual","ImageTags":{"Primary":"still"}}
+            """
+        }.joined(separator: ",")
+        let listing = """
+        {"Items":[
+            \(missing),
+            {"Id":"one","Type":"Episode","IndexNumber":1,"Overview":"The first installment"},
+            {"Id":"two","Type":"Episode","IndexNumber":2,"LocationType":"Remote"},
+            {"Id":"three","Type":"Episode","IndexNumber":3,"MediaSources":[]},
+            {"Id":"four","Type":"Episode","IndexNumber":4,"LocationType":"FileSystem"},
+            {"Id":"five","Type":"Episode","IndexNumber":5,"IndexNumberEnd":6,"LocationType":"FileSystem"}
+        ],"TotalRecordCount":10}
+        """
+        for kind: ProviderKind in [.jellyfin, .emby] {
+            let stub = StubHTTPClient()
+            if kind == .jellyfin {
+                stub.stub(pathSuffix: "/Shows/show/Episodes", requiring: [
+                    .init(name: "SeasonId", value: "season1"), .init(name: "UserId", value: "u1"),
+                    .init(name: "IsMissing", value: "false")
+                ], json: listing)
+            } else {
+                stub.stub(pathSuffix: "/Users/u1/Items", requiring: [.init(name: "ParentId", value: "season1")], json: listing)
+            }
+            let provider = JellyfinProvider(session: makeSession(provider: kind), http: stub)
+            let listing = try await EpisodeChildListing.fetch(from: provider, containerID: "season1", seriesID: "show")
+            let episodes = listing.items
+            XCTAssertEqual(listing.evidence.returnedEpisodes, 10)
+            XCTAssertEqual(listing.evidence.origin, kind == .jellyfin ? .seasonRequest : .childrenRequest)
+
+            XCTAssertEqual(episodes.map(\.id), ["one", "two", "three", "four", "five"])
+            XCTAssertEqual(episodes.first?.overview, "The first installment")
+            XCTAssertEqual(episodes.last?.episodeNumberEnd, 6)
+        }
+    }
+
+    func testSeriesChildrenKeepVirtualSeasonAndPlayableLooseSpecial() async throws {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/Users/u1/Items", json: """
         {"Items":[
-            {"Id":"combined","Name":"Episodes 1 and 2","Type":"Episode",
-             "ParentIndexNumber":1,"IndexNumber":1,"IndexNumberEnd":2,"LocationType":"FileSystem"},
-            {"Id":"missing","Name":"Episode 3","Type":"Episode",
-             "ParentIndexNumber":1,"IndexNumber":3,"LocationType":"Virtual"}
-        ],"TotalRecordCount":2}
+            {"Id":"special","Type":"Episode","ParentIndexNumber":0,"IndexNumber":12},
+            {"Id":"missing","Type":"Episode","ParentIndexNumber":0,"IndexNumber":1,"LocationType":"Virtual"},
+            {"Id":"season","Type":"Season","IndexNumber":1,"LocationType":"Virtual"}
+        ]}
         """)
         let provider = JellyfinProvider(session: makeSession(), http: stub)
-        let episodes = try await provider.children(of: "season1")
-
-        XCTAssertEqual(episodes[0].episodeNumberEnd, 2)
-        XCTAssertTrue(episodes[0].locallyValidatedPlayableSource)
-        XCTAssertFalse(episodes[1].locallyValidatedPlayableSource)
-        XCTAssertNil(episodes[1].episodeNumberEnd)
+        let listing = try await EpisodeChildListing.fetch(from: provider, containerID: "show")
+        XCTAssertEqual(listing.items.map(\.id), ["special", "season"])
+        XCTAssertEqual(listing.evidence, .init(origin: .childrenRequest, returnedEpisodes: 2))
     }
 
     func testItemCommunityRatingDoesNotInventTMDBProvenance() async throws {

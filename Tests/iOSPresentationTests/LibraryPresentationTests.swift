@@ -289,27 +289,91 @@ final class LibraryPresentationTests: XCTestCase {
                 try await waitForHostedLayout(window)
                 _ = try self.capture(window, name: "collection-cover-\(Int(size.width))x\(Int(size.height))")
                 let image = try XCTUnwrap(self.capturedImage)
-                var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
-                try pixels.withUnsafeMutableBytes {
-                    let context = try XCTUnwrap(CGContext(
-                        data: $0.baseAddress, width: image.width, height: image.height,
-                        bitsPerComponent: 8, bytesPerRow: image.width * 4,
-                        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-                    ))
-                    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-                }
-                var leftEdge = 0, rightEdge = 0, artworkPixels = 0
-                for index in stride(from: 0, to: pixels.count, by: 4) {
-                    if pixels[index] > 150, pixels[index + 1] < 100, pixels[index + 2] > 150 { leftEdge += 1 }
-                    if pixels[index] < 100, pixels[index + 1] > 150, pixels[index + 2] < 100 { rightEdge += 1 }
-                    if pixels[index] > 180, pixels[index + 1] > 120, pixels[index + 1] < 170,
-                       pixels[index + 2] > 50, pixels[index + 2] < 100 { artworkPixels += 1 }
-                }
+                let (leftEdge, rightEdge, artworkPixels, _) = try self.artworkPixelCounts(in: image)
                 XCTAssertGreaterThan(artworkPixels, 1_000, "Custom-ratio artwork must load rather than being rejected.")
                 XCTAssertEqual(leftEdge, 0, "Filling the poster crops the wide cover's left edge.")
                 XCTAssertEqual(rightEdge, 0, "Filling the poster crops the wide cover's right edge.")
             }
         }
+    }
+
+    func testPersonalVideosUseLandscapeGridAndMixedRecentlyAddedSlots() async throws {
+        let url = try await seedArtwork(size: CGSize(width: 400, height: 225), edgeMarkers: true)
+        let item = MediaItem(id: UUID().uuidString, title: "Personal video", kind: .movie, isPersonalVideo: true, posterURL: url)
+        let appModel = PlozziOSAppModel()
+        let size = CGSize(width: 1024, height: 768)
+        let provider = LibraryPresentationProvider(artwork: url, kind: .plex, titleItems: [item])
+        try await withLibrary(provider: provider, appModel: appModel, size: size, sizeClass: .regular) { window, model in
+            await model.setContentMode(.titles)
+            XCTAssertEqual(model.gridStyle, .landscape)
+            try await waitForHostedLayout(window)
+            let image = try self.captureImage(window, name: "personal-video-grid")
+            try self.assertLandscapeThumbnail(in: image, minimumWidth: 230)
+        }
+        let movie = MediaItem(id: "movie", title: "Catalog movie", kind: .movie)
+        try await withPresentation(
+            PlozziOSHomeMediaRail(
+                title: Text("Recently Added"), items: [movie, item], style: .poster, appModel: appModel,
+                usesPersonalVideoLayout: true
+            ), appModel: appModel, size: size, sizeClass: .regular
+        ) { window in
+            try await waitForHostedLayout(window)
+            let image = try self.captureImage(window, name: "personal-video-mixed-row")
+            let metrics = PlozzMetrics.touch(density: .standard, dynamicTypeSize: .large)
+            try self.assertLandscapeThumbnail(in: image, minimumWidth: metrics.posterWidth + 1)
+        }
+        try await withPresentation(
+            PlozziOSLibraryRecommendationRow(
+                section: LibrarySection(id: "similar", title: "Similar", items: [movie, item]),
+                spoilerSettings: .default, showsSeriesArtwork: false, onSelect: { _, _ in }
+            ).environment(\.plozziOSHomeViewportWidth, size.width),
+            appModel: appModel, size: size, sizeClass: .regular
+        ) { window in
+            try await waitForHostedLayout(window)
+            let image = try self.captureImage(window, name: "personal-video-mixed-recommendations")
+            let metrics = PlozzMetrics.touch(density: .standard, dynamicTypeSize: .large)
+            let fitted = PlozziOSHomeRailLayout<EmptyView>.posterMetrics(
+                in: size.width, inset: PlozziOSMediaRailLayout.pageInset(for: .regular),
+                metrics: metrics, cardStyle: .borderless
+            )
+            try self.assertLandscapeThumbnail(in: image, minimumWidth: fitted.posterWidth + 1)
+        }
+    }
+
+    private func assertLandscapeThumbnail(in image: CGImage, minimumWidth: CGFloat) throws {
+        let (left, right, center, bounds) = try artworkPixelCounts(in: image)
+        XCTAssertGreaterThan(left, 200)
+        XCTAssertGreaterThan(right, 200)
+        XCTAssertGreaterThan(center, 200)
+        XCTAssertGreaterThan(bounds.width, minimumWidth, "A wide image fitted into a narrow poster slot is not a landscape card.")
+        XCTAssertEqual(bounds.width / max(1, bounds.height), 16.0 / 9, accuracy: 0.08)
+    }
+
+    private func artworkPixelCounts(in image: CGImage) throws -> (left: Int, right: Int, center: Int, bounds: CGRect) {
+        var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try pixels.withUnsafeMutableBytes {
+            let context = try XCTUnwrap(CGContext(
+                data: $0.baseAddress, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        var left = 0, right = 0, center = 0
+        var bounds = CGRect.null
+        for index in stride(from: 0, to: pixels.count, by: 4) {
+            let isLeft = pixels[index] > 150 && pixels[index + 1] < 100 && pixels[index + 2] > 150
+            let isRight = pixels[index] < 100 && pixels[index + 1] > 150 && pixels[index + 2] < 100
+            if isLeft { left += 1 }
+            if isRight { right += 1 }
+            if isLeft || isRight {
+                let p = index / 4
+                bounds = bounds.union(CGRect(x: p % image.width, y: p / image.width, width: 1, height: 1))
+            }
+            if pixels[index] > 180, pixels[index + 1] > 120, pixels[index + 1] < 170,
+               pixels[index + 2] > 50, pixels[index + 2] < 100 { center += 1 }
+        }
+        return (left, right, center, bounds)
     }
 
     func testCollectionProgressKeepsCardsVisibleAndFailureOffersDetails() async throws {
@@ -1037,6 +1101,7 @@ private struct LibraryPresentationProvider: MediaProvider, CapabilityReporting, 
     var collectionGate: LibraryPresentationCollectionGate?
     var kind: ProviderKind = .jellyfin
     var watchlistItems: [MediaItem] = []
+    var titleItems: [MediaItem]?
     let capabilities: ProviderCapability = [.video, .libraryCollections, .videoPlaylists]
     var session: UserSession {
         UserSession(
@@ -1047,6 +1112,7 @@ private struct LibraryPresentationProvider: MediaProvider, CapabilityReporting, 
 
     private func titles(kind: MediaItemKind, count: Int = 24) -> [MediaItem] {
         if outcome == .empty { return [] }
+        if kind == .movie, let titleItems { return titleItems }
         let names = ["Northern Lights", "The Last Voyage", "Into the Wild", "A Quiet Morning", "Beyond the Horizon", "Nightfall"]
         return (0..<count).map { index in
             MediaItem(

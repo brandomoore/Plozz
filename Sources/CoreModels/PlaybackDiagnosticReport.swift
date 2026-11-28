@@ -7,6 +7,7 @@ public enum PlaybackDiagnosticReport: Equatable, Sendable {
     case setup(IPTVSetupDiagnostic)
     case playback(LiveChannelFailureReport)
     case library(LibraryLoadDiagnostic)
+    case homeSection(HomeSectionIssue.Reason, provider: ProviderKind?)
     case onDemand(
         error: StreamingQualityError, provider: ProviderKind, engine: PlaybackEngineKind?,
         stage: Stage, negotiatedCodec: DirectPlayVideoCodec? = nil,
@@ -16,6 +17,7 @@ public enum PlaybackDiagnosticReport: Equatable, Sendable {
     public var message: LocalizedStringResource? {
         switch self {
         case .library: return nil
+        case .homeSection(let reason, _): return reason.explanation
         case .onDemand(let error, _, _, _, _, _): return error.userMessage
         case .playback(let report): return report.message
         case .setup(let diagnostic):
@@ -41,6 +43,16 @@ public enum PlaybackDiagnosticReport: Equatable, Sendable {
         func number(_ key: String, _ value: Int?) { field(key, value.map(String.init)) }
         switch self {
         case .library: break
+        case .homeSection(let reason, let provider):
+            fields[0] = "format=plozz-home-section-1"
+            field("operation", "homeSection")
+            field("provider", provider?.rawValue)
+            switch reason {
+            case .failed(let error): field("reason", HandoffDiagnostics.errorCode(error))
+            case .notReturned: field("reason", "notReturned")
+            case .sourceUnavailable: field("reason", "sourceUnavailable")
+            case .empty: field("reason", "empty")
+            }
         case .onDemand(let error, let provider, let engine, let stage, let codec, let retryCodec):
             fields[0] = "format=plozz-playback-1"
             field("operation", "playback")

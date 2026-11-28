@@ -153,6 +153,26 @@ final class SubtitleLineView: UIView {
     }
 
     private var config: Config?
+    #if os(tvOS)
+    private var dialogueInk: CGRect?
+
+    func configureDialogue(_ config: Config, in band: CGRect, maxWidth: CGFloat, place: (CGSize) -> CGRect) {
+        let changed = updateConfiguration(config)
+        let size = config.text.isEmpty ? .zero : measure(maxWidth: maxWidth)
+        let ink = place(size)
+        let surface = size == .zero || band.contains(ink) ? band : ink
+        let next = size == .zero ? .zero : ink.offsetBy(dx: -surface.minX, dy: -surface.minY)
+        let previous = dialogueInk
+        dialogueInk = next
+        if frame != surface { frame = surface }
+        guard changed || previous != next else { return }
+        // Include the old line when it shrinks or disappears. UIKit may coalesce or
+        // expand the requested rect; a silent gap never needs to shape or paint glyphs.
+        var dirty = previous.flatMap { $0.isEmpty ? nil : $0 } ?? .null
+        if !next.isEmpty { dirty = dirty.union(next) }
+        if !dirty.isNull { setNeedsDisplay(dirty.integral) }
+    }
+    #endif
     private struct Measurement {
         var width: CGFloat
         var layout: Layout
@@ -175,11 +195,16 @@ final class SubtitleLineView: UIView {
     }
 
     func configure(_ c: Config) {
-        guard c != config else { return }
-        config = c
-        measurements.removeAll(keepingCapacity: true)
+        guard updateConfiguration(c) else { return }
         invalidateIntrinsicContentSize()
         setNeedsDisplay()
+    }
+
+    private func updateConfiguration(_ c: Config) -> Bool {
+        guard c != config else { return false }
+        config = c
+        measurements.removeAll(keepingCapacity: true)
+        return true
     }
 
     func measure(maxWidth: CGFloat) -> CGSize {
@@ -221,15 +246,26 @@ final class SubtitleLineView: UIView {
 
     override func draw(_ rect: CGRect) {
         guard let c = config, let ctx = UIGraphicsGetCurrentContext() else { return }
+        #if os(tvOS)
+        let ink = dialogueInk ?? bounds
+        guard !ink.isEmpty else {
+            #if DEBUG
+            drawnTextForTesting = nil
+            #endif
+            return
+        }
+        #else
+        let ink = bounds
+        #endif
         let l: Layout
         // SwiftUI gives the view its measured (ink-tight) width, not necessarily
         // the wider wrapping proposal. Re-shaping at that smaller width wraps a
         // second time and draws extra lines above the height we just measured.
-        if let index = measurements.lastIndex(where: { $0.layout.totalSize == bounds.size })
-            ?? measurements.lastIndex(where: { $0.width == bounds.width }) {
+        if let index = measurements.lastIndex(where: { $0.layout.totalSize == ink.size })
+            ?? measurements.lastIndex(where: { $0.width == ink.width }) {
             l = reuseMeasurement(at: index)
         } else {
-            l = cacheLayout(c, maxWidth: bounds.width)
+            l = cacheLayout(c, maxWidth: ink.width)
         }
 
         ctx.saveGState()
@@ -237,7 +273,7 @@ final class SubtitleLineView: UIView {
 
         // UIKit top-left origin → Core Text / Core Graphics bottom-left origin.
         ctx.textMatrix = .identity
-        ctx.translateBy(x: 0, y: bounds.height)
+        ctx.translateBy(x: ink.minX, y: ink.maxY)
         ctx.scaleBy(x: 1, y: -1)
 
         let path = l.path

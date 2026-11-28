@@ -34,7 +34,9 @@ registry.
   - per-profile Trakt namespace swap (`updateTraktForActiveProfile`).
 - `RootView` + `MainTabView` — the root SwiftUI hierarchy
   (Auth → ProfileSelection → MainTab). Lives here because it must depend
-  on every feature module.
+  on every feature module. Keep the tvOS routing, environment and lifecycle
+  modifier chains separated by stable type-erasure boundaries: a single
+  concrete view type can overflow the main thread during the first layout.
 - `ProfileSelectionView` — hosts `FeatureProfiles.ProfilePickerView` and
   the create/edit sheet for both the launch picker and Settings.
 - `SystemProfileBridge` — narrow seam onto the tvOS `TVUserManager` API

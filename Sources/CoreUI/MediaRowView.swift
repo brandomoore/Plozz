@@ -195,7 +195,7 @@ public struct MediaRowView: View {
     /// Cross-server merging unions by external identity (TMDb and the like), so
     /// until enrichment has supplied those ids it has nothing to match on and
     /// both copies survive into the row.
-    private let items: [MediaItem]
+    package let items: [MediaItem]
     private let liveChannels: [HomeLiveTVChannel]
     private let onLiveChannelFocused: ((HomeLiveTVChannel) -> Void)?
     private let presentation: Presentation
@@ -327,6 +327,7 @@ public struct MediaRowView: View {
     @State private var tracksLoadingFocus: Bool
     private var onBrowse: (() -> Void)?
     private var usesRowBrowsing = false
+    private var hasWidePersonalVideoSlots = false
     private var onLoadMore: (@MainActor () async -> Void)?
 
     public func loadingMore(_ action: (@MainActor () async -> Void)?) -> Self {
@@ -339,6 +340,12 @@ public struct MediaRowView: View {
         var copy = self
         copy.onBrowse = action
         copy.usesRowBrowsing = true
+        return copy
+    }
+
+    public func adaptingPersonalVideoSlots(_ enabled: Bool) -> Self {
+        var copy = self
+        copy.hasWidePersonalVideoSlots = enabled && presentation == .poster && items.contains(where: \.isPersonalVideo)
         return copy
     }
 
@@ -644,7 +651,7 @@ public struct MediaRowView: View {
                     isActive: pinnedSidebarActive,
                     inset: navigationContentInset,
                     verticalOverhang: layoutMetrics.railShadowClearance,
-                    cardPitch: cardSlotWidth + layoutMetrics.cardSpacing
+                    cardPitch: hasWidePersonalVideoSlots ? nil : cardSlotWidth + layoutMetrics.cardSpacing
                 ) {
                     ScrollViewReader { proxy in
                         MediaRowScroll(
@@ -972,28 +979,11 @@ public struct MediaRowView: View {
     @ViewBuilder
     private func card(for item: MediaItem) -> some View {
         switch presentation {
-        case .poster:
+        case .poster, .landscape:
             trackedCard(
                 PosterCardView(
                     item: item,
-                    style: .poster,
-                    artworkPolicy: artworkPolicy,
-                    spoilerSettings: spoilerSettings,
-                    showsSeriesArtwork: showsSeriesArtwork,
-                    statusCue: statusCue?(item),
-                    playsOnSelect: playsOnSelect,
-                    showsResumeChip: showsResumeChip,
-                    isPendingRemoval: pendingRemovalIDs.contains(
-                        item.stablePresentationID
-                    )
-                ) { onSelect(item) },
-                for: item
-            )
-        case .landscape:
-            trackedCard(
-                PosterCardView(
-                    item: item,
-                    style: .landscape,
+                    style: artworkStyle(for: item),
                     artworkPolicy: artworkPolicy,
                     spoilerSettings: spoilerSettings,
                     showsSeriesArtwork: showsSeriesArtwork,
@@ -1041,7 +1031,7 @@ public struct MediaRowView: View {
             // must remain live while the transparent loading overlay is present.
             .opacity(showsEntryPlaceholder ? 0 : 1)
             .accessibilityHidden(showsEntryPlaceholder)
-            .frame(width: cardSlotWidth)
+            .frame(width: hasWidePersonalVideoSlots && item.isPersonalVideo ? landscapeSlotWidth : cardSlotWidth)
             .id(item.stablePresentationID)
             .background {
                 #if os(tvOS)
@@ -1110,15 +1100,7 @@ public struct MediaRowView: View {
             return metrics.posterWidth
             #endif
         case .landscape:
-            #if os(tvOS)
-            return layoutMetrics.cardSlotWidth(for: .landscape, cardStyle: cardStyle, showsSeriesArtwork: showsSeriesArtwork)
-            #else
-            return metrics.cardSlotWidth(
-                for: .landscape,
-                cardStyle: .framed,
-                showsSeriesArtwork: showsSeriesArtwork
-            )
-            #endif
+            return landscapeSlotWidth
         case .episodeColumn:
             return episodeColumnArtworkSize.width + EpisodeColumnCard.trailingSpacing
         }
@@ -1135,6 +1117,14 @@ public struct MediaRowView: View {
         return CGSize(width: width, height: width * original.height / original.width)
         #else
         return original
+        #endif
+    }
+
+    private var landscapeSlotWidth: CGFloat {
+        #if os(tvOS)
+        layoutMetrics.cardSlotWidth(for: .landscape, cardStyle: cardStyle, showsSeriesArtwork: showsSeriesArtwork)
+        #else
+        metrics.cardSlotWidth(for: .landscape, cardStyle: .framed, showsSeriesArtwork: showsSeriesArtwork)
         #endif
     }
 
@@ -1200,6 +1190,10 @@ public struct MediaRowView: View {
 
     private var artworkStyle: PosterCardView.Style {
         presentation == .poster ? .poster : .landscape
+    }
+
+    private func artworkStyle(for item: MediaItem) -> PosterCardView.Style {
+        hasWidePersonalVideoSlots && item.isPersonalVideo ? .landscape : artworkStyle
     }
 
     private var entryTargetReady: Bool {
@@ -1313,12 +1307,6 @@ public struct MediaRowView: View {
         }
         activity.artworkPrefetchDirection = direction
         activity.lastArtworkPrefetchIndex = index
-        let variant: ArtworkImageVariant = {
-            switch presentation {
-            case .poster: return .posterCard
-            case .landscape, .episodeColumn: return .landscapeCard
-            }
-        }()
         let fullIndices = MediaRowPrefetchWindow.indices(
             from: index,
             direction: direction,
@@ -1352,9 +1340,11 @@ public struct MediaRowView: View {
                 }
                 continue
             }
+            let style = artworkStyle(for: candidate)
+            let variant: ArtworkImageVariant = style == .poster ? .posterCard : .landscapeCard
             let candidates = MediaArtworkPrefetchPolicy.candidates(
                 for: candidate,
-                style: artworkStyle,
+                style: style,
                 spoilerSettings: spoilerSettings,
                 showsSeriesArtwork: showsSeriesArtwork,
                 artworkPolicy: artworkPolicy, policy: presentationArtworkPolicy
@@ -1362,7 +1352,7 @@ public struct MediaRowView: View {
             // Queue a tiny nearest-first frame before this card's heavier full
             // decode. One preview candidate is enough; if the primary is invalid,
             // the full two-candidate ladder below still handles the fallback.
-            if presentation == .poster,
+            if style == .poster,
                let preview = candidates.first,
                MediaArtworkPrefetchPolicy.claimPreview(
                    for: candidate.stablePresentationID,
@@ -1389,9 +1379,10 @@ public struct MediaRowView: View {
             ) where !near.contains(i) {
                 let candidate = items[i]
                 if browseDirection != nil, activity.visibleIDs.contains(candidate.stablePresentationID) { continue }
-                guard let preview = MediaArtworkPrefetchPolicy.candidates(
+                guard artworkStyle(for: candidate) == .poster,
+                      let preview = MediaArtworkPrefetchPolicy.candidates(
                           for: candidate,
-                          style: artworkStyle,
+                          style: .poster,
                           spoilerSettings: spoilerSettings,
                           showsSeriesArtwork: showsSeriesArtwork,
                           artworkPolicy: artworkPolicy, policy: presentationArtworkPolicy

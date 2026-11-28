@@ -128,6 +128,7 @@ final class HomeRowBrowseTests: XCTestCase {
                     primaryImageAspectRatio: 16.0 / 9
                 )
             }
+
             let section = LibrarySection(id: "shelf", title: "Shelf", style: .landscape, items: members)
             let choice = HomeRowChoice(section: section, library: movieLibrary)
             let visibility = HomeLibraryVisibility(rowCustomization: .init(
@@ -142,6 +143,31 @@ final class HomeRowBrowseTests: XCTestCase {
             XCTAssertEqual(browser.items, members)
             XCTAssertEqual(browser.style, .poster)
         }
+    }
+
+    func testPersonalVideoShelfUsesLandscapeWithoutOverridingMixedOrCustomRowLayout() {
+        let video = MediaItem(id: "video", title: "DJ set", kind: .movie, isPersonalVideo: true)
+        let movie = MediaItem(id: "movie", title: "Movie", kind: .movie)
+        let cases: [([MediaItem], LibrarySection.Style)] = [([video], .landscape), ([movie, video], .poster), ([movie], .poster)]
+        for (members, expected) in cases {
+            let section = LibrarySection(id: "recentlyAdded", title: "Recently Added", items: members)
+            let row = HomeLibrarySectionGroup.Row(section: section, isLoading: false, failure: nil)
+            XCTAssertEqual(row.cardStyle, expected)
+            let choice = HomeRowChoice(section: section, library: movieLibrary)
+            let browser = HomeRowBrowseFactory.make(
+                .init(choice: choice, source: .library(row)), accounts: [], visibility: .default, isCurrent: { true }
+            )
+            XCTAssertEqual(browser.style, expected)
+            let recent = HomeRow(kind: .recentlyAdded, items: members)
+            XCTAssertEqual(recent.style, expected == .landscape ? .landscape : .poster)
+            XCTAssertFalse(recent.playsOnSelect(continueWatchingAction: .play))
+        }
+        let custom = HomeLibrarySectionGroup.Row(
+            section: .init(id: "custom", title: "Custom", items: [video]),
+            isLoading: false, failure: nil, collectionCardStyle: .poster
+        )
+        XCTAssertEqual(custom.cardStyle, .poster)
+        XCTAssertFalse(custom.usesPersonalVideoLayout)
     }
 
     func testCollectionCoverAutoAndOverridesDoNotDependOnRailOrientation() throws {

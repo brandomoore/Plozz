@@ -1,7 +1,8 @@
 # ProviderPlex
 
-Plex implementation of `CoreModels.MediaProvider`. One of Plozz's two
-first-class backends; co-equal with `ProviderJellyfin`.
+Plex implementation of `CoreModels.MediaProvider`, co-equal with Jellyfin.
+It participates alongside the other
+[supported sources](../../.github/CONTRIBUTING.md#supported-sources).
 
 ## Responsibility
 
@@ -24,6 +25,13 @@ first-class backends; co-equal with `ProviderJellyfin`.
 - `PlexDTOs` — Plex JSON shapes, mapped into `CoreModels` at the seam.
 
 ## Invariants
+
+- On-demand episode subtitle search keeps Plex's item-specific ranking, excluding
+  release names that identify another series or episode. When that leaves no
+  results, it retries with the series title and accepts only releases identifying
+  the requested series, season, and episode. A release can omit a series title's
+  apostrophe without counting as a different show. Manual and automatic search share
+  this path; the download key still belongs to the original episode.
 
 - HTTP sharing defaults off. Library sections and the
   stream-enriched browse helper explicitly opt in at their request definitions.
@@ -217,6 +225,11 @@ behavior and never export item identities or response bodies.
 
 Library cards use the item's `thumb` first. If absent, `Image.coverPoster` supplies
 the poster and `Image.snapshot` supplies an episode's still before the show poster fallback.
+In Plex “Other Videos,” Browse and Recommended use landscape cards with the video's
+own thumbnail (or typed `snapshot`). Recently Added also gives these videos wide
+slots, without changing movie posters beside them or making selection start playback.
+These videos are not matched to catalog posters by title. A section can report
+`movie` for both personal videos and catalog movies; its display name is not used.
 Plex's selected `Image` entry with type `backgroundSquare` is retained as
 `.squareHero`, separately from posters, logos, and landscape backgrounds.
 Compact iPhone Home and detail heroes prefer it under Recommended or Library

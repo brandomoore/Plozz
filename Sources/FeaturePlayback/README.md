@@ -574,6 +574,17 @@ the output/content; availability and preference acknowledgement are not proof of
 processing for every engine route. Undocumented integration carries OS
 compatibility and App Review risk. This system-preference bridge is tvOS-only.
 
+**Volume Boost** is a separate player adjustment, off for each new playback
+session. On Apple TV, focus its Audio row and press left or right; on iPhone
+and iPad, choose a percentage in Audio. Percentages are added signal amplitude
+(100% doubles it), not device volume. Plozzigen applies gain before its peak
+limiter, and turns shaping off at Off. Rapid presses settle into one adjustment.
+Boost is offered only where the engine can rebuild at the playhead. It is
+hidden for player-managed audio and on remuxed titles with any E-AC-3 track:
+the track can carry spatial audio even when its metadata doesn't say so.
+If the boosted pipeline drops audio, the player restores unboosted playback.
+Opening a new disc playlist or clip resets Boost to Off.
+
 On iPhone and iPad, VOD and Live TV share adaptive native `PlayerMoreMenuButton`
 controls. Portrait uses one ellipsis. Landscape shows Audio, Subtitles, the
 current speed (on demand), and an ellipsis, omitting unavailable controls.
@@ -1842,7 +1853,9 @@ This lives in the existing profile-scoped subtitle style, including the separate
 Live TV style. Bottom of video uses measured active bounds when available and otherwise
 the displayed video, intersected with the visible viewport. It does not change
 source aspect ratio or resize authored subtitle canvases. Ordinary dialogue and
-dual lanes use that reference; eligible lower bitmap regions move together
+dual lanes use that reference vertically; their horizontal center, offset, and
+wrapping width use the displayed video, not the detected side bars, so a held
+line doesn't slide as a scene changes. Eligible lower bitmap regions move together
 without scaling, while fixed artwork and independently source-positioned text
 retain their authored placement. Font/color controls do not apply to bitmap
 subtitles; their player editor exposes picture positioning instead.
@@ -2169,6 +2182,12 @@ Hiding the controls restores normal placement; style
 editing, previews, and saved position values are unchanged. The normal dialogue
 percentage remains screen-relative. Captions already encoded into video pixels
 cannot be repositioned.
+
+During letterboxed HDR playback on Apple TV, ordinary bottom-of-screen dialogue
+uses a fixed transparent drawing surface when the line fits below the picture.
+It requests a redraw of the old and new text bounds; UIKit can expand that area.
+A gap clears the old text without shaping or drawing glyphs. The renderer does
+not paint black bars or redraw a held line on clock ticks.
 
 Mobile on-demand subtitle settings include the existing subtitle-delay control
 directly, rather than a separate Playback Sync menu entry. Engines that support

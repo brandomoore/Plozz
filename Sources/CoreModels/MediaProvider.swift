@@ -2,10 +2,11 @@ import Foundation
 
 /// The provider abstraction that lets Plozz support multiple backends.
 ///
-/// Plozz ships **two** first-class conformers — `ProviderJellyfin.JellyfinProvider`
-/// and `ProviderPlex.PlexProvider` — and treats them as co-equal: features above
-/// this protocol are written once and work against either. Adding another backend
-/// (e.g. Overseerr) means writing one new conformer plus a `ProviderKind` case.
+/// Managed servers, IPTV, network shares and music-only Subsonic use this seam.
+/// Jellyfin and Emby share `ProviderJellyfin.JellyfinProvider`; Plex, Silo,
+/// shares, IPTV and Subsonic have their own adapters. Shared features respect
+/// provider capabilities rather than assuming every source has a video library,
+/// server-side transcoding or remote watch state.
 ///
 /// All methods are `async` and throw `AppError`. Implementations must:
 ///  * never log secrets/tokens;
@@ -123,6 +124,9 @@ public protocol MediaProvider: Sendable {
     /// request. For potentially large containers (top-level libraries with
     /// hundreds of items) use `items(in:page:)` instead so the UI can page.
     func children(of itemID: String) async throws -> [MediaItem]
+
+    /// Library episodes for a specific season of a series, in playback order.
+    func episodes(inSeason seasonID: String, ofSeries seriesID: String) async throws -> [MediaItem]
 
     /// A single page of a container's children, for scalable browsing of large
     /// libraries. Implementations request only `page.limit` items starting at
@@ -520,6 +524,10 @@ public enum MediaProviderURLIdentity {
 // doubles) inherit safe no-ops, so adding the capability never forces every
 // conformer to implement it.
 public extension MediaProvider {
+    func episodes(inSeason seasonID: String, ofSeries seriesID: String) async throws -> [MediaItem] {
+        try await children(of: seasonID)
+    }
+
     func trackerHistoryItem(id: String) async throws -> MediaItem {
         try await item(id: id)
     }

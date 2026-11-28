@@ -10,7 +10,6 @@ import json
 import os
 from pathlib import Path
 import re
-import runpy
 import subprocess
 import sys
 import tempfile
@@ -32,7 +31,6 @@ MODEL = "gpt-6.1-sol"
 EFFORT = "high"
 MATCHING_CONTEXT_LIMIT = 180000
 MATCHING_RUN_SECONDS = 660
-TRIAGE = runpy.run_path(str(Path(__file__).with_name("format-triage-comments.py")))
 PINNED_THREAD = 1 << 1
 THUMBS_UP = "\U0001f44d"
 PUBLIC_NOTICE = "Posts and replies automatically sync to GitHub"
@@ -788,12 +786,17 @@ def release_resolution(comment, number):
 
 
 def latest_release_resolution(index, number):
-    result = None
+    entry = latest_resolution_comment(index, number)
+    return entry[1] if entry else None
+
+
+def latest_resolution_comment(index, number):
+    latest = None
     for comment in index.comments:
         if comment.get("issue_url") == f"https://api.github.com/repos/{REPO}/issues/{number}":
             if value := release_resolution(comment, number):
-                result = value
-    return result
+                latest = (comment, value)
+    return latest
 
 
 class GitHubIndex:
@@ -885,10 +888,17 @@ def set_thread_archived(discord, thread, archived):
     thread.setdefault("thread_metadata", {})["archived"] = archived
 
 
+def discord_footer(key):
+    if match := re.fullmatch(r"issue:([1-9][0-9]*)", key):
+        return f"GitHub issue #{match[1]}"
+    return FOOTER + key
+
+
 def discord_records(messages, key):
+    footers = {discord_footer(key), FOOTER + key}
     existing = [
         m for m in messages if m.get("author", {}).get("id") == BOT
-        and len(m.get("embeds", [])) == 1 and m["embeds"][0].get("footer", {}).get("text") == FOOTER + key
+        and len(m.get("embeds", [])) == 1 and m["embeds"][0].get("footer", {}).get("text") in footers
     ]
     if len(existing) > 1:
         raise BridgeError("Duplicate Discord bridge messages exist; refusing an ambiguous update.")
@@ -896,7 +906,7 @@ def discord_records(messages, key):
 
 
 def discord_upsert(discord, thread, messages, key, embed, *, previous_key=None):
-    embed = {**embed, "footer": {"text": FOOTER + key}}
+    embed = {**embed, "footer": {"text": discord_footer(key)}}
     existing = discord_records(messages, key)
     if not existing and previous_key:
         existing = discord_records(messages, previous_key)
@@ -947,52 +957,36 @@ def excerpt(body, limit, url):
     return discord_chunks(body, limit - len(suffix.encode("utf-16-le")) // 2)[0] + suffix
 
 
-def issue_comments(index, number):
-    return [comment for comment in index.comments
-            if comment.get("issue_url") == f"https://api.github.com/repos/{REPO}/issues/{number}"]
-
-
-def status_embed(index, number):
-    issue = index.issues[number]
+def tracking_embed(index, thread, number):
     url = f"https://github.com/{REPO}/issues/{number}"
-    description = (
-        "This post and its replies sync to this public GitHub issue. "
-        "The forum's default reaction counts as a vote.\n"
-        f"[Full discussion]({url})"
-    )
-    latest = None
-    assessment = None
-    resolution = None
-    for comment in issue_comments(index, number):
-        if value := release_resolution(comment, number):
-            resolution = (comment, value)
-        elif TRIAGE["owned"](comment):
-            assessment = comment
-        elif comment.get("user", {}).get("login") != GITHUB_BOT and comment.get("user", {}).get("type") != "Bot":
-            latest = comment
-    fields = []
-    if resolution:
-        comment, value = resolution
-        phase = "Available in TestFlight" if value["status"] == "delivered" else "Implemented; awaiting TestFlight"
-        fields = [{"name": "Implementation", "value":
-                   f"[{value['commit'][:7]}](https://github.com/{REPO}/commit/{value['commit']}) - {phase}"}]
-        description += "\n\n" + excerpt(comment["body"].partition("\n")[2].lstrip(), 900, url)
-    if assessment:
-        try:
-            prose = TRIAGE["public_prose"](assessment)
-        except ValueError:
-            raise BridgeError(f"GitHub triage comment {assessment['id']} has invalid structured metadata.") from None
-        description += "\n\n**Automated assessment (not delivery confirmation)**\n" + excerpt(
-            prose, 1200, f"{url}#issuecomment-{assessment['id']}",
-        )
-    if latest:
-        description += "\n\n**Latest GitHub comment**\n" + excerpt(
-            latest.get("body") or "(Empty GitHub comment.)", 1200, f"{url}#issuecomment-{latest['id']}",
-        )
+    bug = FORUMS[thread["parent_id"]] == "bug"
+    subject = "your bug report" if bug else "your feature request"
+    link = f"[GitHub issue #{number}]({url})"
+    if index.reports[thread["id"]]["is_issue"]:
+        text = f"{link} was created to track {subject}."
+    else:
+        text = f"{subject.capitalize()} was linked to an existing issue: {link}."
     return {
-        "title": f"GitHub #{number} - {issue['state'].capitalize()}",
-        "url": url, "description": excerpt(description, 3800, url), "fields": fields,
-    }, resolution
+        "title": "Thanks for the report!" if bug else "Thanks for the idea!",
+        "url": url, "description": text + " Replies here are public on GitHub.", "fields": [],
+    }
+
+
+def testflight_update(thread, resolution):
+    subject = "fix" if FORUMS[thread["parent_id"]] == "bug" else "feature"
+    devices = {"tvOS": "Apple TV", "iOS": "iPhone and iPad"}
+    platforms = [p for p in RESOLUTION_PLATFORMS if p in resolution["platforms"]]
+    if resolution["status"] == "delivered":
+        builds = []
+        for platform in platforms:
+            delivery = resolution["deliveries"][platform]
+            builds.append(f"**{devices[platform]}:** Plozz {delivery['version']} (build {delivery['build']})")
+        return "Available in TestFlight", f"Update Plozz in TestFlight to try this {subject}.\n\n" + "\n".join(builds)
+    pending = [devices[p] for p in platforms if p not in resolution["deliveries"]]
+    if pending:
+        names = "Apple TV, iPhone, and iPad" if len(pending) == 2 else pending[0]
+        return "Waiting for TestFlight", f"The {subject} is ready. An update will appear here when you can try it on {names}."
+    return "Waiting for TestFlight", f"The {subject} is ready. TestFlight availability isn't confirmed yet."
 
 
 def sync_legacy_replies(discord, thread, messages, index, number):
@@ -1034,20 +1028,30 @@ def sync_issue_to_discord(discord, thread, messages, index, number):
     issue = index.issues[number]
     was_archived = thread.get("thread_metadata", {}).get("archived", False)
     try:
-        embed, current_resolution = status_embed(index, number)
+        embed = tracking_embed(index, thread, number)
+        current_resolution = latest_resolution_comment(index, number)
         previous = discord_records(messages, f"issue:{number}")
         sent = True
-        if current_resolution and previous:
+        if current_resolution:
             comment, resolution = current_resolution
+            title, text = testflight_update(thread, resolution)
+            url = f"{embed['url']}#issuecomment-{comment['id']}"
+            details = f"[Details]({url})"
+            embed["fields"] = [{"name": title, "value": f"{text} {details}"}]
             key = f"resolution:{number}:{resolution['commit']}:{resolution['status']}"
-            if previous[0]["embeds"][0].get("fields", []) != embed["fields"] or discord_records(messages, key):
+            old = previous[0]["embeds"][0].get("fields", []) if previous else []
+            # A previously baselined thread must not announce an old milestone just
+            # because its wording changed. Recognize the old commit/phase field too.
+            phase = "Available in TestFlight" if resolution["status"] == "delivered" else "Implemented; awaiting TestFlight"
+            commit = resolution["commit"]
+            known = old == [{"name": "Implementation", "value":
+                             f"[{commit[:7]}](https://github.com/{REPO}/commit/{commit}) - {phase}"}] or any(
+                field.get("name") == title and field.get("value", "").endswith(details) for field in old
+            )
+            if previous and (not known or discord_records(messages, key)):
                 # Publish the milestone first: a failed send must not advance the status baseline.
                 sent = discord_upsert(discord, thread, messages, key, {
-                    "title": f"GitHub #{number} - " + (
-                        "Available in TestFlight" if resolution["status"] == "delivered" else "Implemented"
-                    ),
-                    "url": f"https://github.com/{REPO}/issues/{number}#issuecomment-{comment['id']}",
-                    "description": excerpt(comment["body"].partition("\n")[2].lstrip(), 3800, embed["url"]),
+                    "title": title, "url": url, "description": text,
                 }, previous_key=f"comment:{comment['id']}:0")
         if sent:
             sent = discord_upsert(discord, thread, messages, f"issue:{number}", embed)
@@ -1055,7 +1059,8 @@ def sync_issue_to_discord(discord, thread, messages, index, number):
         resolution = current_resolution[1] if current_resolution else None
         delivered = resolution and resolution["status"] == "delivered"
         if (
-            sent and delivered and issue["state"] == "closed" and issue.get("state_reason") == "completed"
+            sent and delivered and not thread.get("thread_metadata", {}).get("locked")
+            and issue["state"] == "closed" and issue.get("state_reason") == "completed"
             and os.environ.get("TESTFLIGHT_RESOLUTION_ENABLED") == "true"
         ):
             current = index.api.call("GET", f"/repos/{REPO}/issues/{number}")

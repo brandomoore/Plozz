@@ -225,7 +225,7 @@ Spanish while another keeps English on the same Apple TV.
 
 | Not affected | Why |
 | --- | --- |
-| Media titles, overviews, genres | They come from Jellyfin/Plex in whatever language that server is configured with |
+| Media titles, overviews, genres | They come from the media source or metadata provider in its configured language |
 | Audio / subtitle track languages | A German UI does not imply German audio — they are separate settings on purpose |
 | Dates, numbers, sort order | Those follow the device REGION, which the override preserves |
 | AVKit player chrome, permission prompts | System-drawn; they follow the device language and no in-app setting can change that |

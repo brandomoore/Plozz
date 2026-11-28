@@ -37,7 +37,9 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
     private var needsCompositeUpdate = true
 
     private var usesCompositedArtwork: Bool {
-        (environment.compositedLibraryPosters || item.map { PosterCardPresentation.preservesContainerArtwork(for: $0.kind) } == true)
+        (environment.compositedLibraryPosters || item.map {
+            $0.isPersonalVideo || PosterCardPresentation.preservesContainerArtwork(for: $0.kind)
+        } == true)
             && environment.plozzCardFocusStyle.usesSystemEffect
     }
 
@@ -138,8 +140,7 @@ public final class NativeTVLibraryCell: UICollectionViewCell, DetailTransitionFo
                     : CardArtworkPolicy.standard.references(for: $0, style: style, policy: inheritedPolicy)
             } ?? []
         let variant: ArtworkImageVariant = style == .poster ? .posterCard : .landscapeCard
-        let maxAspect: CGFloat? = style == .poster
-            && item.map { !PosterCardPresentation.preservesContainerArtwork(for: $0.kind) } != false ? 0.9 : nil
+        let maxAspect = item.flatMap { PosterCardPresentation.maximumAspectRatio(for: $0, style: style) }
         let policy = item.map {
             CardArtworkPolicy.standard.presentationPolicy(for: $0, style: style, inheriting: inheritedPolicy)
         } ?? inheritedPolicy

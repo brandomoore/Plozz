@@ -579,6 +579,8 @@ public final class LibraryLiveChannelEngine: LiveChannelEngine {
     public func setPlaybackSpeed(_ rate: Double) { underlyingEngine.setPlaybackSpeed(rate) }
     public func setAudioDelay(_ seconds: TimeInterval) { underlyingEngine.setAudioDelay(seconds) }
     public var audioDelaySeconds: TimeInterval { underlyingEngine.audioDelaySeconds }
+    public var volumeBoost: PlayerVolumeBoost { underlyingEngine.volumeBoost }
+    public func setVolumeBoost(_ boost: PlayerVolumeBoost) { underlyingEngine.setVolumeBoost(boost) }
     public func setAudioDelayLive(_ seconds: TimeInterval) -> Bool { underlyingEngine.setAudioDelayLive(seconds) }
     public func setSubtitleDelay(_ seconds: TimeInterval) { underlyingEngine.setSubtitleDelay(seconds) }
     public func updateSubtitleStyle(_ style: SubtitleStyle) { underlyingEngine.updateSubtitleStyle(style) }

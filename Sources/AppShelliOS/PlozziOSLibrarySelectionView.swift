@@ -5,6 +5,7 @@ import CoreUI
 import FeatureHomeCore
 import FeatureLiveTV
 import FeatureLiveTVCore
+import FeatureSettings
 import SwiftUI
 
 struct PlozziOSLibrarySelectionView: View {
@@ -16,9 +17,10 @@ struct PlozziOSLibrarySelectionView: View {
     private var visibility: HomeLibraryVisibilityModel { appModel.settings.homeVisibility }
     private func onContinue() { appModel.completeLibrarySelection() }
 
-    @State private var libraries: [LibraryChoice] = []
+    @State private var libraries: [AggregatedLibrary] = []
     @State private var isLoading = true
-    @State private var loadFailed = false
+    @State private var failures: [String: AppError] = [:]
+    private var loadFailed: Bool { !failures.isEmpty }
     @State private var loadGeneration = 0
 
     private var guides: [LiveTVGuidePreparationModel.Status] {
@@ -123,6 +125,15 @@ struct PlozziOSLibrarySelectionView: View {
                 }
             }
         } else {
+            ForEach(smbGroups, id: \.serverKey) { group in
+                SMBProfileLibrarySection(
+                    group: group, libraries: Dictionary(grouping: libraries, by: \.accountID),
+                    visibility: visibility,
+                    included: { appModel.activeAccountIDs(for: appModel.profiles.activeProfileID).contains($0) },
+                    setIncluded: { appModel.setAccount($0, enabled: $1, for: appModel.profiles.activeProfileID) },
+                    failures: failures, retry: { await loadLibraries() }, first: false
+                )
+            }
             ForEach(groupedLibraries) { group in
                 Section(group.serverName) {
                     ForEach(group.libraries) { library in
@@ -153,13 +164,19 @@ struct PlozziOSLibrarySelectionView: View {
         }
     }
 
+    private var smbGroups: [ServerAccountGroup] {
+        libraryPickerGroups(from: appModel.accounts.filter { accountIDs.contains($0.id) })
+            .filter { $0.transportKind == .smb }
+    }
+
     private var groupedLibraries: [LibraryGroup] {
         var order: [String] = []
-        var grouped: [String: [LibraryChoice]] = [:]
-        for library in libraries {
+        var grouped: [String: [AggregatedLibrary]] = [:]
+        for library in libraries where library.transportKind != .smb {
             if grouped[library.accountID] == nil {
                 order.append(library.accountID)
             }
+
             grouped[library.accountID, default: []].append(library)
         }
         return order.compactMap { accountID in
@@ -179,33 +196,22 @@ struct PlozziOSLibrarySelectionView: View {
         loadGeneration += 1
         let generation = loadGeneration
         isLoading = true
-        loadFailed = false
+        failures = [:]
         let accounts = appModel.accountsProviders.resolvedAccounts(withIDs: accountIDs)
         let discovery = await HomeAggregator().libraryDiscovery(
             from: accounts, expectedAccountIDs: Set(accountIDs)
         )
         guard !Task.isCancelled, generation == loadGeneration, scope == loadID else { return }
-        loadFailed = !discovery.unreachableAccountIDs.isEmpty
-        libraries = discovery.libraries.filter { !$0.library.isMusic }.map {
-            LibraryChoice(accountID: $0.accountID, serverName: $0.serverName, library: $0.library)
-        }
+        failures = discovery.failures
+        libraries = discovery.libraries.filter { !$0.library.isMusic }
         isLoading = false
         if discovery.canSkipSelection(for: accounts), guides.isEmpty { onContinue() }
     }
 }
 
-private struct LibraryChoice: Identifiable {
-    let accountID: String
-    let serverName: String
-    let library: MediaLibrary
-
-    var id: String { key }
-    var key: String { "\(accountID):\(library.id)" }
-}
-
 private struct LibraryGroup: Identifiable {
     let id: String
     let serverName: String
-    let libraries: [LibraryChoice]
+    let libraries: [AggregatedLibrary]
 }
 #endif

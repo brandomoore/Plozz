@@ -163,6 +163,7 @@ final class CrashDiagnosticsTests: XCTestCase {
                 XCTAssertEqual(attachment.filename, "plozz-diagnostics.json")
                 XCTAssertEqual(attachment.contentType, "application/json")
                 XCTAssertEqual(self.payload(attachment)["format"] as? String, "plozz-user-diagnostics-2")
+                XCTAssertNil(self.payload(attachment)["issueDetails"], "Settings sends have no selected error.")
                 XCTAssertFalse(String(decoding: attachment.data ?? Data(), as: UTF8.self).contains("Sources disappeared"))
                 return capturedID
             },
@@ -183,6 +184,33 @@ final class CrashDiagnosticsTests: XCTestCase {
         XCTAssertTrue(sent)
         XCTAssertTrue(didCaptureEvent)
         XCTAssertTrue(didCaptureFeedback)
+    }
+
+    @MainActor
+    func testDetailsSubmissionRequiresConsentAndMessageAndOnlyAttachesSafeIssueFields() {
+        let issue = PlaybackDiagnosticReport.homeSection(.failed(.unknown("private server name")), provider: .plex)
+        for (enabled, note, expected) in [(false, "My note", false), (true, " \n", false), (true, "My note", true)] {
+            var captured = false
+            let sent = CrashDiagnostics.send(
+                note: note, isEnabled: enabled, issue: issue,
+                captureEvent: { _, attachment in
+                    captured = true
+                    let details = self.payload(attachment)["issueDetails"] as? String
+                    XCTAssertEqual(details, "format=plozz-home-section-1\noperation=homeSection\nprovider=plex\nreason=unknown")
+                    let json = String(decoding: attachment.data ?? Data(), as: UTF8.self)
+                    XCTAssertFalse(json.contains("private server name"))
+                    XCTAssertFalse(json.contains("My note"))
+                    return SentryId()
+                },
+                captureFeedback: { event in
+                    XCTAssertTrue(expected)
+                    XCTAssertEqual(event.context?["feedback"]?["message"] as? String, "My note")
+                    return SentryId()
+                }
+            )
+            XCTAssertEqual(sent, expected)
+            XCTAssertEqual(captured, expected)
+        }
     }
 
     @MainActor
@@ -234,8 +262,11 @@ final class CrashDiagnosticsTests: XCTestCase {
     }
 
     @MainActor
-    func testBlankNotesDoNotCollectOrSubmitDiagnostics() {
-        for note: String? in [nil, "", " \n\t\r ", "\u{00A0}\u{2003}\u{2028}"] {
+    func testMissingDescriptionDoesNotCollectOrSubmitDiagnostics() {
+        let log = PlozzLog.activityExport(entries: []).supportText
+        let playbackLog = log + "\nage_ms=66140 category=playback level=error"
+        let details = PlaybackDiagnosticReport.homeSection(.failed(.serverUnreachable), provider: .jellyfin).supportText
+        for note: String? in [nil, "", " \n\t\r ", "\u{00A0}\u{2003}\u{2028}", log, playbackLog, details] {
             XCTAssertNil(CrashDiagnostics.normalizedNote(note))
             XCTAssertFalse(CrashDiagnostics.send(
                 note: note, isEnabled: true,
@@ -274,6 +305,10 @@ final class CrashDiagnosticsTests: XCTestCase {
     func testMessageValidationPreservesContentAndTrimsSurroundingWhitespace() {
         XCTAssertEqual(CrashDiagnostics.normalizedNote(" \nSources disappeared\nAfter refresh\t "), "Sources disappeared\nAfter refresh")
         XCTAssertEqual(CrashDiagnostics.normalizedNote("x"), "x")
+        let log = PlozzLog.activityExport(entries: []).supportText
+        for note in ["ghost episode", "\(log)\nghost episode", "ghost episode\n\(log)", "E6=unplayable"] {
+            XCTAssertEqual(CrashDiagnostics.normalizedNote(note), note)
+        }
     }
 
     @MainActor
@@ -439,6 +474,10 @@ final class CrashDiagnosticsTests: XCTestCase {
         siloSearch.finish(error: .unknown(privateValues.joined(separator: " ")))
         XCTAssertTrue(CrashDiagnostics.send(
             note: "My report message", isEnabled: true,
+            episodeRail: EpisodeRailDiagnostic(
+                list: .init(origin: .seasonRequest, returnedEpisodes: 10), libraryCards: 10, upcomingCards: 0,
+                selected: MediaItem(id: "private-item", title: privateValues[5], kind: .episode, episodeNumber: 6)
+            ),
             activity: { PlozzLog.activityExport(scope: scope) },
             sourceDiagnostics: { sources.export(scope: scope) },
             preparationDiagnostics: { PlaybackPreparationDiagnostics.export(scope: scope) },
@@ -453,6 +492,11 @@ final class CrashDiagnosticsTests: XCTestCase {
                     XCTAssertFalse(text.contains(value), value)
                 }
                 XCTAssertFalse(text.contains("My report message"))
+                let selection = body["episodeRail"] as? [String: Any]
+                XCTAssertEqual(selection?["displayedCards"] as? Int, 10)
+                XCTAssertEqual(selection?["episodeNumber"] as? Int, 6)
+                XCTAssertEqual(selection?["selectedUpcoming"] as? Bool, false)
+                XCTAssertEqual((selection?["list"] as? [String: Any])?["returnedEpisodes"] as? Int, 10)
                 let records = (body["playback"] as? [String: Any])?["entries"] as? [[String: Any]]
                 XCTAssertEqual(records?.count, 2)
                 XCTAssertEqual(records?.first?["session"] as? String, records?.last?["session"] as? String)

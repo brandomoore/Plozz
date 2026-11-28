@@ -153,6 +153,20 @@ public struct RootView: View {
     /// lifetime so every detail destination under the same identity shares one
     /// instance and a switch of identity reads from a different on-disk scope.
     @State private var detailCacheFactory = DetailSnapshotCacheFactory()
+    @State private var episodeDiagnosticBox = LazyViewState<EpisodeRailDiagnosticStore>()
+
+    private var episodeDiagnosticStore: EpisodeRailDiagnosticStore? {
+        guard appState.isActiveProfileAuthorized else {
+            episodeDiagnosticBox.discard { $0.invalidate() }
+            return nil
+        }
+        let key = HomeRuntimeScope.homeScopeKey(
+            profileID: appState.profilesModel.activeProfileID,
+            accounts: appState.accountsProviders.homeAccounts.map(\.account),
+            plexIdentityGeneration: appState.plexHomeUsers.plexIdentityGeneration
+        )
+        return episodeDiagnosticBox.value(forKey: key, onDiscard: { $0.invalidate() }) { EpisodeRailDiagnosticStore() }
+    }
 
     @MainActor
     public init(
@@ -589,6 +603,16 @@ public struct RootView: View {
             }
         }
         .seerRequestDestination(appState.seerService)
+        .environment(\.episodeRailDiagnostics, episodeDiagnosticStore)
+        .environment(\.diagnosticSubmissionForm, IssueDiagnosticSubmissionForm(
+            sharingEnabled: Binding(
+                get: { appState.crashReportingModel.isEnabled },
+                set: { appState.crashReportingModel.isEnabled = $0; reconcileCrashReporting() }
+            ),
+            isConfigured: crashReporting.isConfigured
+        ) { [store = episodeDiagnosticStore] note, issue in
+            await CrashDiagnostics.send(note: note, issue: issue, episodeRail: store?.lastSelection)
+        })
         .signInSyncPermission(
             appState.providerCredentialSync.publicationPermission,
             canPresent: startupPresentationReady && rootPresentation.active == nil
@@ -632,10 +656,8 @@ public struct RootView: View {
         LaunchView { startupLogoIntroCompleted = true }
     }
 
-    private var appContent: some View {
-        let _ = plozzPrintChanges { Self._printChanges() }
-        let requests = presentationRequests
-        return ZStack {
+    private var routedContent: some View {
+        ZStack {
             // After the intro, profile setup outranks the global session machine. Add-user auth
             // temporarily moves that machine to `.onboarding`, but setup must
             // remain mounted underneath so its exact NavigationStack path
@@ -895,6 +917,12 @@ public struct RootView: View {
             }
             }
         }
+    }
+
+    // Keep the route, appearance and lifecycle types bounded. Resolving them as one
+    // nested ModifiedContent type overflowed the main-thread stack at launch on tvOS.
+    private var setupContent: some View {
+        AnyView(routedContent)
         .modifier(AccountSetupOverlay(
             appState: appState, deviceColorScheme: systemColorScheme,
             presentationEnabled: !showsStartupLogo && !settingsCoverPresented,
@@ -943,6 +971,10 @@ public struct RootView: View {
             \.versionPickerAudioLanguage,
             appState.profileSettings.playbackModel.settings.audioLanguagePreference.explicitLanguageCode
         )
+    }
+
+    private var themedContent: some View {
+        AnyView(setupContent)
         // `dynamicTypeSize` is read here on purpose: PlozzMetrics samples its
         // typography once at construction, so this dependency is what makes the
         // whole table rebuild when the reader changes their text size. Without it
@@ -1019,6 +1051,12 @@ public struct RootView: View {
         // device scheme and `.system` can follow it (and switching away from a
         // forced scheme never gets stuck).
         .environment(\.colorScheme, resolvedPalette.isLight ? .light : .dark)
+    }
+
+    private var appContent: some View {
+        let _ = plozzPrintChanges { Self._printChanges() }
+        let requests = presentationRequests
+        return AnyView(themedContent)
         .transientStatusOverlay(
             presenter: appState.transientStatusPresenter,
             palette: resolvedPalette

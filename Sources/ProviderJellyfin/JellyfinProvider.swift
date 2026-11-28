@@ -7,7 +7,7 @@ import CoreNetworking
 /// Holds an authenticated `JellyfinClient` and maps Jellyfin DTOs onto the
 /// provider-agnostic `CoreModels` types. Feature modules depend only on
 /// `MediaProvider`; this is the single place Jellyfin specifics live.
-public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProviding, SeriesResumeProviding, SeriesIdentityProviding, AuthenticatedHTTPOriginProviding, ServerAddressUpdating {
+public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProviding, SeriesResumeProviding, SeriesIdentityProviding, AuthenticatedHTTPOriginProviding, ServerAddressUpdating, EpisodeListingEvidenceProviding {
     public var playbackInventoryRequiresEnrichment: Bool { true }
 
     public let kind: ProviderKind
@@ -894,11 +894,33 @@ public struct JellyfinProvider: LibraryItemBatchProviding, ServerRatingsProvidin
     }
 
     public func children(of itemID: String) async throws -> [MediaItem] {
-        let children = try await client.children(
-            userID: session.userID,
-            parentID: itemID
-        ).map(map(item:))
-        return Self.canonicalChildOrder(children)
+        try await episodeListing(containerID: itemID, seriesID: nil).items
+    }
+
+    public func episodes(inSeason seasonID: String, ofSeries seriesID: String) async throws -> [MediaItem] {
+        try await episodeListing(containerID: seasonID, seriesID: seriesID).items
+    }
+
+    public func episodeListing(containerID: String, seriesID: String?) async throws -> EpisodeChildListing {
+        let response: [BaseItemDto]
+        let origin: EpisodeRailDiagnostic.List.Origin
+        if kind == .jellyfin, let seriesID {
+            response = try await client.episodes(userID: session.userID, seriesID: seriesID, seasonID: containerID)
+            origin = .seasonRequest
+        } else {
+            response = try await client.children(userID: session.userID, parentID: containerID)
+            origin = .childrenRequest
+        }
+        var returnedEpisodes = 0
+        let children = response.compactMap { dto -> MediaItem? in
+            let child = map(item: dto)
+            if child.kind == .episode { returnedEpisodes += 1 }
+            return child.isMetadataOnlyEpisode ? nil : child
+        }
+        return EpisodeChildListing(
+            items: origin == .seasonRequest ? children : Self.canonicalChildOrder(children),
+            evidence: .init(origin: origin, returnedEpisodes: returnedEpisodes)
+        )
     }
 
     /// Emby and Jellyfin can apply `SortName` differently (e.g. Episode 10 before

@@ -832,6 +832,20 @@ public struct JellyfinClient: Sendable {
         return try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL).Items
     }
 
+    func episodes(userID: String, seriesID: String, seasonID: String) async throws -> [BaseItemDto] {
+        let endpoint = Endpoint(
+            path: "/Shows/\(seriesID)/Episodes",
+            queryItems: [
+                URLQueryItem(name: "UserId", value: userID),
+                URLQueryItem(name: "SeasonId", value: seasonID),
+                URLQueryItem(name: "IsMissing", value: "false"),
+                URLQueryItem(name: "Fields", value: "Overview,MediaStreams,MediaSources,Genres")
+            ],
+            headers: authHeaders
+        )
+        return try await http.decode(ItemsResponse.self, from: endpoint, baseURL: baseURL).Items
+    }
+
     /// Direct BoxSet membership, without a type filter or a sort override.
     func collectionMembers(userID: String, collectionID: String, page: PageRequest) async throws -> ItemsResponse {
         let endpoint = Endpoint(

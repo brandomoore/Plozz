@@ -40,11 +40,10 @@ public enum SettingsCopy {
         "Automatic reports exclude logins, server addresses, and media titles."
 
     public static let manualDiagnostics: LocalizedStringResource =
-        "Send recent activity, search, playback and connection diagnostics, and your message to the developer through Sentry. Don't include passwords or personal information."
+        "Send recent activity, search, playback and connection diagnostics, and your message to the developer through Sentry."
 
     public static let diagnosticsMessage: LocalizedStringResource = "Message (required)"
-    public static let diagnosticsMessagePrivacy: LocalizedStringResource =
-        "Don't include passwords or personal information."
+    public static let diagnosticsDescriptionRequired: LocalizedStringResource = "Add a short description of what happened."
 
     // MARK: - Scope headers
 

@@ -46,7 +46,11 @@ public enum HeroPlayTargetResolver {
 
         let children: [MediaItem]
         do {
-            children = try await provider.children(of: item.id)
+            if item.kind == .season, let seriesID = item.seriesID {
+                children = try await provider.episodes(inSeason: item.id, ofSeries: seriesID)
+            } else {
+                children = try await provider.children(of: item.id)
+            }
         } catch {
             return nil
         }
@@ -66,7 +70,7 @@ public enum HeroPlayTargetResolver {
         var lastEpisode: MediaItem?
         for season in seasons {
             guard !Task.isCancelled else { return nil }
-            guard let episodes = try? await provider.children(of: season.id),
+            guard let episodes = try? await provider.episodes(inSeason: season.id, ofSeries: item.id),
                   !episodes.isEmpty else {
                 continue
             }

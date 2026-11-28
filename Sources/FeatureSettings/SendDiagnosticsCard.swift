@@ -22,6 +22,7 @@ public struct MobileDiagnosticsSubmissionSection: View {
     }
 
     public var body: some View {
+        let note = CrashDiagnostics.normalizedNote(message)
         SettingsSectionGroup("Send Diagnostics", accessory: { DiagnosticsInfoButton() }) {
             TextField(text: $message, axis: .vertical) { Text(SettingsCopy.diagnosticsMessage) }
                 .lineLimit(2...4)
@@ -32,10 +33,9 @@ public struct MobileDiagnosticsSubmissionSection: View {
                 .onChange(of: message) { if !message.isEmpty { status = nil } }
             DiagnosticsSendButton(
                 sharingEnabled: $sharingEnabled, isConfigured: isConfigured,
-                hasMessage: CrashDiagnostics.normalizedNote(message) != nil, isSending: isSending
+                hasMessage: note != nil, isSending: isSending
             ) {
-                guard !isSending else { return }
-                let note = message
+                guard !isSending, let note else { return }
                 editing = false
                 isSending = true
                 status = nil
@@ -50,46 +50,85 @@ public struct MobileDiagnosticsSubmissionSection: View {
         } footer: {
             if !isConfigured { Text(SettingsCopy.diagnosticSharingUnavailable) }
             else if !sharingEnabled { Text(SettingsCopy.diagnosticSharingRequired) }
-            Text(SettingsCopy.diagnosticsMessagePrivacy)
+            else if note == nil && !message.isEmpty { Text(SettingsCopy.diagnosticsDescriptionRequired) }
         }
         .onChange(of: sharingEnabled) { status = nil }
     }
 }
 #endif
 
-/// "Send my recent activity to the developer" card, shared by the Help &
-/// Diagnostics page (so it's discoverable without digging) and the Recent
-/// Activity page (next to the log it sends).
-///
-/// Uses the existing diagnostic-sharing consent and transport.
+public struct IssueDiagnosticSubmissionForm: DiagnosticSubmissionFormProviding {
+    private let sharingEnabled: Binding<Bool>
+    private let isConfigured: Bool
+    private let submit: @MainActor (String, PlaybackDiagnosticReport) async -> Bool
+
+    public init(
+        sharingEnabled: Binding<Bool>, isConfigured: Bool,
+        submit: @escaping @MainActor (String, PlaybackDiagnosticReport) async -> Bool = {
+            await CrashDiagnostics.send(note: $0, issue: $1)
+        }
+    ) {
+        self.sharingEnabled = sharingEnabled
+        self.isConfigured = isConfigured
+        self.submit = submit
+    }
+
+    public func form(for report: PlaybackDiagnosticReport) -> AnyView {
+        AnyView(SendDiagnosticsCard(sharingEnabled: sharingEnabled, isConfigured: isConfigured) { note in
+            await submit(note, report)
+        })
+    }
+}
+
 struct SendDiagnosticsCard: View {
     @Binding var sharingEnabled: Bool
     let isConfigured: Bool
+    var submit: (@MainActor (String) async -> Bool)?
+    @Environment(\.episodeRailDiagnostics) private var episodeDiagnostics
     private enum SendState { case idle, sent, failed }
     @State private var sendState: SendState = .idle
     @State private var isSending = false
     @State private var message: String = ""   // l10n:content — user-typed message text
+    #if os(iOS)
+    @FocusState private var editing: Bool
+    #endif
 
     var body: some View {
+        let note = CrashDiagnostics.normalizedNote(message)
         SettingsPanel(title: "Send Diagnostics", footer: footer) {
             VStack(alignment: .leading, spacing: 18) {
+                #if os(iOS)
+                TextField(text: $message, axis: .vertical) { Text(SettingsCopy.diagnosticsMessage) }
+                    .lineLimit(2...4)
+                    .focused($editing)
+                    .accessibilityIdentifier("diagnostics-message")
+                    .disabled(!isConfigured || isSending)
+                #else
                 TextField(text: $message) {
                     Text(SettingsCopy.diagnosticsMessage)
                 }
                 .accessibilityIdentifier("diagnostics-message")
-                .disabled(!isConfigured || sendState == .sent || isSending)
+                .disabled(!isConfigured || isSending)
+                #endif
 
                 HStack(spacing: 16) {
                     DiagnosticsSendButton(
                         sharingEnabled: $sharingEnabled, isConfigured: isConfigured,
-                        hasMessage: CrashDiagnostics.normalizedNote(message) != nil,
+                        hasMessage: note != nil,
                         isSending: isSending, isSubmitted: sendState == .sent
                     ) {
-                        let note = message
+                        guard !isSending, sendState != .sent, sharingEnabled, let note else { return }
+                        #if os(iOS)
+                        editing = false
+                        #endif
                         isSending = true
+                        sendState = .idle
+                        let selection = episodeDiagnostics?.lastSelection
                         Task {
                             defer { isSending = false }
-                            let ok = await CrashDiagnostics.send(note: note)
+                            let ok: Bool
+                            if let submit { ok = await submit(note) }
+                            else { ok = await CrashDiagnostics.send(note: note, episodeRail: selection) }
                             sendState = ok ? .sent : .failed
                             if ok { message = "" }
                         }
@@ -101,16 +140,19 @@ struct SendDiagnosticsCard: View {
                     Text(SettingsCopy.diagnosticSharingUnavailable).settingsHelperText()
                 } else if !sharingEnabled {
                     Text(SettingsCopy.diagnosticSharingRequired).settingsHelperText()
+                } else if note == nil && !message.isEmpty {
+                    Text(SettingsCopy.diagnosticsDescriptionRequired).settingsHelperText()
                 }
             }
         }
+        .onChange(of: message) { if !message.isEmpty { sendState = .idle } }
         .onChange(of: sharingEnabled) { sendState = .idle }
     }
 
-    private var footer: LocalizedStringResource {
+    private var footer: LocalizedStringResource? {
         switch sendState {
         case .idle:
-            return SettingsCopy.diagnosticsMessagePrivacy
+            return nil
         case .sent:
             return "Diagnostics submitted for delivery. Thank you."
         case .failed:

@@ -96,7 +96,9 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
   sleep), not a background timer or browsing inactivity. Returning before the
   threshold starts a new grace period for the next departure. Expiry requires
   profile selection and fresh authorization for whichever profile is selected.
-  Retaining the current authorization never skips manual switching gates.
+  On Apple TV, iPhone, and iPad, picking your already-unlocked current profile
+  in the switcher just closes it. Picking a different profile (including
+  switching away and back) still requires its usual PINs.
   Cold launches keep the existing Automatically Sign In policy.
   Control Center and other inactive-only interruptions do not lock. Open video
   players (including paused/buffering sessions), visible Live TV players, Now

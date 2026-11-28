@@ -30,7 +30,7 @@ public struct ContinueWatchingArtworkSource: Sendable {
         self.policy = titleLogo == nil ? policy.forArea(.continueWatching) : policy
         self.titleLogo = titleLogo
         self.cardPolicy = cardPolicy
-        self.allowsFallback = enablesAsyncArtworkFallback && cardPolicy.allowsOnlineFallback
+        self.allowsFallback = enablesAsyncArtworkFallback && cardPolicy.allowsOnlineFallback && !item.isPersonalVideo
         self.router = router
     }
 
@@ -38,10 +38,10 @@ public struct ContinueWatchingArtworkSource: Sendable {
         cardPolicy.pinIdentity(for: item) + (titleLogo.map { "|title-logo:\($0.rawValue)" } ?? "")
     }
     var variant: ArtworkImageVariant { style == .poster ? .posterCard : .landscapeCard }
-    var aspectGuard: CGFloat? { style == .poster ? 0.9 : nil }
+    var aspectGuard: CGFloat? { PosterCardPresentation.maximumAspectRatio(for: item, style: style) }
     var logoReferences: [ArtworkReference] { item.artworkReferences(for: .logo) }
     var prefersTextlessBackdrop: Bool {
-        guard style == .landscape else { return false }
+        guard style == .landscape, !item.isPersonalVideo else { return false }
         guard let titleLogo else { return policy.prefersTextlessArtwork }
         return titleLogo == .on && policy.settings.preference(in: policy.area) != .library
     }
@@ -68,7 +68,7 @@ public struct ContinueWatchingArtworkSource: Sendable {
     }
 
     func primaryReference(textlessBackdrop: URL?) -> ArtworkReference? {
-        guard style == .landscape else { return nil }
+        guard style == .landscape, !item.isPersonalVideo else { return nil }
         if titleLogo != nil {
             return prefersTextlessBackdrop ? textlessBackdrop.map(ArtworkReference.remote) : nil
         }

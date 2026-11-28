@@ -2,10 +2,27 @@
 import CoreModels
 import SwiftUI
 
-public struct PlaybackDiagnosticDetailsView: View {
-    public let report: PlaybackDiagnosticReport
+/// The app supplies its Settings form so error surfaces don't depend on the reporting SDK.
+@MainActor public protocol DiagnosticSubmissionFormProviding {
+    func form(for report: PlaybackDiagnosticReport) -> AnyView
+}
 
-    public init(report: PlaybackDiagnosticReport) { self.report = report }
+public extension EnvironmentValues {
+    @Entry var diagnosticSubmissionForm: (any DiagnosticSubmissionFormProviding)?
+    @Entry var episodeRailDiagnostics: EpisodeRailDiagnosticStore?
+}
+
+public struct PlaybackDiagnosticDetailsView: View {
+    // Keep the error paired with the draft even if its source refreshes while Details is open.
+    @State private var report: PlaybackDiagnosticReport
+    private let onRetry: (() -> Void)?
+    @Environment(\.diagnosticSubmissionForm) private var submission
+    @Environment(\.themePalette) private var palette
+
+    public init(report: PlaybackDiagnosticReport, onRetry: (() -> Void)? = nil) {
+        _report = State(initialValue: report)
+        self.onRetry = onRetry
+    }
 
     private var supportText: String { // l10n:content — technical support report
         let version = AppVersionIdentity.current
@@ -47,6 +64,12 @@ public struct PlaybackDiagnosticDetailsView: View {
                    let reason = failure.engineFailure?.message, reason != report.message {
                     Text(reason).font(.callout).foregroundStyle(.secondary)
                 }
+                if let onRetry {
+                    Button("Try Again", action: onRetry)
+                        .plozzActionButton()
+                        .accessibilityIdentifier("content-failure-retry")
+                }
+                submission?.form(for: report)
                 Text(verbatim: supportText)
                     #if os(tvOS)
                     .font(.system(.body, design: .monospaced))
@@ -76,6 +99,7 @@ public struct PlaybackDiagnosticDetailsView: View {
             .frame(maxWidth: .infinity)
         }
         .background { SettingsPageBackground() }
+        .tint(palette.primaryText)
         #if os(iOS)
         .navigationTitle("Details")
         .navigationBarTitleDisplayMode(.inline)
@@ -85,13 +109,17 @@ public struct PlaybackDiagnosticDetailsView: View {
 
 public struct PlaybackDiagnosticDetailsSheet: View {
     private let report: PlaybackDiagnosticReport
+    private let onRetry: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
 
-    public init(report: PlaybackDiagnosticReport) { self.report = report }
+    public init(report: PlaybackDiagnosticReport, onRetry: (() -> Void)? = nil) {
+        self.report = report
+        self.onRetry = onRetry
+    }
 
     public var body: some View {
         NavigationStack {
-            PlaybackDiagnosticDetailsView(report: report)
+            PlaybackDiagnosticDetailsView(report: report, onRetry: onRetry)
                 .toolbar {
                     #if os(iOS)
                     ToolbarItem(placement: .cancellationAction) {

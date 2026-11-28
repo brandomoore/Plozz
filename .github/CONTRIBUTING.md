@@ -59,8 +59,16 @@ not just Jellyfin and Plex. Shares and IPTV each group several protocols:
 | --- | --- |
 | Media servers | Jellyfin, Plex, Emby, Silo |
 | Music server | Navidrome / Subsonic / OpenSubsonic (music-only; development/TestFlight) |
-| Network shares | SMB, WebDAV, NFS, SFTP, FTP |
-| IPTV | M3U playlists and Xtream accounts; XMLTV guides |
+| Network shares | SMB, WebDAV, NFS, SFTP, FTP/FTPS |
+| IPTV / Live TV | M3U playlists and Xtream accounts with XMLTV guides; authorized Plex, Jellyfin and Emby channels; scheduled library channels |
+
+These describe current code support, not availability in every distributed
+build. Music is implemented on Apple TV, iPhone and iPad; this checkout gates
+mobile music and Navidrome/Subsonic onboarding to development/TestFlight.
+Features depend on the source, platform and release channel. Shares use
+Plozz's local catalog and watch state rather than a media server's library or
+transcoding APIs; Subsonic contributes music only. Live TV remains experimental
+and Plozz supplies no channels or IPTV subscription.
 
 **Jellyfin and Plex are co-equal backends.** Use `MediaProvider` above the provider
 layer and respect capability differences. Emby shares Jellyfin's implementation

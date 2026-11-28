@@ -1,7 +1,7 @@
 # FeatureMusic
 
-Music browsing (artists / albums / tracks) and an app-scoped audio
-player that is **independent** of the full-screen video `PlayerViewModel`,
+Music browsing (artists / albums / tracks) on **Apple TV, iPhone and iPad**, with
+an app-scoped audio player that is **independent** of the full-screen video `PlayerViewModel`,
 so audio keeps playing as the user navigates the rest of the app.
 The Music tab is integrated into the tvOS shell and, in development/TestFlight
 builds only, the iOS/iPadOS shell. App Store builds do not create the mobile
@@ -71,8 +71,10 @@ the additional entry is not required to enable it. See
   observe the same `AudioPlaybackController` injected at `AppShell`.
 - **Server art first.** `MetadataKit` art is a fallback, not the
   default.
-- **Dual-provider.** Browsing works against both Plex and Jellyfin via
-  `MediaProvider` / `JellyfinMusicProvider`.
+- **Capability-based sources.** Browsing detects optional `MusicProvider`
+  conformance on the resolved `MediaProvider` for Plex, Jellyfin and Emby, plus
+  Navidrome/Subsonic in development/TestFlight. A video, share or IPTV account
+  does not automatically provide a music library.
 - **Discovery failures are not empty libraries.** Retain cached availability for
   failed active accounts, while immediately applying disabled/removed accounts.
   Retry transient discovery failures twice (2s/8s); foreground activation and

@@ -16,9 +16,13 @@ import Sentry
 /// SDK is actually running). Otherwise it sends nothing and returns `false`, and
 /// the caller should tell the user to turn crash reporting on first.
 public enum CrashDiagnostics {
-    /// Trims the submitted message; missing or whitespace-only messages are invalid.
+    /// A pasted Plozz field dump is evidence, not a description of the problem.
     public static func normalizedNote(_ note: String?) -> String? {
         guard let note = note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty else {
+            return nil
+        }
+        if note.hasPrefix("format=plozz-"),
+           note.split(whereSeparator: \.isWhitespace).allSatisfy({ $0.contains("=") }) {
             return nil
         }
         return note
@@ -29,7 +33,9 @@ public enum CrashDiagnostics {
     /// `false` when the message is blank, reporting is inactive, or either event was rejected.
     @MainActor
     @discardableResult
-    public static func send(note: String? = nil) async -> Bool {
+    public static func send(
+        note: String? = nil, issue: PlaybackDiagnosticReport? = nil, episodeRail: EpisodeRailDiagnostic? = nil
+    ) async -> Bool {
         guard let note = normalizedNote(note) else {
             PlozzLog.app.error("A message is required to submit diagnostics; nothing submitted.")
             return false
@@ -41,6 +47,8 @@ public enum CrashDiagnostics {
         return send(
             note: note,
             isEnabled: SentrySDK.isEnabled,
+            issue: issue,
+            episodeRail: episodeRail,
             activity: { PlozzLog.activityExport(scope: scope) },
             sourceDiagnostics: { LiveTVSourceDiagnostics.captureExport(scope: scope) },
             preparationDiagnostics: { PlaybackPreparationDiagnostics.export(scope: scope) },
@@ -65,6 +73,8 @@ public enum CrashDiagnostics {
     static func send(
         note: String?,
         isEnabled: Bool,
+        issue: PlaybackDiagnosticReport? = nil,
+        episodeRail: EpisodeRailDiagnostic? = nil,
         activity: @MainActor () -> PlozzLog.ActivityExport = { PlozzLog.activityExport() },
         sourceDiagnostics: @MainActor () -> LiveTVSourceDiagnostics.Export = {
             LiveTVSourceDiagnostics.captureExport(scope: DiagnosticExportScope())
@@ -93,6 +103,7 @@ public enum CrashDiagnostics {
         guard isEnabled else { return false }
 
         let report = TechnicalReport(
+            issueDetails: issue?.supportText, episodeRail: episodeRail,
             activity: activity(), sources: sourceDiagnostics(), preparation: preparationDiagnostics(),
             library: libraryDiagnostics(), connections: connectionDiagnostics(),
             playback: playbackDiagnostics,
@@ -141,6 +152,8 @@ public enum CrashDiagnostics {
 
     private struct TechnicalReport: Encodable {
         let format = "plozz-user-diagnostics-2"
+        let issueDetails: String?
+        let episodeRail: EpisodeRailDiagnostic?
         let activity: PlozzLog.ActivityExport
         let sources: LiveTVSourceDiagnostics.Export
         let preparation: PlaybackPreparationDiagnostics.Export

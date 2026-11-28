@@ -54,6 +54,11 @@ system green appearance instead of inheriting the page's monochrome navigation t
 
 The Settings screen and its detail pages. Profile-aware and integration-aware.
 
+In the Libraries picker, SMB roots on the same host and port share a header
+only for the same saved sign-in. Each named root controls its own profile
+membership. Mixed roots retain individual catalog choices; Browse Files stays
+inside the library. This grouping never changes connection or credential identity.
+
 On Apple TV, a newly opened Settings page should focus its first enabled
 content control, not the Back button. Back remains reachable with the remote.
 
@@ -1557,7 +1562,9 @@ watch history and planning-list behavior are documented in
   player while watching.
 - **Send Diagnostics** on TV and mobile uses the existing crash-reporting consent.
   On mobile, the input gives the placeholder and draft the same inset. Successful
-  submission clears the draft; failure keeps it available for retry.
+  submission clears the draft on both platforms and keeps the field editable.
+  Starting a new message clears the confirmation without reopening the form.
+  Failure keeps the draft available for retry.
   The setting is labeled **Share Diagnostics** because it covers more than crashes.
   When sharing is off, the native **Enable Sharing** action opens the existing
   consent prompt; confirming only enables sharing, without submitting or clearing
@@ -1565,11 +1572,18 @@ watch history and planning-list behavior are documented in
   explain their limitation and cannot offer an opt-in action.
   Detailed automatic/manual data disclosures and the privacy policy are behind
   the native information button, which remains available while Send is disabled.
-  The main page retains only the message privacy reminder and actionable states.
-  Send uses native button/disabled styling and remains disabled until a nonblank
-  message is entered. The shared submission
-  path also rejects missing or whitespace-only messages before collecting or
-  submitting any diagnostics; automatic crash reports are unchanged.
+  Send stays disabled for an empty message or a pasted Plozz `key=value` export
+  without a description. The form prompts for a short description when the draft
+  is invalid; a few words alongside copied diagnostics are enough. The same check
+  runs before collecting or submitting diagnostics. Automatic crash reports are unchanged.
+  On Apple TV, selecting a Jellyfin episode card records the latest selection in
+  memory for the current profile and accounts. The manual attachment and **Report a
+  Problem** QR draft include the episode number, source of the list, server episode
+  count before filtering (unknown for a snapshot), library and upcoming card counts,
+  and whether the selected card was an upcoming placeholder. No media titles,
+  IDs, paths or server addresses are included. The QR text can be copied on a phone
+  without posting the issue. Reproduce, then report before selecting another card
+  or restarting the app.
   Each submission appears in Sentry's User Feedback inbox with the required message,
   linked to the diagnostic event in Issues and its `plozz-diagnostics.json`
   attachment. The playback section includes the last three independently
@@ -1840,9 +1854,10 @@ watch history and planning-list behavior are documented in
   values (`migrateLegacyIfNeeded` in `ProfileStore`).
 - **No tokens here.** Account & Trakt token management is delegated to
   `FeatureAuth.AccountStore` / `TraktService.TraktTokenStore`.
-- **Dual-provider.** Server/library management must work for both Plex
-  and Jellyfin accounts (Plex Home-user mapping is Plex-specific, but
-  the UI must clearly say so).
+- **Multi-source.** Account/library management must preserve all
+  [supported sources](../../.github/CONTRIBUTING.md#supported-sources) and their
+  capability differences. Plex Home-user mapping remains Plex-specific; the UI
+  must clearly say so.
 - **No persistence schema duplication.** Persistence lives in
   `CoreModels` / `FeatureAuth` / `TraktService`; this module only
   **edits** what they store.

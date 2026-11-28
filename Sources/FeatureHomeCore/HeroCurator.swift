@@ -77,11 +77,11 @@ public struct HeroCurator: Sendable {
     /// Produces the ordered hero items.
     ///
     /// - `continueWatching` / `watchlist` / `recentlyAdded`: already-aggregated Home
-    ///   content (both providers, cross-server merged) — passed in, not fetched.
+    ///   content (active sources, cross-source merged) — passed in, not fetched.
     /// - `featuredProvider`: the Seerr seam — returns `[]` until Seerr exists.
     /// - `randomLibraries`: the already-loaded, settings-filtered library containers
     ///   available to the Random source.
-    /// - `randomProvider`: random-from-library fetch across both providers.
+    /// - `randomProvider`: random-from-library fetch across eligible sources.
     ///
     /// The featured and random sources are fetched **concurrently** (and only
     /// when their source is enabled) so an offline Seerr or a slow random query

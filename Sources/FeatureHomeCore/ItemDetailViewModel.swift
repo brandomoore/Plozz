@@ -164,6 +164,11 @@ public final class ItemDetailViewModel {
     /// season is shown/focused and cached so re-focusing a tab is instant. Keyed
     /// by season id. Observed by `SeriesDetailView` to populate its episode rail.
     public private(set) var seasonEpisodes: [String: [MediaItem]] = [:]
+    @Observable @MainActor fileprivate final class EpisodeListEvidence {
+        var seasons: [String: EpisodeRailDiagnostic.List] = [:]
+        var children: EpisodeRailDiagnostic.List = .unknown
+    }
+    private let listEvidence = EpisodeListEvidence()
     /// Keep a season edit authoritative over late or stale episode fetches.
     /// Subsequent individual edits replay after it so they still take precedence.
     @ObservationIgnored private var seasonWatchMutations: [MediaItemMutation] = []
@@ -1066,8 +1071,10 @@ public final class ItemDetailViewModel {
                     for: item, provider: loadProvider,
                     sourceGeneration: loadSourceGeneration
                 )
-                let fetchedChildren = await fetchChildren(loadProvider, of: item.id)
+                let listing = await fetchChildren(loadProvider, of: item.id)
                 guard !Task.isCancelled, isCurrent() else { return }
+                let fetchedChildren = listing.items
+                listEvidence.children = listing.evidence
                 publish(Detail(
                     item: tagged(state.value?.item ?? taggedItem),
                     children: fetchedChildren.map(tagged),
@@ -1483,6 +1490,15 @@ public final class ItemDetailViewModel {
     /// Already-loaded episodes for `seasonID`, or `nil` if not yet fetched.
     public func episodes(for seasonID: String) -> [MediaItem]? {
         seasonEpisodes[seasonID]
+    }
+
+    public func episodeRailEvidence(for series: MediaItem, seasonID: String?) -> EpisodeRailDiagnostic.List? {
+        guard activeProvider?.kind == .jellyfin, state.value?.item.id == series.id,
+              series.sourceAccountID == activeSourceAccountID else { return nil }
+        if let seasonID, seasonEpisodes[seasonID] != nil {
+            return listEvidence.seasons[seasonID] ?? .unknown
+        }
+        return seasonID == nil ? listEvidence.children : .unknown
     }
 
     /// How much a season's episode list can be trusted.
@@ -2176,14 +2192,16 @@ public final class ItemDetailViewModel {
             await retryCollectionMembers()
             return
         }
-        let children: [MediaItem]
+        let listing: EpisodeChildListing
         switch item.kind {
         case .series, .season, .folder, .collection:
-            children = await fetchChildren(provider, of: item.id)
+            listing = await fetchChildren(provider, of: item.id)
         default:
-            children = []
+            listing = EpisodeChildListing(items: [], evidence: .unknown)
         }
         guard !Task.isCancelled, isCurrent() else { return }
+        let children = listing.items
+        listEvidence.children = listing.evidence
         let upcomingSchedule = state.value?.upcomingSchedule
         publish(Detail(
             item: tagged(item),
@@ -2209,6 +2227,7 @@ public final class ItemDetailViewModel {
         loadedSeasonIDs.append(contentsOf: seasonLoads.keys.filter { !loadedSeasonIDs.contains($0) })
         cancelSeasonLoads(retryWaiters: true)
         seasonEpisodes = [:]
+        listEvidence.seasons.removeAll()
         seasonLoadFailures = []
         for seasonID in loadedSeasonIDs {
             guard !Task.isCancelled, isCurrent() else { return }
@@ -2302,15 +2321,20 @@ public final class ItemDetailViewModel {
                 throw AppError.invalidResponse
             }
             var children = detail.children
+            var evidence = listEvidence.children
             var resume = detail.serverResumeEpisode
             if isSeries {
-                async let freshChildren = provider.children(of: detail.item.id)
+                async let freshChildren = EpisodeChildListing.fetch(from: provider, containerID: detail.item.id)
                 async let freshResume = requestServerResumeEpisode(for: fetched, provider: provider)
-                (children, resume) = try await (freshChildren, freshResume)
+                let (listing, freshEpisode) = try await (freshChildren, freshResume)
+                children = listing.items
+                evidence = listing.evidence
+                resume = freshEpisode
             }
             guard isCurrent(), case var .loaded(current) = state else { return }
             current.item = tagged(Self.applyingWatchState(from: fetched, to: current.item))
             if isSeries {
+                listEvidence.children = evidence
                 current.children = children.map(tagged)
                 current.serverResumeEpisode = resume.map(tagged)
             }
@@ -2437,9 +2461,9 @@ public final class ItemDetailViewModel {
         _ provider: any MediaProvider,
         of itemID: String,
         timeout: Duration = .seconds(20)
-    ) async -> [MediaItem] {
-        await withTaskGroup(of: [MediaItem]?.self) { group in
-            group.addTask { (try? await provider.children(of: itemID)) ?? [] }
+    ) async -> EpisodeChildListing {
+        await withTaskGroup(of: EpisodeChildListing?.self) { group in
+            group.addTask { try? await EpisodeChildListing.fetch(from: provider, containerID: itemID) }
             group.addTask {
                 try? await Task.sleep(for: timeout)
                 return nil
@@ -2448,9 +2472,9 @@ public final class ItemDetailViewModel {
             for await result in group {
                 // First task to finish wins: the children fetch (even an empty
                 // list) → use it; the timeout (`nil`) → give up with [].
-                return result ?? []
+                return result ?? EpisodeChildListing(items: [], evidence: .unknown)
             }
-            return []
+            return EpisodeChildListing(items: [], evidence: .unknown)
         }
     }
 
@@ -2691,7 +2715,8 @@ public final class ItemDetailViewModel {
                 let token = UUID()
                 load = SeasonLoad(token: token)
                 let superseded = seasonLoads[seasonID]
-                let isSeriesContainer = seasonID == state.value?.item.id || seasonID == activeItemID
+                let seriesID = state.value?.item.kind == .series ? state.value?.item.id : nil
+                let isSeriesContainer = seasonID == (seriesID ?? activeItemID)
                 load.task = Task { @MainActor [weak self, weak load, provider] in
                     defer {
                         if self?.seasonLoads[seasonID]?.token == token {
@@ -2702,8 +2727,10 @@ public final class ItemDetailViewModel {
                     // Distinguish "the server says this season is empty" from
                     // "the request failed": both cache `[]` so neither retries on
                     // every focus change, but only the first is an answer.
-                    let fetched = try? await provider.children(of: seasonID)
-                    let episodes = (fetched ?? []).filter { !isSeriesContainer || $0.kind == .episode }.map { item in
+                    let listing = try? await EpisodeChildListing.fetch(
+                        from: provider, containerID: seasonID, seriesID: isSeriesContainer ? nil : seriesID
+                    )
+                    let episodes = (listing?.items ?? []).filter { !isSeriesContainer || $0.kind == .episode }.map { item in
                         var episode = item
                         if !isSeriesContainer, episode.kind == .episode, episode.seasonID == nil {
                             episode.seasonID = seasonID
@@ -2716,11 +2743,12 @@ public final class ItemDetailViewModel {
                           self.sourceGeneration == loadSourceGeneration,
                           self.activeItemID == sourceItemID,
                           self.activeSourceAccountID == sourceAccountID else { return }
-                    if fetched == nil {
+                    if listing == nil {
                         self.seasonLoadFailures.insert(seasonID)
                     } else {
                         self.seasonLoadFailures.remove(seasonID)
                     }
+                    self.listEvidence.seasons[seasonID] = listing?.evidence ?? .unknown
                     self.seasonEpisodes[seasonID] = self.stampSeriesTMDb(into: episodes.map(self.tagged))
                     self.snapshotSeasonIDs.remove(seasonID)
                     self.persistSnapshot()
@@ -2926,6 +2954,8 @@ public final class ItemDetailViewModel {
     }
 
     private func invalidateSourceOperations() {
+        listEvidence.children = .unknown
+        listEvidence.seasons.removeAll()
         presentationReadiness.hasRestoredMetadata = false
         sourceGeneration += 1
         returnRefreshGeneration &+= 1
@@ -2961,6 +2991,7 @@ public final class ItemDetailViewModel {
     /// rails deliberately wait for one live fetch from the already-selected server
     /// so a stale cached rail can never be replaced underneath the viewer.
     private func applySnapshot(_ snapshot: DetailSnapshotCache.Snapshot) {
+        listEvidence.children = .snapshot
         retainSourceRejections(snapshot.item.rejectedSourceIDs)
         let item = tagged(snapshot.item)
         captureSeriesContext(from: item)
@@ -2989,12 +3020,8 @@ public final class ItemDetailViewModel {
            let openingSeasonID = DetailOpeningSelection.openingSeasonID(
                children: snapshot.children,
                resumeSeasonID: nil
-           ),
-           let episodes = snapshot.seasonEpisodes[openingSeasonID] {
-            seasonEpisodes[openingSeasonID] = episodes
-                .prefix(Self.maxRestoredEpisodesPerSeason)
-                .map(tagged)
-            snapshotSeasonIDs.insert(openingSeasonID)
+           ) {
+            restoreSnapshotEpisodes(from: snapshot, for: openingSeasonID)
         }
         if snapshot.sources.count > 1 {
             let restored = prunedToActiveAccounts(snapshot.sources)
@@ -3041,6 +3068,11 @@ public final class ItemDetailViewModel {
         guard snapshot.item.id == activeItemID,
               snapshot.item.sourceAccountID == nil
                 || snapshot.item.sourceAccountID == activeSourceAccountID else { return }
+        // Older MediaBrowser snapshots can contain virtual episodes as loose children.
+        var snapshot = snapshot
+        if activeProvider?.kind.usesMediaBrowserAPI == true {
+            snapshot.children.removeAll(where: \.isMetadataOnlyEpisode)
+        }
         if state.value == nil && !hasPaintedFreshDetail {
             applySnapshot(snapshot)
         } else {
@@ -3068,6 +3100,7 @@ public final class ItemDetailViewModel {
             }
         }
         if let detail = state.value, detail.children.isEmpty, !snapshot.children.isEmpty {
+            listEvidence.children = .snapshot
             publish(Detail(
                 item: detail.item,
                 children: snapshot.children.map(tagged),
@@ -3090,12 +3123,8 @@ public final class ItemDetailViewModel {
            let openingSeasonID = DetailOpeningSelection.openingSeasonID(
                children: state.value?.children ?? snapshot.children,
                resumeSeasonID: serverResumeEpisode?.seasonID
-           ),
-           let episodes = snapshot.seasonEpisodes[openingSeasonID] {
-            seasonEpisodes[openingSeasonID] = episodes
-                .prefix(Self.maxRestoredEpisodesPerSeason)
-                .map(tagged)
-            snapshotSeasonIDs.insert(openingSeasonID)
+           ) {
+            restoreSnapshotEpisodes(from: snapshot, for: openingSeasonID)
         }
         if sources.count <= 1, snapshot.sources.count > 1 {
             let restored = prunedToActiveAccounts(snapshot.sources)
@@ -3104,6 +3133,17 @@ public final class ItemDetailViewModel {
                 applyUnifiedWatchState()
             }
         }
+    }
+
+    private func restoreSnapshotEpisodes(from snapshot: DetailSnapshotCache.Snapshot, for seasonID: String) {
+        guard let episodes = snapshot.seasonEpisodes[seasonID] else { return }
+        listEvidence.seasons[seasonID] = .snapshot
+        let mediaBrowser = activeProvider?.kind.usesMediaBrowserAPI == true
+        seasonEpisodes[seasonID] = episodes.lazy
+            .filter { !mediaBrowser || !$0.isMetadataOnlyEpisode }
+            .prefix(Self.maxRestoredEpisodesPerSeason)
+            .map(tagged)
+        snapshotSeasonIDs.insert(seasonID)
     }
 
     /// Writes the current resolved detail (item + children + schedule + sources) to

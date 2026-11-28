@@ -1,8 +1,8 @@
 diff --git a/Sources/AetherEngine/AetherEngine+Loading.swift b/Sources/AetherEngine/AetherEngine+Loading.swift
-index 21e6f09d..056003b2 100644
+index ba7167b8..e7f76027 100644
 --- a/Sources/AetherEngine/AetherEngine+Loading.swift
 +++ b/Sources/AetherEngine/AetherEngine+Loading.swift
-@@ -2139,6 +2139,7 @@ extension AetherEngine {
+@@ -2185,6 +2185,7 @@ extension AetherEngine {
          isLive: Bool = false,
          dvrWindowSeconds: Double? = nil,
          preopenedDemuxer: Demuxer?,
@@ -10,7 +10,7 @@ index 21e6f09d..056003b2 100644
          requiresDeinterlaceWarmup: Bool,
          inverseTelecine: Bool = false,
          autostarts: Bool,
-@@ -2301,6 +2302,25 @@ extension AetherEngine {
+@@ -2349,6 +2350,25 @@ extension AetherEngine {
          // playhead-paced drainer reads it exactly like the HLS session's store.
          let packetStore = SubtitlePacketStore()
          self.softwareSubtitlePacketStore = packetStore
@@ -36,7 +36,7 @@ index 21e6f09d..056003b2 100644
          host.preserveASSMarkupForSubtitleTap = loadedOptions.preserveASSMarkup
          host.teletextPageForSubtitleTap = loadedOptions.teletextPage
          host.subtitleTapSink = { idx, pkt, tb, assembleSplitSets in
-@@ -2991,6 +3011,7 @@ extension AetherEngine {
+@@ -3039,6 +3059,7 @@ extension AetherEngine {
                      isLive: loadedOptions.isLive,
                      dvrWindowSeconds: loadedOptions.dvrWindowSeconds,
                      preopenedDemuxer: customPreopened,
@@ -45,10 +45,10 @@ index 21e6f09d..056003b2 100644
                      inverseTelecine: reopenedInverseTelecine,
                      autostarts: transportIntentUnderReconstruction ?? resumesPlaying,
 diff --git a/Sources/AetherEngine/AetherEngine+Subtitles.swift b/Sources/AetherEngine/AetherEngine+Subtitles.swift
-index 37d25e62..329442b0 100644
+index 68577405..265342a1 100644
 --- a/Sources/AetherEngine/AetherEngine+Subtitles.swift
 +++ b/Sources/AetherEngine/AetherEngine+Subtitles.swift
-@@ -363,8 +363,8 @@ extension AetherEngine {
+@@ -364,8 +364,8 @@ extension AetherEngine {
              let events = await BlockingWork.detached(priority: .userInitiated) { handoff.decode() }.value
              guard let self, self.subtitleDrainTickSerial == serial else { return }
              self.subtitleDrainTickInFlight = nil
@@ -59,7 +59,7 @@ index 37d25e62..329442b0 100644
                  self.subtitleDrainTickRequested = false
                  self.requestSubtitleDrainTick()
              }
-@@ -459,13 +459,25 @@ extension AetherEngine {
+@@ -460,13 +460,25 @@ extension AetherEngine {
                  if step == .reconstruct { subtitleDrainCursors[channel] = nil }
              }
              let hadCursor = subtitleDrainCursors[channel] != nil
@@ -87,7 +87,7 @@ index 37d25e62..329442b0 100644
              if !isSidecar, Self.subtitleForwardPrefetchNeedsReanchor(plan: plan, hadCursor: hadCursor) {
                  work.prefetchNeedsReanchor = true
              }
-@@ -543,7 +555,7 @@ extension AetherEngine {
+@@ -544,7 +556,7 @@ extension AetherEngine {
              // island the previous run harvested sits further ahead, and the cursor never comes back.
              // #941: the ledger sees the holes order cannot, a forward re-anchor's above all. The
              // playhead closing on the island is what ends a hold; see `harvestGapStep`.
@@ -96,7 +96,7 @@ index 37d25e62..329442b0 100644
              let step = SubtitleOverlayDrainer.harvestGapStep(
                  count: batchEnd,
                  ptsAt: { entries[$0].ptsSeconds },
-@@ -565,8 +577,9 @@ extension AetherEngine {
+@@ -566,8 +578,9 @@ extension AetherEngine {
      /// AE#628: the MainActor half after the decode. `events` holds one decoded result per packet
      /// the prepare half handed out, channel by channel. A channel re-selected, cleared or rebuilt
      /// while its batch decoded is skipped: its cursor did not move, so the next tick redoes it.
@@ -107,7 +107,7 @@ index 37d25e62..329442b0 100644
          // AE#1022 round 3: a batch planned before a seek was decoded around the departure. Applied
          // after it, it republished a set whose clear was unread as open, after the seek had closed
          // it, and that set was drawn at the landing until the landing's reset closed it again
-@@ -574,9 +587,10 @@ extension AetherEngine {
+@@ -575,9 +588,10 @@ extension AetherEngine {
          // cursors did not move, so the tick after the landing decodes what still matters.
          guard work.seekGeneration == currentSeekGeneration else {
              subtitleDrainTickRequested = true
@@ -119,7 +119,7 @@ index 37d25e62..329442b0 100644
          for (job, events) in zip(work.channels, decodedByChannel) {
              let channel = job.channel
              let streamIndex = job.streamIndex
-@@ -593,6 +607,15 @@ extension AetherEngine {
+@@ -594,6 +608,15 @@ extension AetherEngine {
              let batchEnd = job.batchEnd
              let decodeEnd = job.decodeEnd
              let gapHold = job.gapHold
@@ -135,7 +135,7 @@ index 37d25e62..329442b0 100644
              // #271: bind the channel's cue array ONCE for the whole batch. `subtitleCues` is
              // `@Published`, whose wrapper exposes get/set and no `_modify`, so passing it inout per
              // event both copy-on-writes the array and publishes it: every consumer then walks a
-@@ -784,6 +807,7 @@ extension AetherEngine {
+@@ -785,6 +808,7 @@ extension AetherEngine {
          // SubtitlePacketStore.perStreamByteCap (evict-oldest per stream): text tracks keep the whole
          // session, bitmap tracks keep a wide trailing window. Mirrors the segment cache retaining
          // history for backward seeks rather than clamping to a time window ahead of the playhead.
@@ -143,7 +143,7 @@ index 37d25e62..329442b0 100644
      }
  
      // MARK: - #151: subtitle forward prefetch
-@@ -905,6 +929,8 @@ extension AetherEngine {
+@@ -906,6 +930,8 @@ extension AetherEngine {
          cancelSubtitleForwardPrefetcher(reason: .prefetchRebuild)
          guard let store = activeSubtitlePacketStore,
              let url = loadedURL else { return }
@@ -152,7 +152,7 @@ index 37d25e62..329442b0 100644
          let isCustom = isCustomSource
          if isCustom, customReader == nil { return }
          let headers = loadedOptions.httpHeaders
-@@ -926,7 +952,7 @@ extension AetherEngine {
+@@ -927,7 +953,7 @@ extension AetherEngine {
                  maxConsecutiveFailures: AetherEngine.subtitleForwardPrefetchMaxConsecutiveFailures,
                  maxRestarts: AetherEngine.subtitleForwardPrefetchMaxRestarts,
                  backoffNanoseconds: AetherEngine.subtitleForwardPrefetchRestartBackoffNanoseconds)
@@ -162,7 +162,7 @@ index 37d25e62..329442b0 100644
              while !Task.isCancelled {
                  let originPaced = OriginRequestBudget.shared.isPaced(url)
 diff --git a/Sources/AetherEngine/AetherEngine.swift b/Sources/AetherEngine/AetherEngine.swift
-index fff4dcc5..41f460fb 100644
+index eda50781..bde903d0 100644
 --- a/Sources/AetherEngine/AetherEngine.swift
 +++ b/Sources/AetherEngine/AetherEngine.swift
 @@ -1067,9 +1067,14 @@ public final class AetherEngine: ObservableObject {
@@ -180,7 +180,7 @@ index fff4dcc5..41f460fb 100644
          softwareHost?.updateSubtitleCompositor(cues: subtitleCues + secondarySubtitleCues,
              enabled: pictureInPictureActive, delaySeconds: seconds)
          EngineLog.emit("[AetherEngine] software subtitle delay=\(seconds)s", category: .engine)
-@@ -1101,6 +1106,7 @@ public final class AetherEngine: ObservableObject {
+@@ -1114,6 +1119,7 @@ public final class AetherEngine: ObservableObject {
              #endif
              updatePictureFit()
              nativeHost?.pictureInPictureActive = pictureInPictureActive
@@ -188,7 +188,7 @@ index fff4dcc5..41f460fb 100644
              // SW-PiP Phase C: flip the frame compositor with the PiP state so subtitles appear in the
              // window and never double-draw under the fullscreen host overlay.
              softwareHost?.updateSubtitleCompositor(cues: subtitleCues + secondarySubtitleCues, enabled: pictureInPictureActive, delaySeconds: softwareSubtitleDelaySeconds)
-@@ -1723,6 +1729,7 @@ public final class AetherEngine: ObservableObject {
+@@ -1740,6 +1746,7 @@ public final class AetherEngine: ObservableObject {
      #endif
      /// SW-host sessions have no HLSVideoEngine; their tap fills this store instead.
      var softwareSubtitlePacketStore: SubtitlePacketStore?
@@ -196,7 +196,7 @@ index fff4dcc5..41f460fb 100644
      var subtitleDrainDecoders: [SubtitleChannel: EmbeddedSubtitleDecoder] = [:]
      var subtitleDrainCursors: [SubtitleChannel: SubtitleDrainCursor] = [:]
      /// #271: monotonic timestamp of the previous drain tick, so a tick that ran long is not read as
-@@ -1849,7 +1856,9 @@ public final class AetherEngine: ObservableObject {
+@@ -1877,7 +1884,9 @@ public final class AetherEngine: ObservableObject {
      /// Active primary embedded subtitle stream index (matches TrackInfo.id), or nil when subtitles are off or
      /// a sidecar (not an embedded track) is active. Mirrors `activeAudioTrackIndex` so a host picker reflects
      /// the track auto-selected by `LoadOptions.preferredSubtitleLanguages` (#73) as well as host `selectSubtitleTrack` calls.
@@ -207,7 +207,7 @@ index fff4dcc5..41f460fb 100644
  
      /// ASS script header ([Script Info] + [V4+ Styles] + [Events] Format line) for the primary sidecar, or nil.
      /// Populated when `LoadOptions.preserveASSMarkup` is set and the file is ASS/SSA; `subtitleCues` then carry
-@@ -6537,6 +6546,33 @@ public final class AetherEngine: ObservableObject {
+@@ -6619,6 +6628,33 @@ public final class AetherEngine: ObservableObject {
              EngineLog.emit(line, category: .engine)
          }
          sourceUpscalePlan = upscaleDecision.plan
@@ -241,7 +241,7 @@ index fff4dcc5..41f460fb 100644
          sourceSoftwareOnlyForUpscale = sourceUpscalePlan != nil && !useSoftwarePath
          if sourceUpscalePlan != nil { useSoftwarePath = true }
          // #957: the same place and the same reason as the upscale route. The two never both take a source:
-@@ -6644,6 +6680,7 @@ public final class AetherEngine: ObservableObject {
+@@ -6726,6 +6762,7 @@ public final class AetherEngine: ObservableObject {
                      isLive: options.isLive,
                      dvrWindowSeconds: options.dvrWindowSeconds,
                      preopenedDemuxer: probeOpened ? probe : nil,
@@ -249,7 +249,7 @@ index fff4dcc5..41f460fb 100644
                      requiresDeinterlaceWarmup: requiresDeinterlaceWarmup,
                      inverseTelecine: inverseTelecine,
                      autostarts: Self.loadPerformsAutostart(options),
-@@ -7471,6 +7508,10 @@ public final class AetherEngine: ObservableObject {
+@@ -7560,6 +7597,10 @@ public final class AetherEngine: ObservableObject {
              // silently extends one run over the whole offset, which is exactly the claim
              // `SubtitleHarvestCoverage` exists to refuse.
              let landingSource = host.sourceSeconds(forSession: clockTarget)
@@ -260,7 +260,7 @@ index fff4dcc5..41f460fb 100644
              softwareSubtitlePacketStore?.noteHarvestAnchor(.pump, at: landingSource)
              // AE#1022: the landing read goes out with the seek, not with the first drain tick after
              // it, which comes only once the landed frame has prerolled (measured 0.67 s). The ground
-@@ -9467,6 +9508,7 @@ public final class AetherEngine: ObservableObject {
+@@ -9559,6 +9600,7 @@ public final class AetherEngine: ObservableObject {
          softwareHost?.stop()
          softwarePiPSource = nil
          softwareHost = nil
@@ -268,9 +268,9 @@ index fff4dcc5..41f460fb 100644
  
          // Clear audioHost so music<->video handoffs start from a clean slate; the engine is a process-wide
          // singleton and a lingering host would keep the old synchronizer alive under the next session.
-@@ -9570,6 +9612,8 @@ public final class AetherEngine: ObservableObject {
-         stopSubtitleDrainer(reason: .sessionStopped)   // #112 rework: both channels
+@@ -9663,6 +9705,8 @@ public final class AetherEngine: ObservableObject {
          resetSubtitleOCRState()                // Phase D
+         resetBitmapTextRecognition()           // AE#1114
          subtitleDrainTargets.removeAll()
 +        frameASSIndexTask?.cancel()
 +        frameASSIndexTask = nil
@@ -278,10 +278,10 @@ index fff4dcc5..41f460fb 100644
          activeEmbeddedSubtitleStreamIndex = -1
          activeSubtitleTrackIndex = nil
 diff --git a/Sources/AetherEngine/Demuxer/Demuxer.swift b/Sources/AetherEngine/Demuxer/Demuxer.swift
-index 083680d6..100ddacb 100644
+index 613d43d1..e0761799 100644
 --- a/Sources/AetherEngine/Demuxer/Demuxer.swift
 +++ b/Sources/AetherEngine/Demuxer/Demuxer.swift
-@@ -2681,6 +2681,19 @@ public final class Demuxer: @unchecked Sendable {
+@@ -2746,6 +2746,19 @@ public final class Demuxer: @unchecked Sendable {
          return Self.resolveBitrate(codecparBitrate: codecparRate, bpsTag: bpsTag)
      }
  
@@ -302,10 +302,10 @@ index 083680d6..100ddacb 100644
      /// `BPS` tag; otherwise 0. Factored out so the codecpar-vs-tag precedence is unit-testable without a fixture.
      static func resolveBitrate(codecparBitrate: Int64, bpsTag: String?) -> Int64 {
 diff --git a/Sources/AetherEngine/Native/SoftwarePlaybackHost.swift b/Sources/AetherEngine/Native/SoftwarePlaybackHost.swift
-index 38c5542c..bb29eea1 100644
+index dd0fdf8b..d338905b 100644
 --- a/Sources/AetherEngine/Native/SoftwarePlaybackHost.swift
 +++ b/Sources/AetherEngine/Native/SoftwarePlaybackHost.swift
-@@ -317,6 +317,8 @@ final class SoftwarePlaybackHost {
+@@ -319,6 +319,8 @@ final class SoftwarePlaybackHost {
      // MARK: - Internals
  
      private let renderer: SampleBufferRenderer
@@ -314,7 +314,7 @@ index 38c5542c..bb29eea1 100644
      /// Swapped per codec at load(): SoftwareVideoDecoder for AV1 and unsupported hardware formats, HardwareVideoDecoder for HEVC/VP9. Protocol keeps the demux loop codec-agnostic.
      private var videoDecoder: any VideoDecodingPipeline
      private var audioDecoder: (any SoftwareAudioProducing)?
-@@ -3065,6 +3067,8 @@ final class SoftwarePlaybackHost {
+@@ -3068,6 +3070,8 @@ final class SoftwarePlaybackHost {
          vodPacketReadAhead = nil
          directLiveReadAhead?.close()
          directLiveReadAhead = nil
@@ -1242,23 +1242,22 @@ index 0d0a5929..cf546c87 100644
      }
  }
 diff --git a/Sources/AetherEngine/Video/UpscaleRouteDecision.swift b/Sources/AetherEngine/Video/UpscaleRouteDecision.swift
-index 4a0b65e9..df272cbd 100644
+index e5717e12..c3e3f70c 100644
 --- a/Sources/AetherEngine/Video/UpscaleRouteDecision.swift
 +++ b/Sources/AetherEngine/Video/UpscaleRouteDecision.swift
-@@ -35,6 +35,13 @@ struct UpscalePlan: Hashable, Sendable {
-     var needsMetalFX: Bool {
+@@ -38,6 +38,12 @@ struct UpscalePlan: Hashable, Sendable {
          scaler == .automatic && (mlOutputWidth != targetWidth || mlOutputHeight != targetHeight)
      }
-+
-+    /// Only a square-pixel, exact 2× delivery: the authored source raster then
-+    /// maps onto the submitted picture without cropping or a second layout.
+ 
++    /// Only an exact 2x line-art raster maps without a second layout.
 +    var supportsFrameASS: Bool {
 +        scaler == .lineArt && (1...1920).contains(sourceWidth) && (1...1080).contains(sourceHeight)
 +            && targetWidth == sourceWidth * 2 && targetHeight == sourceHeight * 2
 +    }
- }
- 
- /// Whether a load takes the low-resolution upscale route, and if not, why. Pure so every exit is
++
+     /// No axis shrinks. Lanczos is built for upscaling only (`LanczosTaps`), and a stage that cannot be
+     /// built would have moved the title off its native route for nothing.
+     var scalesUpOnly: Bool { targetWidth >= sourceWidth && targetHeight >= sourceHeight }
 diff --git a/Tests/AetherEngineTests/SoftwareArtworkGateTests.swift b/Tests/AetherEngineTests/SoftwareArtworkGateTests.swift
 new file mode 100644
 index 00000000..f653bd8d

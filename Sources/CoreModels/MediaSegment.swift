@@ -3,8 +3,8 @@ import Foundation
 /// A time range within a playable item that the server has tagged as a
 /// structural segment — an intro, the closing credits, a recap, etc.
 ///
-/// Both backends expose server-detected markers, normalised here so the player
-/// stays provider-agnostic (the dual-provider mandate):
+/// Providers that expose server-detected markers normalize them here so the
+/// player stays provider-agnostic. For example:
 ///  * **Jellyfin** → `GET /MediaSegments/{itemId}` (`Intro`/`Outro`/… with
 ///    100-nanosecond `StartTicks`/`EndTicks`).
 ///  * **Plex** → `GET /library/metadata/{id}?includeMarkers=1` (`<Marker

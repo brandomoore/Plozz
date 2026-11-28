@@ -10,8 +10,8 @@ import ProviderShare
 /// a box-grouped, multi-transport "Detected automatically" list + "Enter an
 /// address"; the single Connect form (Protocol → Address+Port → credentials); a
 /// generic Verify screen; and the location picker. All logic is in
-/// `UnifiedAddShareModel`; SMB/WebDAV use real backends, NFS/SFTP show a
-/// coming-soon step.
+/// `UnifiedAddShareModel`; SMB, WebDAV, NFS, SFTP and FTP/FTPS use real backends.
+/// The coming-soon state is reserved for future unimplemented transports.
 struct UnifiedAddShareView: View {
     let isPageReady: Bool
     let onBack: () -> Void
@@ -539,7 +539,7 @@ struct UnifiedAddShareView: View {
         viewModel.retryLocations()
     }
 
-    // MARK: - Coming soon (dummy transports)
+    // MARK: - Coming soon (future unimplemented transports)
 
     private func comingSoonStep(_ kind: MediaShareTransportKind) -> some View {
         Group {

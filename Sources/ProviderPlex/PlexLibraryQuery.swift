@@ -18,7 +18,8 @@ extension PlexProvider: MediaLibraryQueryProviding {
             filters: LibraryFilter.allCases,
             nativeFilters: nativeFilters,
             nativeSortFields: nativeSortFields,
-            supportsGenres: true, supportsYears: true, nativeFacets: true
+            supportsGenres: true, supportsYears: true, nativeFacets: true,
+            isPersonalVideoLibrary: client.isPersonalVideoSection(containerID) == true
         )
     }
 
@@ -47,7 +48,7 @@ extension PlexProvider: MediaLibraryQueryProviding {
         )
         guard let total = response.totalSize, total >= 0 else { throw AppError.invalidResponse }
         return MediaPage(items: (response.Metadata ?? []).map { dto in
-            var item = map(metadata: dto)
+            var item = map(metadata: dto, libraryID: containerID)
             item.librarySortValues?.hasAtmos = dto.Media?.contains { media in
                 media.audioProfile?.localizedCaseInsensitiveContains("atmos") == true
                     || (media.Part ?? []).contains { part in

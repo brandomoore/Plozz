@@ -105,9 +105,10 @@ public struct HomeRow: Identifiable, Equatable, Sendable {
     public var id: HomeRowKind { kind }
     public var title: LocalizedStringResource { kind.title }
 
-    /// Continue Watching shows wide landscape stills (resume artwork); every other
-    /// media row shows portrait posters.
-    public var style: HomeRowStyle { kind == .continueWatching ? .landscape : .poster }
+    public var style: HomeRowStyle {
+        kind == .continueWatching || (kind == .recentlyAdded && LibrarySection.Style.poster.forMediaGroup(items) == .landscape)
+            ? .landscape : .poster
+    }
 
     public func playsOnSelect(continueWatchingAction: ContinueWatchingAction) -> Bool {
         kind == .continueWatching && continueWatchingAction == .play

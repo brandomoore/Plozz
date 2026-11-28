@@ -251,7 +251,7 @@ struct PlozziOSMyLibrariesSettingsView: View {
             .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
         PlozziOSMyLibrariesContent(
             appModel: appModel, onAddServer: onAddServer, onAddUser: onAddUser,
-            presentation: presentation, groups: serverGroups(from: appModel.accounts),
+            presentation: presentation, groups: libraryPickerGroups(from: appModel.accounts),
             librariesByAccountID: Dictionary(grouping: libraries, by: \.accountID)
         )
     }
@@ -311,7 +311,18 @@ private struct PlozziOSMyLibrariesContent: View {
                 }
             } else {
                 ForEach(groups, id: \.serverKey) { group in
-                    serverGroup(group)
+                    if group.transportKind == .smb {
+                        SMBProfileLibrarySection(
+                            group: group, libraries: Dictionary(grouping: discovery.state.value ?? [], by: \.accountID),
+                            visibility: appModel.settings.homeVisibility,
+                            included: { appModel.activeAccountIDs(for: profileID).contains($0) },
+                            setIncluded: { appModel.setAccount($0, enabled: $1, for: profileID) },
+                            failures: libraryFailures, retry: { await loadLibraries() },
+                            first: group.serverKey == groups.first?.serverKey
+                        )
+                    } else {
+                        serverGroup(group)
+                    }
                 }
             }
             if presentation == .settings || groups.isEmpty {

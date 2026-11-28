@@ -32,8 +32,8 @@ passed; hosted/UI and live-server checks have separate setup and authorization.
 
 ## Invariants
 
-- **Provider-agnostic.** All data flows through `MediaProvider`. No
-  Jellyfin- or Plex-specific code paths above the provider seam.
+- **Provider-agnostic.** All data flows through `MediaProvider`, respecting
+  source capabilities rather than adding backend-specific paths above the seam.
 - **Server art first.** External art (`MetadataKit`) is used as a
   fallback via `CoreUI.FallbackAsyncImage`, never as the default — the
   server's own backdrop/logo is always tried first.

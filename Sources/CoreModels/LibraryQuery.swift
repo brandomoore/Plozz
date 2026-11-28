@@ -89,6 +89,7 @@ public struct LibraryQueryCapabilities: Equatable, Sendable {
     public var supportsGenres: Bool
     public var supportsYears: Bool
     public var nativeFacets: Bool
+    public var isPersonalVideoLibrary: Bool
 
     public init(
         filters: [LibraryFilter] = [.all],
@@ -96,7 +97,8 @@ public struct LibraryQueryCapabilities: Equatable, Sendable {
         nativeSortFields: Set<SortField> = Set(SortField.legacyFields),
         supportsGenres: Bool = false,
         supportsYears: Bool = false,
-        nativeFacets: Bool = false
+        nativeFacets: Bool = false,
+        isPersonalVideoLibrary: Bool = false
     ) {
         self.filters = filters
         self.nativeFilters = nativeFilters
@@ -104,6 +106,7 @@ public struct LibraryQueryCapabilities: Equatable, Sendable {
         self.supportsGenres = supportsGenres
         self.supportsYears = supportsYears
         self.nativeFacets = nativeFacets
+        self.isPersonalVideoLibrary = isPersonalVideoLibrary
     }
 
     public func needsIndex(for page: PageRequest) -> Bool {

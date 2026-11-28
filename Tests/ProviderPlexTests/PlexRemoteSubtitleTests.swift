@@ -36,8 +36,61 @@ final class PlexRemoteSubtitleTests: XCTestCase {
         )
     }
 
-    func testRemoteSubtitleSearchMapsResultsAndPassesLanguage() async throws {
+    private func searchStub(episode: Bool = false) -> StubHTTPClient {
         let stub = StubHTTPClient()
+        let item = episode
+            ? #"{"type":"episode","grandparentTitle":"The Hidden Power","parentIndex":3,"index":1}"#
+            : #"{"type":"movie"}"#
+        stub.stub(pathSuffix: "/library/metadata/rk1", json: #"{"MediaContainer":{"Metadata":[\#(item)]}}"#)
+        return stub
+    }
+
+    func testWrongSeriesTriggersTitleRetryThatRejectsOtherEpisodesAndAmbiguousNames() async throws {
+        let stub = searchStub(episode: true)
+        let suffix = "/library/metadata/rk1/subtitles"
+        stub.stubSequence(pathSuffix: suffix, jsons: [
+            #"{"MediaContainer":{"Stream":[{"title":"Power (2014) 3x01"},{"title":"Power.2014.S03E01"}]}}"#,
+            #"{"MediaContainer":{"Stream":[{"title":"The.Hidden.Power.S03E02"},{"title":"The.Hidden.Power.S02E01"},{"title":"S03E01"},{"title":"Unidentified"},{"title":"Power.S03E01"},{"title":"The.Hidden.Power.S03E01","key":"right"}]}}"#
+        ])
+        let provider = PlexProvider(session: makeSession(), http: stub)
+        let results = try await provider.remoteSubtitleSearch(itemID: "rk1", language: "eng")
+        XCTAssertEqual(results.map(\.id), ["right"])
+        let queries = zip(stub.sentPaths, stub.sentQueryItems).filter { $0.0 == suffix }.map(\.1)
+        XCTAssertEqual(queries.count, 2)
+        XCTAssertNil(queries.first?.first { $0.name == "title" })
+        XCTAssertEqual(queries.last?.first { $0.name == "title" }?.value, "The Hidden Power")
+        XCTAssertEqual(queries.first, queries.last?.filter { $0.name != "title" })
+    }
+
+    func testItemSearchRetainsCorrectEpisodeWithoutRetryingAcrossTheSeries() async throws {
+        let stub = searchStub(episode: true)
+        let suffix = "/library/metadata/rk1/subtitles"
+        stub.stub(pathSuffix: suffix, json: #"{"MediaContainer":{"Stream":[{"title":"Power 3x01"},{"title":"The Hidden Power (2024) 3x01","key":"one"},{"title":"The Hidden Power 3x02"}]}}"#)
+        let provider = PlexProvider(session: makeSession(), http: stub)
+        let results = try await provider.remoteSubtitleSearch(itemID: "rk1", language: "en")
+        XCTAssertEqual(results.map(\.id), ["one"])
+        XCTAssertEqual(stub.sentPaths.filter { $0 == suffix }.count, 1)
+    }
+
+    func testEpisodeSearchAllowsElidedOrSeparatedApostrophesButRejectsOtherTitlesAndEpisodes() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/library/metadata/rk1", json: #"{"MediaContainer":{"Metadata":[{"type":"episode","grandparentTitle":"Schitt’s Creek","parentIndex":1,"index":1}]}}"#)
+        stub.stub(pathSuffix: "/library/metadata/rk1/subtitles", json: """
+        {"MediaContainer":{"Stream":[
+          {"title":"Schitts.Creek.2015.S01E01","key":"elided"},
+          {"title":"Schitt.s.Creek.S01E01","key":"separated"},
+          {"title":"Schitt's Creek S01E01","key":"straight"},
+          {"title":"Schitts.Creek.S01E02","key":"wrong-episode"},
+          {"title":"Schitts.Creekside.S01E01","key":"wrong-series"}
+        ]}}
+        """)
+        let provider = PlexProvider(session: makeSession(), http: stub)
+        let results = try await provider.remoteSubtitleSearch(itemID: "rk1", language: "en")
+        XCTAssertEqual(results.map(\.id), ["elided", "separated", "straight"])
+    }
+
+    func testRemoteSubtitleSearchMapsResultsAndPassesLanguage() async throws {
+        let stub = searchStub()
         stub.stub(pathSuffix: "/library/metadata/rk1/subtitles", json: """
         {"MediaContainer":{"Stream":[
           {"key":"/subtitles/opensubtitles/12345","title":"Movie.2020.en.srt",
@@ -65,7 +118,7 @@ final class PlexRemoteSubtitleTests: XCTestCase {
     }
 
     func testRemoteSubtitleSearchNormalisesLanguageToAlpha2() async throws {
-        let stub = StubHTTPClient()
+        let stub = searchStub()
         stub.stub(pathSuffix: "/library/metadata/rk1/subtitles", json: #"{"MediaContainer":{"Stream":[]}}"#)
         let provider = PlexProvider(session: makeSession(), http: stub)
 
@@ -76,7 +129,7 @@ final class PlexRemoteSubtitleTests: XCTestCase {
     }
 
     func testRemoteSubtitleSearchEmptyWhenNoSource() async throws {
-        let stub = StubHTTPClient()
+        let stub = searchStub()
         stub.stub(pathSuffix: "/library/metadata/rk1/subtitles", json: #"{"MediaContainer":{}}"#)
         let provider = PlexProvider(session: makeSession(), http: stub)
         let results = try await provider.remoteSubtitleSearch(itemID: "rk1", language: "en")
@@ -84,7 +137,7 @@ final class PlexRemoteSubtitleTests: XCTestCase {
     }
 
     func testRelevanceScoreAndFilenameDoNotClaimAHashMatch() async throws {
-        let stub = StubHTTPClient()
+        let stub = searchStub()
         stub.stub(pathSuffix: "/library/metadata/rk1/subtitles", json: """
         {"MediaContainer":{"Stream":[
           {"key":"/subtitles/opensubtitles/12345","title":"Exact.Hash.Match.en.srt",

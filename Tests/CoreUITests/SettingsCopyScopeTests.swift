@@ -30,8 +30,6 @@ final class SettingsCopyScopeTests: XCTestCase {
         XCTAssertTrue(manual.contains("your message"), manual)
         XCTAssertFalse(manual.contains("optional"), manual)
         XCTAssertEqual(resolve(SettingsCopy.diagnosticsMessage), "Message (required)")
-        XCTAssertTrue(manual.contains("Don't include passwords or personal information"), manual)
-        XCTAssertEqual(resolve(SettingsCopy.diagnosticsMessagePrivacy), "Don't include passwords or personal information.")
         XCTAssertFalse(manual.localizedCaseInsensitiveContains("anonymous"), manual)
     }
 

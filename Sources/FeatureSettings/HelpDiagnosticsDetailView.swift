@@ -14,6 +14,7 @@ import CoreUI
 /// summary and a filtered activity projection. The full local activity buffer
 /// remains read-only on the device, separate from the export representation.
 struct HelpDiagnosticsDetailView: View {
+    @Environment(\.episodeRailDiagnostics) private var episodeDiagnostics
     let appVersion: String
     let appBuild: String
     let repoURL: String
@@ -34,7 +35,8 @@ struct HelpDiagnosticsDetailView: View {
             providers: providerSummary,
             repoURL: repoURL,
             recentLogTail: PlozzLog.privacyFilteredLogText(entries: PlozzLog.recentEntries(limit: 8)),
-            marketingVersion: AppVersionIdentity.current.marketingVersion
+            marketingVersion: AppVersionIdentity.current.marketingVersion,
+            episodeRail: episodeDiagnostics?.lastSelection
         )
     }
 
@@ -90,8 +92,8 @@ struct HelpDiagnosticsDetailView: View {
                         // correction for capacity to keep the QR scannable at 10
                         // feet. It's shown on a clean screen (no print damage to
                         // recover from), so low correction is fine here.
-                        SettingsQRCode(string: report.newIssueURLString, correctionLevel: .low)
-                            .frame(width: 200, height: 200)
+                        SettingsQRCode(string: report.newIssueURLString, correctionLevel: .low, centerMark: nil)
+                            .frame(width: 360, height: 360)
                         Text("Scan to report\na bug")
                             .font(.caption)
                             .multilineTextAlignment(.center)

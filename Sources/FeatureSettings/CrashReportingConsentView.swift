@@ -180,7 +180,7 @@ private struct CrashReportingConsentRepositoryView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     Text(SettingsCopy.automaticDiagnostics)
                     Text(SettingsCopy.automaticDiagnosticsExclusions)
-                    Text("Sharing is optional and does not change any app features. Sending recent activity logs is a separate action in Settings.")
+                    Text(SettingsCopy.manualDiagnostics)
                     Text("Scan to open the Plozz GitHub repo.")
                     SettingsQRCode(string: AppLinks.repository.absoluteString, correctionLevel: .low)
                         .frame(width: 240, height: 240)

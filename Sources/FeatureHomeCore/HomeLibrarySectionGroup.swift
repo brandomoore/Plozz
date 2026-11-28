@@ -40,6 +40,10 @@ public struct HomeLibrarySectionGroup: Identifiable, Equatable, Sendable {
         public var issue: HomeSectionIssue? = nil
         public var collectionCardStyle: CollectionSection.CardStyle? = nil
         public var id: String { section.id }
+        public var usesPersonalVideoLayout: Bool { collectionCardStyle == nil && section.id != "continueWatching" }
+        public var cardStyle: LibrarySection.Style {
+            usesPersonalVideoLayout ? section.style.forMediaGroup(section.items) : section.style
+        }
 
         init(
             section: LibrarySection, isLoading: Bool, failure: AppError?,

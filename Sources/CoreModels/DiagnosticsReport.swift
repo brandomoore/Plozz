@@ -8,6 +8,7 @@ public struct DiagnosticsReport {
     public let providers: String
     public let repoURL: String
     public let recentLogTail: String
+    private let episodeRail: EpisodeRailDiagnostic?
 
     public init(
         appVersion: String,
@@ -15,12 +16,14 @@ public struct DiagnosticsReport {
         providers: String,
         repoURL: String,
         recentLogTail: String = "",
-        marketingVersion: String? = nil
+        marketingVersion: String? = nil,
+        episodeRail: EpisodeRailDiagnostic? = nil
     ) {
         self.appVersion = appVersion
         self.appBuild = appBuild
         self.marketingVersion = marketingVersion
         self.providers = providers
+        self.episodeRail = episodeRail
         self.repoURL = repoURL
         self.recentLogTail = recentLogTail.count > 400
             ? "…" + String(recentLogTail.suffix(400))
@@ -95,7 +98,10 @@ public struct DiagnosticsReport {
         _Environment (auto-filled by Plozz — please keep):_
         \(environmentBlock)
         """
-        if !recentLogTail.isEmpty {
+        // Use the QR's limited scan area for the relevant selection instead of a generic log tail.
+        if let episodeRail {
+            body += "\n\n```\n\(episodeRail.supportText)\n```"
+        } else if !recentLogTail.isEmpty {
             body += """
 
 

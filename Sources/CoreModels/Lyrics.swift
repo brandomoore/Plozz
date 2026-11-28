@@ -2,9 +2,9 @@ import Foundation
 
 // MARK: - Lyrics (additive, non-breaking)
 //
-// A provider-agnostic representation of a track's lyrics. Both backends map to
+// A provider-agnostic representation of a track's lyrics. Supported servers map to
 // this single shape so the Now Playing UI never has to know whether the words
-// came from Jellyfin's JSON `LyricDto` or a Plex `.lrc` sidecar stream:
+// came from Jellyfin/Emby's JSON `LyricDto` or a Plex `.lrc` sidecar stream:
 //
 //  * Jellyfin returns timestamped lines (ticks) or plain text via
 //    `GET /Audio/{id}/Lyrics`.
@@ -29,8 +29,8 @@ public struct LyricLine: Codable, Hashable, Sendable {
 }
 
 /// Where a track's lyrics came from, surfaced as a small attribution badge on
-/// the Now Playing lyrics panel. The two servers are first-class; `lrclib` is
-/// the keyless public fallback used when the server has none.
+/// the Now Playing lyrics panel. Jellyfin, Emby and Plex supply server lyrics;
+/// `lrclib` is the keyless public fallback used when the server has none.
 public enum LyricsSource: String, Codable, Hashable, Sendable {
     case jellyfin
     case emby
