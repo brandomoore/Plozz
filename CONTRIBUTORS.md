@@ -112,12 +112,17 @@ the published integration commit omitted it. Its history has not been rewritten.
 
 ## moofone
 
-1 merged or adopted PR. [Profile](https://github.com/moofone)
+2 merged or adopted PRs. [Profile](https://github.com/moofone)
 
 - Saved guide-index answers for IPTV guide batches:
   [#456](https://github.com/brandomoore/Plozz/pull/456), integrated with
   revision-scoped lineup validation in
   [e4ba4d28af](https://github.com/brandomoore/Plozz/commit/e4ba4d28af12d58208881eb1c42e87ff7fc2b6c1).
+- Per-source Xtream live stream format selection from
+  [#506](https://github.com/brandomoore/Plozz/pull/506)
+  ([original contribution](https://github.com/brandomoore/Plozz/commit/2e17e3492231c637c0b96a0324ba0e2e9f87a68e)),
+  adapted for each viewer's Sources settings. This does not include the PR's
+  fast-start playback changes.
 
 ## teymourb
 

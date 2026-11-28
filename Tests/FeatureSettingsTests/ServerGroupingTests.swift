@@ -63,6 +63,18 @@ final class ServerGroupingTests: XCTestCase {
 
     // MARK: - Transport badge
 
+    func testFiveSavedPlaylistsOnOneHostKeepIndependentIdentities() {
+        let playlists = (1...5).map { account(id: "playlist-\($0)", url: "https://raw.githubusercontent.com",
+                                               provider: .iptv, user: "IPTV") }
+        for groups in [serverGroups(from: playlists), libraryPickerGroups(from: playlists)] {
+            XCTAssertEqual(Set(groups.map(\.serverKey)).count, 5)
+            XCTAssertEqual(Set(groups.compactMap { $0.accounts.count == 1 ? $0.accounts[0].id : nil }),
+                           Set(playlists.map(\.id)))
+        }
+        let remaining = Array(playlists.dropFirst())
+        XCTAssertEqual(Set(serverGroups(from: remaining).map(\.serverKey)), Set(remaining.map(serverKey(for:))))
+    }
+
     func testLibraryPickerGroupsSMBRootsByEndpointAndExactLoginOnly() {
         let a = account(id: "concerts", url: "smb://NAS.local/Concerts", provider: .mediaShare, user: "viewer")
         let b = account(id: "videos", url: "smb://nas.local:445/Video", provider: .mediaShare, user: "viewer")

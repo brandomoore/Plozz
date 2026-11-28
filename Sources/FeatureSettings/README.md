@@ -42,10 +42,16 @@ Single and batch rating scores use native menu pickers with explicit accessible
 labels and values. Do not rely on the automatic tvOS picker style: it compresses
 all 101 scores into an unreadable segmented control.
 
-The household Sources page places Add Source before saved sources on TV and
-mobile. On TV, Add Source is also the workspace entry focus target and occupies
-its own connected card above saved sources, using the same grouped surfaces as Audio. IPTV source
-rows share the origin-only website-logo lookup and generic fallback across platforms.
+Settings → Sources lists the current viewer's connections before **Add Source**.
+Both Settings and the guide open the same account-ID-based editor. Libraries
+are the source's actual discovered libraries; changing guide visibility does
+not remove its movies or shows. Rename and removal affect only this profile,
+not the household sign-in or navigation shortcuts. Each saved IPTV playlist
+has its own row even when several share an origin. Website logos use the
+public origin only; playlist addresses stay in secure storage. Xtream sources
+also have a **Live stream format** menu. The choice applies to the next live
+channel this viewer opens from this account. If the server only offers one
+format, Plozz uses it. Ordinary playlists keep their supplied stream URLs.
 
 Mobile customization choice groups use the same Settings cards and content
 insets, including contained groups such as Hero content sources. TV row sizing
@@ -679,8 +685,8 @@ column. The stack retains the narrower parent page and its focus on return.
 
 On tvOS, **Everyone → Top Shelf** reuses the native left/right `SettingsStepper`
 for Continue Watching and Recently Added counts (4 by default, 1–20 each).
-`TopShelfSettingsModel` owns one device-local preference shared across Plozz
-profiles, excluded from profile transfer and sync. Household settings require an
+`TopShelfSettingsModel` stores preferences in the current Apple TV user's
+standard defaults, shared by that user's Plozz profiles and excluded from profile transfer and sync. Household settings require an
 adult profile; changing these counts never broadens the shelf's content access.
 The page explains how top-row apps appear on the Apple TV Home Screen. The
 default-on **Show Top Shelf** switch clears published media when disabled and
@@ -1290,8 +1296,8 @@ watch history and planning-list behavior are documented in
   sections. This keeps variable-height groups stable while scrolling rather
   than repeatedly revising lazy height estimates as sections enter view.
   Kids-profile gates and profile/household storage ownership are unchanged.
-  `SettingsLibrarySourcesSummary` shares configured source grouping and profile
-  inclusion with TV. Mobile keeps the source icons/names on one horizontal line,
+  `SettingsLibrarySourcesSummary` counts the same personal source IDs as the
+  full list, including separate connections on one host. Mobile keeps the source icons/names on one horizontal line,
   showing up to three names when they fit and counting the rest in `+N more`.
   Narrow sidebars and larger text show fewer names; an oversized first name
   truncates beside a compact `+N` count rather than wrapping or hiding the count.

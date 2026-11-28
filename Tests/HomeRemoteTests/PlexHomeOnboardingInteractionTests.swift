@@ -7,7 +7,8 @@ final class PlexHomeOnboardingInteractionTests: XCTestCase {
         app.launchArguments = ["--plex-home-onboarding-fixture", "--plex-home-long-list"]
         app.launch()
         defer { app.terminate() }
-        assertPreviewCount(16, in: app)
+        assertPreviewCount(6, in: app)
+        XCTAssertTrue(app.buttons["Show 10 more"].exists)
         capture(app, name: "All Plex Home profiles before import")
         activate(app.buttons["plex-home-add-all"])
         let parent = app.buttons["plex-home-user-parent"]
@@ -57,6 +58,13 @@ final class PlexHomeOnboardingInteractionTests: XCTestCase {
         assertPreviewCount(3, in: app)
         let addAll = app.buttons["plex-home-add-all"]
         XCTAssertTrue(addAll.waitForExistence(timeout: 10))
+        XCTAssertEqual(addAll.label, "Connect all 3 profiles")
+        XCTAssertEqual(app.buttons["plex-home-just-me"].label, "Choose one profile")
+        XCTAssertTrue(app.staticTexts["Who should use Cedar House?"].exists)
+        XCTAssertTrue(app.staticTexts["New profiles from Plex"].exists)
+        #if os(tvOS)
+        XCTAssertTrue(app.staticTexts["Already on this Apple TV"].exists)
+        #endif
         #if os(tvOS)
         waitForFocus(addAll)
         #endif
@@ -117,10 +125,28 @@ final class PlexHomeOnboardingInteractionTests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         activate(app.buttons["plex-home-just-me"])
-        activate(app.buttons["plex-home-user-child"])
+        let child = app.buttons["plex-home-user-child"]
+        XCTAssertTrue(child.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["plex-home-result"].exists)
+        activate(child)
         let result = app.staticTexts["plex-home-result"]
         XCTAssertTrue(result.waitForExistence(timeout: 5))
         XCTAssertEqual(result.label, "child:one")
+    }
+
+    func testSingleHomeUserStillRequiresAnExplicitViewerChoice() {
+        let app = app
+        app.launchArguments = ["--plex-home-onboarding-fixture", "--plex-home-single-user"]
+        app.launch()
+        defer { app.terminate() }
+        let viewer = app.buttons["plex-home-user-parent"]
+        XCTAssertTrue(viewer.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["plex-home-add-all"].exists)
+        XCTAssertFalse(app.staticTexts["plex-home-result"].exists)
+        activate(viewer)
+        let result = app.staticTexts["plex-home-result"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        XCTAssertEqual(result.label, "parent:one")
     }
 
     private func activate(_ button: XCUIElement) {

@@ -37,7 +37,7 @@ public enum ProfileSettingsTransfer {
     ///  - `com.plozz.syncSetup.enabled` (the sync flag itself — must not propagate)
     ///  - `com.plozz.musicAvailability` (a per-device capability, not a preference)
     ///  - `com.plozz.deviceExternalPlayer` (shared by viewers on this device only)
-    ///  - `com.plozz.deviceTopShelf` (shared Top Shelf preferences on this Apple TV only)
+    ///  - `com.plozz.deviceTopShelf` (current Apple TV system user's Top Shelf preferences)
     ///  - `com.plozz.losslessSurround` (connected audio setup, shared by viewers on this device)
     ///  - `com.plozz.spatialAudioLayout` (retired device-local rendering layout)
     public static let transferableBaseKeys: [String] = [

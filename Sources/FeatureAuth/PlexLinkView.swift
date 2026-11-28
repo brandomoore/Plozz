@@ -20,7 +20,6 @@ public struct PlexLinkView: View {
     /// old `ServerList`) so the Continue button can live beside Cancel in the
     /// shared footer and share this focus scope.
     @State private var selectedServerIDs = Set<String>()
-    @State private var didSeedSelection = false
     /// Drives the "start over?" confirmation before a cancel that would abandon
     /// the in-progress sign-in.
     @State private var showCancelConfirm = false
@@ -63,16 +62,12 @@ public struct PlexLinkView: View {
         .padding(.top, 60)
         .padding(.bottom, 40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .defaultFocus($focused, defaultControl)
+        .defaultFocus($focused, .cancel)
         #if os(tvOS)
         .onExitCommand { requestCancel() }
         #endif
         .onAppear { viewModel.startIfNeeded() }
         .onDisappear { viewModel.cancel() }
-        .onChange(of: viewModel.phase) { _, newPhase in
-            // When the server picker appears, land focus on Continue (not Cancel).
-            if case .selectingServer = newPhase { focused = .continueServers }
-        }
         .confirmationDialog(
             "Start over?",
             isPresented: $showCancelConfirm,
@@ -83,12 +78,6 @@ public struct PlexLinkView: View {
         } message: {
             Text("You'll go back to the start and no server will be added.")
         }
-    }
-
-    /// The button focus should rest on when the screen (or a new phase) appears.
-    private var defaultControl: Control {
-        if case .selectingServer = viewModel.phase { return .continueServers }
-        return .cancel
     }
 
     @ViewBuilder
@@ -151,7 +140,6 @@ public struct PlexLinkView: View {
 
         case let .selectingServer(servers):
             ServerList(servers: servers, selected: $selectedServerIDs)
-                .onAppear { seedSelectionIfNeeded(servers) }
 
         case let .error(message):
             VStack(spacing: 12) {
@@ -211,6 +199,7 @@ public struct PlexLinkView: View {
 
                 if case .error = viewModel.phase {
                     Button {
+                        selectedServerIDs.removeAll()
                         viewModel.retry()
                     } label: {
                         Text("Try Again").frame(minWidth: 200)
@@ -222,13 +211,6 @@ public struct PlexLinkView: View {
         }
     }
 
-    /// Preselect owned servers (the ones people almost always want) the first
-    /// time the picker is shown.
-    private func seedSelectionIfNeeded(_ servers: [PlexServerCandidate]) {
-        guard !didSeedSelection else { return }
-        didSeedSelection = true
-        selectedServerIDs = Set(servers.filter(\.isOwned).map(\.id))
-    }
 }
 
 /// Multi-select picker shown when a Plex account can reach more than one server.

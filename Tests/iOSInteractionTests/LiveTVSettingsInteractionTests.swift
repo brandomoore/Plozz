@@ -47,9 +47,26 @@ final class LiveTVSettingsInteractionTests: XCTestCase {
             } else {
                 XCTAssertTrue(app.buttons["Retry"].exists)
             }
+
             tapVisible(guide, in: app)
             XCTAssertTrue(app.navigationBars["Guide preferences"].waitForExistence(timeout: 5))
             XCTAssertTrue(app.switches["Recently watched"].exists)
+        }
+    }
+
+    func testMediaServerRowsOpenTheProfileEditorForTheirAccountNotTheirGuideEnrollment() {
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.PresentationHost")
+        app.launchArguments = ["--source-settings", "--server-sources"]
+        app.launch()
+        defer { app.terminate() }
+        for provider in ["plex", "jellyfin"] {
+            let source = app.buttons["live-tv-source-details-\(provider)-source"]
+            XCTAssertTrue(source.waitForExistence(timeout: 10), app.debugDescription)
+            tapVisible(source, in: app)
+            let editor = app.staticTexts["fixture-profile-source"]
+            XCTAssertTrue(editor.waitForExistence(timeout: 5), app.debugDescription)
+            XCTAssertEqual(editor.label, "\(provider)-account")
+            app.navigationBars.buttons.firstMatch.tap()
         }
     }
 

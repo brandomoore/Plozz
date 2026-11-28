@@ -72,6 +72,14 @@ struct SourceOnboardingFixture: View {
 
         }
         .environment(profiles)
+        .environment(\.profileSourceDestination, { accountID, canManage in
+            AnyView(Group {
+                if canManage() {
+                    Text(verbatim: accountID)
+                        .accessibilityIdentifier("fixture-profile-source")
+                }
+            })
+        })
         .environment(\.themePalette, ProcessInfo.processInfo.arguments.contains("--light") ? .light : .dark)
         .environment(\.colorScheme, ProcessInfo.processInfo.arguments.contains("--light") ? .light : .dark)
         .task {

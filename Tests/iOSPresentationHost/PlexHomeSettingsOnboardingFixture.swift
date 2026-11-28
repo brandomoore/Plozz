@@ -19,10 +19,8 @@ struct PlexHomeSettingsOnboardingFixture: View {
         let profiles = ProfilesModel(store: store)
         profiles.markFirstRunProfileSetupComplete()
         var locked = profiles.add(
-            name: "Locked viewer", activeAccountIDs: ["plex"],
-            plexHomeUserBindings: ["plex": .init(
-                homeUserID: "locked", name: "Locked viewer", requiresPIN: false, pinRequirementVerified: true
-            )]
+            name: "Locked viewer",
+            plexHomeImportIdentity: .init(ownerUserID: "owner", homeUserID: "locked")
         )
         locked.replaceLock(with: ProfileLock.make(pin: "1357", iterations: 1))
         profiles.update(locked)

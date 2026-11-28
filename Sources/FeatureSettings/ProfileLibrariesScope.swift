@@ -53,6 +53,8 @@ public struct ProfileLibrariesScope {
     public var onAddUser: (MediaServer) -> Void
     public var plexHomeUsersFetcher: (String) async -> [PlexHomeUser]
     public var onSelectPlexHomeUser: (String, PlexHomeUser?) -> Void
+    public var onRescanShare: ((String) -> Void)?
+    public var connectedIPTVMode: ((String) throws -> IPTVCredential.Mode)?
 
     public init(
         presentation: Presentation = .settings,
@@ -69,7 +71,9 @@ public struct ProfileLibrariesScope {
         onAddAccount: @escaping () -> Void,
         onAddUser: @escaping (MediaServer) -> Void = { _ in },
         plexHomeUsersFetcher: @escaping (String) async -> [PlexHomeUser],
-        onSelectPlexHomeUser: @escaping (String, PlexHomeUser?) -> Void
+        onSelectPlexHomeUser: @escaping (String, PlexHomeUser?) -> Void,
+        onRescanShare: ((String) -> Void)? = nil,
+        connectedIPTVMode: ((String) throws -> IPTVCredential.Mode)? = nil
     ) {
         self.presentation = presentation
         self.accounts = accounts
@@ -86,6 +90,8 @@ public struct ProfileLibrariesScope {
         self.onAddUser = onAddUser
         self.plexHomeUsersFetcher = plexHomeUsersFetcher
         self.onSelectPlexHomeUser = onSelectPlexHomeUser
+        self.onRescanShare = onRescanShare
+        self.connectedIPTVMode = connectedIPTVMode
     }
 }
 
@@ -135,7 +141,7 @@ extension SettingsContext {
             onAddAccount: onAddAccount,
             onAddUser: onAddUser,
             plexHomeUsersFetcher: plexHomeUsersFetcher,
-            onSelectPlexHomeUser: onSelectPlexHomeUser
+            onSelectPlexHomeUser: onSelectPlexHomeUser, onRescanShare: onRescanShare
         )
     }
 }

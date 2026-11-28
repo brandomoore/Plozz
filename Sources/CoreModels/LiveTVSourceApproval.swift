@@ -342,6 +342,19 @@ public final class LiveTVApprovalAwareSourcesStore: LiveTVPortableSourcesStoring
     public func save(_ configuration: LiveTVSourcesConfiguration) throws {
         Self.lock.lock()
         defer { Self.lock.unlock() }
+        try saveLocked(configuration)
+    }
+
+    public func removeServer(accountID: String) throws {
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
+        var current = try load()
+        guard current.servers.contains(where: { $0.accountID == accountID }) else { return }
+        current.servers.removeAll { $0.accountID == accountID }
+        try saveLocked(current)
+    }
+
+    private func saveLocked(_ configuration: LiveTVSourcesConfiguration) throws {
         LiveTVSourceDiagnostics.shared.configuration(
             configuration, namespace: approvals.namespace, event: .localMutation
         )

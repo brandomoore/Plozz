@@ -9,10 +9,13 @@ import CoreUI
 struct PlexUserSelectionView: View {
     let selection: PlexHomeUsersModel.PendingPlexUserSelection
     let onImportAll: () -> PlexHomeProfileImportResult
-    let onSelect: (PlexHomeUser, Bool) -> Void
+    let onSelect: (PlexHomeUser, Bool) -> Bool
 
     var body: some View {
-        PlexHomeOnboardingView(users: selection.users, onImportAll: onImportAll, onSelect: onSelect)
+        PlexHomeOnboardingView(
+            serverName: selection.serverName, users: selection.users, existingUserIDs: selection.existingUserIDs,
+            onImportAll: onImportAll, onSelect: onSelect
+        )
             .id(selection.id)
     }
 }

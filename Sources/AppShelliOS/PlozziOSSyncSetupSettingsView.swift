@@ -296,8 +296,10 @@ struct PlozziOSSyncSetupSettingsView: View {
         serverPromptFollowUp = nil
         switch followUp {
         case .pairDevice(let server):
+            guard appModel.pendingSyncedServers.contains(server) else { return }
             serverToReceive = server
         case .signIn(let server):
+            guard appModel.pendingSyncedServers.contains(server) else { return }
             if server.provider == .mediaShare {
                 showAddShare = true
             } else {

@@ -26,7 +26,9 @@ public struct MyLibrariesDetailView: View {
     public init(scope: ProfileLibrariesScope) { self.scope = scope }
 
     public var body: some View {
-        MyLibrariesContentView(scope: scope, allGroups: libraryPickerGroups(from: scope.accounts))
+        MyLibrariesContentView(scope: scope, allGroups: libraryPickerGroups(
+            from: scope.accounts.filter { scope.isAccountIncludedInActiveProfile($0.id) }
+        ))
     }
 }
 
@@ -130,10 +132,8 @@ private struct MyLibrariesContentView: View {
     @ViewBuilder private var emptyInventoryState: some View {
         #if os(tvOS)
         if inWorkspace {
-            FocusableSettingsPanel(
-                footer: "Add a source under Everyone › Sources."
-            ) {
-                Text("No servers yet.").font(.headline)
+            FocusableSettingsPanel {
+                Text("No sources yet").font(.headline)
             }
         } else {
             emptyInventoryPanel
@@ -144,8 +144,8 @@ private struct MyLibrariesContentView: View {
     }
 
     private var emptyInventoryPanel: some View {
-        SettingsPanel(footer: "Add a source under Everyone › Sources.") {
-            Text("No servers yet.").font(.headline)
+        SettingsPanel {
+            Text("No sources yet").font(.headline)
         }
     }
 
@@ -191,7 +191,7 @@ private struct MyLibrariesContentView: View {
                 if isWatching(group) {
                     // A media share has no watcher identity, so it skips "Watching
                     // as" (and the divider that would head it) and shows libraries.
-                    if group.providerKind != .mediaShare {
+                    if group.providerKind != .mediaShare && group.providerKind != .iptv {
                         PlozzDivider()
                         watchingAs(group)
                             .settingsSearchAnchor(

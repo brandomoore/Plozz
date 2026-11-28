@@ -557,57 +557,46 @@ final class SettingsWorkspaceRemoteTests: XCTestCase {
     private func verifyGeneralSourceEntryPoints(style: String) throws {
         let app = try launchSettings(style: style, syncEnabled: false)
         defer { app.terminate() }
-        for (route, identifier) in [
-            ("servers", "sources-add-source"),
-            ("myLibraries", "libraries-add-source")
-        ] {
-            try focus(section(route, in: app), in: app)
-            capture("source-entry-settings-\(route)", in: app)
-            XCUIRemote.shared.press(.select)
-            let add = app.buttons[identifier]
-            XCTAssertTrue(add.waitForExistence(timeout: 10), app.debugDescription)
-            if route == "myLibraries" {
-                XCTAssertTrue(app.staticTexts["Add a source under Everyone › Sources."].exists)
-            }
-            try focus(add, in: app)
-            capture("source-entry-\(route)", in: app)
-            XCUIRemote.shared.press(.select)
-            XCTAssertTrue(app.staticTexts["Jellyfin"].waitForExistence(timeout: 10), app.debugDescription)
-            XCTAssertTrue(app.staticTexts["Add Source"].exists)
-            capture("source-destination-\(route)", in: app)
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
-            request.recognitionLanguages = ["en-US"]
-            try VNImageRequestHandler(cgImage: XCTUnwrap(app.screenshot().image.cgImage)).perform([request])
-            let visibleText = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
-            XCTAssertTrue(visibleText.contains("Jellyfin"),
-                          "The chooser must be visible above Settings, not merely in its accessibility tree: \(visibleText)")
-            let plex = app.buttons.matching(NSPredicate(format: "label == %@", "Plex")).firstMatch
-            try focus(plex, in: app)
-            XCTAssertTrue(hasFocus(plex), "The foreground chooser must respond to the remote.")
-            if route == "servers" {
-                let music = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Navidrome")).firstMatch
-                try focus(music, in: app)
-                XCUIRemote.shared.press(.select)
-                let signIn = app.buttons["subsonic-sign-in"]
-                let cancel = app.buttons["subsonic-cancel"]
-                XCTAssertTrue(signIn.waitForExistence(timeout: 10), app.debugDescription)
-                XCTAssertTrue(cancel.exists)
-                XCTAssertFalse(signIn.isEnabled, "An empty form must not submit.")
-                XCTAssertEqual(signIn.frame.width, 840, accuracy: 2,
-                               "The native Sign In button must fill the form, not just its text.")
-                XCTAssertEqual(cancel.frame.width, signIn.frame.width, accuracy: 2)
-                XCTAssertEqual(cancel.frame.minX, signIn.frame.minX, accuracy: 2)
-                capture("source-navidrome-actions-\(style)", in: app)
-                try focus(cancel, in: app)
-                XCUIRemote.shared.press(.select)
-                XCTAssertTrue(plex.waitForExistence(timeout: 10), app.debugDescription)
-            }
-            XCUIRemote.shared.press(.menu)
-            XCTAssertTrue(add.waitForExistence(timeout: 10), app.debugDescription)
-            XCUIRemote.shared.press(.menu)
-            XCTAssertTrue(section(route, in: app).waitForExistence(timeout: 10), app.debugDescription)
-        }
+        let sources = section("myLibraries", in: app)
+        try focus(sources, in: app)
+        XCTAssertFalse(section("servers", in: app).exists)
+        capture("source-entry-settings-\(style)", in: app)
+        XCUIRemote.shared.press(.select)
+        let add = app.buttons["sources-add-source"]
+        XCTAssertTrue(add.waitForExistence(timeout: 10), app.debugDescription)
+        try focus(add, in: app)
+        capture("source-entry-\(style)", in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.staticTexts["Jellyfin"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Add Source"].exists)
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: XCTUnwrap(app.screenshot().image.cgImage)).perform([request])
+        let visibleText = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+        XCTAssertTrue(visibleText.contains("Jellyfin"), "\(visibleText)")
+        let plex = app.buttons.matching(NSPredicate(format: "label == %@", "Plex")).firstMatch
+        try focus(plex, in: app)
+        XCTAssertTrue(hasFocus(plex))
+        let music = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Navidrome")).firstMatch
+        try focus(music, in: app)
+        XCUIRemote.shared.press(.select)
+        let signIn = app.buttons["subsonic-sign-in"]
+        let cancel = app.buttons["subsonic-cancel"]
+        XCTAssertTrue(signIn.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(cancel.exists)
+        XCTAssertFalse(signIn.isEnabled)
+        XCTAssertEqual(signIn.frame.width, 840, accuracy: 2)
+        XCTAssertEqual(cancel.frame.width, signIn.frame.width, accuracy: 2)
+        XCTAssertEqual(cancel.frame.minX, signIn.frame.minX, accuracy: 2)
+        capture("source-navidrome-actions-\(style)", in: app)
+        try focus(cancel, in: app)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(plex.waitForExistence(timeout: 10), app.debugDescription)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(add.waitForExistence(timeout: 10), app.debugDescription)
+        XCUIRemote.shared.press(.menu)
+        XCTAssertTrue(sources.waitForExistence(timeout: 10), app.debugDescription)
     }
 
     func testInlineSearchKeepsQueryAndReturnsToCardInPinnedNavigation() throws {

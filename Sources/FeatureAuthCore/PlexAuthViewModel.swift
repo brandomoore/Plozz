@@ -91,8 +91,6 @@ public final class PlexAuthViewModel {
                         switch servers.count {
                         case 0:
                             self.phase = .error("No Plex servers are available on this account.")
-                        case 1:
-                            try await self.finish(with: servers[0], token: token)
                         default:
                             self.phase = .selectingServer(servers)
                         }

@@ -1,3 +1,4 @@
+import CoreModels
 import CoreUI
 import FeatureLiveTVCore
 import SwiftUI
@@ -109,15 +110,16 @@ struct LiveTVSetupWelcome: View {
 private struct LiveTVEnrollmentStatusRow: View {
     let status: LiveTVServerEnrollmentStatus
     @Environment(\.themePalette) private var palette
+    @Environment(ProfilesModel.self) private var profiles: ProfilesModel?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             #if os(iOS)
-            Label(status.choice.name, systemImage: "server.rack")
+            Label(profiles?.activeProfile.sourceNames?[status.choice.id] ?? status.choice.name, systemImage: "server.rack")
                 .font(.subheadline)
                 .foregroundStyle(palette.secondaryText)
             #else
-            Text(status.choice.name).font(.headline)
+            Text(verbatim: profiles?.activeProfile.sourceNames?[status.choice.id] ?? status.choice.name).font(.headline)
             #endif
             if status.phase == .loading {
                 ProgressView("Checking Live TV access...")

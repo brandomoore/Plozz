@@ -205,9 +205,9 @@ struct PrototypeBrowseSourceMenu: View {
     }
 
     private var sourceLabel: Text {
-        if let source = configuration.playlists.first(where: { $0.id == displayedSourceID }) {
+        if let source = configuration.playlists.first(where: { $0.id == displayedSourceID && $0.isEnabled }) {
             Text(verbatim: source.name)
-        } else if let source = configuration.servers.first(where: { $0.id == displayedSourceID }) {
+        } else if let source = configuration.servers.first(where: { $0.id == displayedSourceID && $0.isEnabled }) {
             Text(verbatim: source.name)
         } else {
             Text("All")

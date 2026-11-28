@@ -15,6 +15,7 @@ final class ContentProvider: TVTopShelfContentProvider {
 
     private static func makeContent() -> TVTopShelfContent? {
         guard let snapshot = TopShelfStore.load() else { return nil }
-        return TopShelfContentBuilder.makeContent(from: snapshot)
+        let content = TopShelfContentBuilder.makeContent(from: snapshot)
+        return TopShelfStore.isAuthorized(snapshot) ? content : nil
     }
 }

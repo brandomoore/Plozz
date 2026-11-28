@@ -23,7 +23,7 @@ public enum ProfileSettingsCategory: String, CaseIterable, Identifiable, Sendabl
         case .playback: "Playback"
         case .subtitles: "Subtitles"
         case .liveTV: "Live TV"
-        case .libraries: SettingsCopy.libraries
+        case .libraries: SettingsCopy.sources
         #if os(iOS)
         case .downloads: "Downloads"
         #endif
@@ -40,7 +40,7 @@ public enum ProfileSettingsCategory: String, CaseIterable, Identifiable, Sendabl
         case .playback: "play.rectangle"
         case .subtitles: "captions.bubble"
         case .liveTV: "antenna.radiowaves.left.and.right"
-        case .libraries: "rectangle.stack"
+        case .libraries: "externaldrive.connected.to.line.below"
         #if os(iOS)
         case .downloads: "arrow.down.circle"
         #endif

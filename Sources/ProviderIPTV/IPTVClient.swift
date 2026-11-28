@@ -21,7 +21,8 @@ actor IPTVClient: ApplicationStorageParticipant {
     private let storageLifecycle: ApplicationStorageLifecycle
     private var guideDiscoveryResult: Result<Void, Error>?
     private var authenticatedAt: Date?
-    private var liveExtension = "ts"
+    private var liveFormats: Set<String> = []
+    private let liveFormatPreference: XtreamLiveFormatPreference?
     private var cachedGuide: (url: URL, data: Data, expires: Date)?
     private var guideCacheExpiry: Task<Void, Never>?
     private var guideCacheGeneration = UUID()
@@ -79,9 +80,11 @@ actor IPTVClient: ApplicationStorageParticipant {
     init(
         credential: IPTVCredential, directory: URL? = nil, configuration: URLSessionConfiguration? = nil,
         storageLifecycle: ApplicationStorageLifecycle = .shared,
+        liveFormatPreference: XtreamLiveFormatPreference? = nil,
         progress: @escaping @Sendable (IPTVImportProgress) -> Void = { _ in }
     ) throws {
         self.credential = credential
+        self.liveFormatPreference = liveFormatPreference
         self.storageLifecycle = storageLifecycle
         artworkSecrets = IPTVRedirectPolicy.protectedValues(url: credential.address, headers: credential.headers)
             + [credential.password].filter { !$0.isEmpty }
@@ -153,7 +156,7 @@ actor IPTVClient: ApplicationStorageParticipant {
             throw IPTVError.expired
         }
         let formats = user.array("allowed_output_formats").compactMap(\.text)
-        liveExtension = formats.contains("m3u8") ? "m3u8" : "ts"
+        liveFormats = Set(formats.map { $0.lowercased() })
         authenticatedAt = Date()
     }
 
@@ -925,7 +928,9 @@ actor IPTVClient: ApplicationStorageParticipant {
         else if let nativeID = record.streamID {
             if authenticatedAt.map({ Date().timeIntervalSince($0) > 300 }) != false { try await authenticate() }
             let group = record.isLive ? "live" : record.item.kind == .episode ? "series" : "movie"
-            let fileExtension = record.isLive ? liveExtension : record.container ?? "mp4"
+            let fileExtension = record.isLive
+                ? try (liveFormatPreference?.load() ?? .hls).fileExtension(allowed: liveFormats)
+                : record.container ?? "mp4"
             let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
             let parts = [group, credential.username, credential.password, nativeID + "." + fileExtension]
             let encoded = parts.compactMap { $0.addingPercentEncoding(withAllowedCharacters: allowed) }

@@ -145,6 +145,19 @@ final class LiveTVSourceApprovalTests: XCTestCase {
         XCTAssertEqual(try approvals.status(source: source, context: context), .needsApproval)
     }
 
+    func testRemovingOneAccountKeepsTheOtherFourEnrollmentsAndIndependentPlaylist() throws {
+        let servers = (1...5).map { LiveTVServerSource(name: "Feed \($0)", accountID: "saved-\($0)") }
+        let playlist = makeSource()
+        let store = LiveTVApprovalAwareSourcesStore(
+            underlying: ApprovalTestSources(.init(playlists: [playlist], servers: servers)),
+            approvals: LiveTVSourceApprovalStore(defaults: makeDefaults(), profileID: "viewer")
+        )
+        try store.removeServer(accountID: "saved-3")
+        let saved = try store.load()
+        XCTAssertEqual(saved.servers, servers.filter { $0.accountID != "saved-3" })
+        XCTAssertEqual(saved.playlists, [playlist])
+    }
+
     private func makeProfile() -> Profile {
         Profile(id: "child", name: "Child", isKidsProfile: true)
     }

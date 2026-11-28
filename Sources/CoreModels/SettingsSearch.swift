@@ -127,7 +127,7 @@ public enum SettingsSearchPage: String, CaseIterable, Sendable {
         case .liveTVVisibility: ["Live TV", "Channel visibility"]
         case .profileAppearance: ["Profiles", "Appearance"]
         case .profileSettings: ["Profiles", "Manage profile"]
-        case .accountLibraries: ["Libraries"]
+        case .accountLibraries: ["Sources"]
         case .seerr, .publicMetaDB, .trakt, .simkl, .wetrakr, .anilist, .myanimelist, .lastfm: []
         case .detail: ["Screens & Navigation", "Movie & show details"]
         case .liveTV: ["Live TV"]

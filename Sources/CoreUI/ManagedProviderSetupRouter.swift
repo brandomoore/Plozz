@@ -25,4 +25,7 @@ public final class ManagedProviderSetupRouter {
 
 extension EnvironmentValues {
     @Entry public var managedProviderSetupRouter: ManagedProviderSetupRouter?
+    @Entry public var profileSourceDestination: (@MainActor (String, @escaping @MainActor () -> Bool) -> AnyView)?
+    @Entry public var profileSourcePlaylists: (@MainActor () -> AnyView)?
+    @Entry public var profileSourceGuideStore: (@MainActor (String) -> LiveTVApprovalAwareSourcesStore?)?
 }

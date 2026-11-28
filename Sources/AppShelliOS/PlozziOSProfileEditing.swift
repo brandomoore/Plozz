@@ -112,8 +112,7 @@ struct PlozziOSSettingsAvatarButton: View {
 /// delete. All persistence flows through the single draft-based
 /// `PlozziOSAppModel.saveProfile(_:)` / `removeProfile(_:)` path — the same
 /// model and fields tvOS uses — so there's one source of truth for profile
-/// policy. Photo candidates come from the household accounts and each Plex
-/// account's Home users, exactly like tvOS.
+/// policy. Only the active viewer's editor can borrow its connected account photos.
 struct PlozziOSProfileEditorHost: View {
     let appModel: PlozziOSAppModel
     let editingProfile: Profile?
@@ -143,7 +142,8 @@ struct PlozziOSProfileEditorHost: View {
         ProfileEditorView(
             editingProfile: editingProfile,
             canDelete: canDelete,
-            photoSourceAccounts: appModel.accountsProviders.accounts,
+            photoSourceAccounts: editingProfile?.id == appModel.profiles.activeProfileID
+                ? appModel.accountsProviders.navigationAccounts : [],
             existingColorIndices: appModel.profiles.profiles.map(\.colorIndex),
             existingEmojiAvatars: appModel.profiles.profiles.compactMap(\.avatarEmoji),
             plexHomeUsersFetcher: { accountID in

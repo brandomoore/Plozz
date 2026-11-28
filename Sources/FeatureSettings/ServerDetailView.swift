@@ -377,7 +377,7 @@ struct ServerDetailView: View {
 
 /// Isolates high-frequency scan progress observation from the server detail's
 /// confirmation state and focus tree.
-private struct ShareLibraryStatusPanel: View {
+struct ShareLibraryStatusPanel: View {
     let account: Account?
     let onRescanShare: (String) -> Void
 
@@ -390,7 +390,7 @@ private struct ShareLibraryStatusPanel: View {
 
     var body: some View {
         SettingsPanel(
-            footer: "Your share's library is built on this Apple TV by scanning it while the app is open. New files appear after the next scan."
+            footer: "New files appear after the next scan."
         ) {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Library")

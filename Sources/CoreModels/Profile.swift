@@ -30,10 +30,19 @@ public struct Profile: Codable, Hashable, Identifiable, Sendable {
     /// Local recovery marker when a cloud deletion arrives before its replacement
     /// profile. Retained across restart, but excluded from ProfileSyncDTO.
     var pendingSyncedDeletion: Bool? = nil
+    /// Local fence for a profile received while legacy source conversion is
+    /// blocked. Its missing membership was never a local household grant.
+    var excludesLegacySourceInheritance: Bool? = nil
     /// Optional `Account.id` this profile is *backed by* (e.g. a signed-in Plex
     /// or Jellyfin account). Seeds the name/avatar and narrows the active set;
     /// `nil` for a plain app-owned profile.
     public var linkedAccountID: String?
+    /// Personal labels for connected sources. Never an authorization or a navigation shortcut.
+    public var sourceNames: [String: String]?
+
+    public func sourceDisplayName(for account: Account, enrolledName: String? = nil) -> String {
+        sourceNames?[account.id] ?? enrolledName ?? account.server.name
+    }
     /// When this profile maps to a **Plex Home** user ("Who's watching?"), the
     /// Home user's `uuid`. Activating the profile switches the Plex identity for
     /// `plexHomeUserAccountID` to this user. `nil` = not mapped to a Plex user.

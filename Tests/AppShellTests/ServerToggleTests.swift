@@ -118,7 +118,7 @@ final class ServerToggleTests: XCTestCase {
             try accountStore.add(account, token: "")
 
             let profiles = ProfilesModel(store: ProfileStore(defaults: makeDefaults()))
-            let secondProfile = profiles.add(name: "Second")
+            let secondProfile = profiles.add(name: "Second", activeAccountIDs: [account.id])
             let recorder = ContextRecorder()
             let registry = ProviderRegistry()
             registry.register(.mediaShare) { context in
@@ -491,6 +491,7 @@ final class ServerToggleTests: XCTestCase {
             playSessionID: "play-session"
         )
 
+        state.accountsProviders.reloadAccounts()
         let firstURL = try await state.authenticatedHTTPResolver.resolve(locator)
         XCTAssertEqual(firstURL.host, "old.example.com")
         XCTAssertEqual(
@@ -511,6 +512,14 @@ final class ServerToggleTests: XCTestCase {
         let movedURL = try await state.authenticatedHTTPResolver.resolve(locator)
         XCTAssertEqual(movedURL.host, "new.example.com")
 
+        state.profileFlow.setAccount(initial.id, includedInActiveProfile: false)
+        do {
+            _ = try await state.authenticatedHTTPResolver.resolve(locator)
+            XCTFail("An excluded source resolved a playback URL")
+        } catch let error as MediaTransportError {
+            XCTAssertEqual(error, .authentication(reason: "inactive authenticated HTTP identity"))
+        }
+        state.profileFlow.setAccount(initial.id, includedInActiveProfile: true)
         try store.add(account(id: "a", host: "new.example.com"), token: "token-b")
         do {
             _ = try await state.authenticatedHTTPResolver.resolve(locator)

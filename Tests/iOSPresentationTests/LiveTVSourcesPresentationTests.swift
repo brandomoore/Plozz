@@ -589,7 +589,11 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
         window.frame = CGRect(x: 0, y: 0, width: 390, height: 1024)
         window.rootViewController = UIHostingController(rootView:
             NavigationStack {
-                LiveTVServerSourceDetails(model: model, imports: imports, sourceID: source.id, removeSource: { _ in false })
+                LiveTVSettingsPage(title: "Source details", sourceName: source.name) {
+                    LiveTVProfileAccountControls(
+                        model: model, source: source, imports: imports, catalog: nil, retry: nil, canManage: { true }
+                    )
+                }
             }
             .guidePreparationOverlay(model: preparation, presenter: presenter, palette: .light)
             .environment(preparation)
@@ -628,9 +632,12 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
         XCTAssertFalse(loading.contains("Ready to load"), loading)
         await provider.resume()
         await preparation.waitForCompletion(accountID: source.accountID)
+        let result = try XCTUnwrap(preparation.statuses[source.accountID])
+        preparation.dismissNotification(accountID: source.accountID, requestID: result.requestID)
         let completed = try await visibleText()
         XCTAssertTrue(completed.contains("Guide ready"), completed)
-        XCTAssertTrue(completed.contains("current listings"), completed)
+        XCTAssertEqual(completed.components(separatedBy: "1 channel").count - 1, 1, completed)
+        XCTAssertFalse(completed.contains("current listings"), completed)
     }
 
     func testSourceOverflowUsesMeasuredRowsAndDirectionalSharedFade() async throws {

@@ -1,8 +1,25 @@
 import CoreModels
+import Observation
 @testable import TopShelfKit
 import XCTest
 
 final class TopShelfPublisherTests: XCTestCase {
+    @MainActor @Observable
+    fileprivate final class Inputs {
+        var viewer: TopShelfPublication.Viewer? = .init(homeScope: "alice", accountIDs: ["plex"])
+        var settings = TopShelfSettings.default
+        var saved: TopShelfSnapshot?
+
+        func publication() -> TopShelfPublication {
+            let result = TopShelfPublication(
+                viewer: { self.viewer }, settings: { self.settings },
+                save: { self.saved = $0 }, revoke: { self.saved = nil }
+            )
+            result.start()
+            return result
+        }
+    }
+
     func testDisabledSnapshotIsEmptyWithoutResolvingArtwork() async throws {
         let snapshot = await TopShelfPublisher.makeSnapshot(
             continueWatching: items("resume", count: 30), latest: items("latest", count: 30),
@@ -16,46 +33,58 @@ final class TopShelfPublisherTests: XCTestCase {
     }
 
     @MainActor
-    func testDisablingClearsWithoutHomeAndRejectsSuspendedPublicationAfterReenable() async throws {
-        var saved: [TopShelfSnapshot] = []
-        let publication = TopShelfPublication { saved.append($0) }
-        publication.settingsDidChange(.init(isEnabled: false))
-        XCTAssertEqual(saved.count, 1)
-        XCTAssertTrue(try XCTUnwrap(saved.last).sections.isEmpty)
-        publication.settingsDidChange(.default)
-
-        let started = expectation(description: "Old artwork suspended")
-        var resume: CheckedContinuation<TopShelfSnapshot?, Never>?
-        let old = Task {
-            await publication.publish {
-                await withCheckedContinuation {
-                    resume = $0
-                    started.fulfill()
+    func testDisableOrPickerRevokesImmediatelyAndRejectsSuspendedAndLateHomeWork() async throws {
+        for disable in [false, true] {
+            let input = Inputs()
+            let publication = input.publication()
+            await publication.publish(for: "alice") { _, _ in TopShelfSnapshot(sections: []) }
+            let previous = try XCTUnwrap(input.saved?.authorizationID)
+            let started = expectation(description: "Old artwork suspended")
+            var resume: CheckedContinuation<TopShelfSnapshot?, Never>?
+            let old = Task {
+                await publication.publish(for: "alice") { _, _ in
+                    await withCheckedContinuation {
+                        resume = $0
+                        started.fulfill()
+                    }
                 }
             }
+            await fulfillment(of: [started], timeout: 5)
+            if disable { input.settings.isEnabled = false } else { input.viewer = nil }
+            XCTAssertNil(input.saved, "Revocation must not wait for a view update or Home load")
+            XCTAssertNil(publication.authorizationID)
+            await publication.publish(for: "alice") { _, _ in XCTFail("Gate must precede artwork"); return nil }
+            let nextViewer = disable ? "alice" : "bob"
+            if disable {
+                input.settings.isEnabled = true
+            } else {
+                input.viewer = .init(homeScope: nextViewer, accountIDs: ["plex"])
+            }
+            let ready = expectation(description: "New viewer authorized")
+            withObservationTracking { _ = publication.authorizationID } onChange: { ready.fulfill() }
+            await fulfillment(of: [ready], timeout: 5)
+            resume?.resume(returning: TopShelfSnapshot(sections: [.init(id: "old", title: "Old", items: [])]))
+            await old.value
+            XCTAssertNil(input.saved, "Old work must fail even before a new publication supersedes it")
+            if !disable {
+                await publication.publish(for: "alice") { _, _ in XCTFail("Retired Home cannot publish"); return nil }
+            }
+            await publication.publish(for: nextViewer) { _, _ in
+                TopShelfSnapshot(sections: [.init(id: "new", title: "New", items: [])])
+            }
+            XCTAssertEqual(input.saved?.sections.map(\.id), ["new"])
+            XCTAssertNotEqual(input.saved?.authorizationID, previous)
         }
-        await fulfillment(of: [started], timeout: 5)
-        publication.settingsDidChange(.init(isEnabled: false))
-        XCTAssertEqual(saved.count, 2)
-        XCTAssertTrue(try XCTUnwrap(saved.last).sections.isEmpty)
-        publication.settingsDidChange(.default)
-        await publication.publish {
-            TopShelfSnapshot(sections: [.init(id: "new", title: "New", items: [])])
-        }
-        resume?.resume(returning: TopShelfSnapshot(sections: [.init(id: "old", title: "Old", items: [])]))
-        await old.value
-        XCTAssertEqual(saved.count, 3)
-        XCTAssertEqual(saved.last?.sections.map(\.id), ["new"])
     }
 
     @MainActor
     func testNewerPublicationWinsAndCancelledPublicationCannotSave() async {
-        var saved: [TopShelfSnapshot] = []
-        let publication = TopShelfPublication { saved.append($0) }
+        let input = Inputs()
+        let publication = input.publication()
         let started = expectation(description: "Old artwork suspended")
         var resume: CheckedContinuation<TopShelfSnapshot?, Never>?
         let old = Task {
-            await publication.publish {
+            await publication.publish(for: "alice") { _, _ in
                 await withCheckedContinuation {
                     resume = $0
                     started.fulfill()
@@ -63,20 +92,33 @@ final class TopShelfPublisherTests: XCTestCase {
             }
         }
         await fulfillment(of: [started], timeout: 5)
-        await publication.publish {
+        await publication.publish(for: "alice") { _, _ in
             TopShelfSnapshot(sections: [.init(id: "new", title: "New", items: [])])
         }
         resume?.resume(returning: TopShelfSnapshot(sections: [.init(id: "old", title: "Old", items: [])]))
         await old.value
         let cancelled = Task {
-            await publication.publish {
+            await publication.publish(for: "alice") { _, _ in
                 withUnsafeCurrentTask { $0?.cancel() }
                 return TopShelfSnapshot(sections: [])
             }
         }
         await cancelled.value
-        XCTAssertEqual(saved.count, 1)
-        XCTAssertEqual(saved.last?.sections.map(\.id), ["new"])
+        XCTAssertEqual(input.saved?.sections.map(\.id), ["new"])
+    }
+
+    @MainActor
+    func testOnlyResolvedAccountItemsReachSnapshotAndResolvers() async {
+        let input = Inputs()
+        let publication = input.publication()
+        let items: [MediaItem] = ["other", nil, "plex"].map {
+            .init(id: "1", title: $0 ?? "unknown", kind: .movie, sourceAccountID: $0)
+        }
+        await TopShelfPublisher.publish(
+            for: "alice", publication: publication, continueWatching: [], latest: items,
+            resolveArtwork: { item in XCTAssertEqual(item.sourceAccountID, "plex"); return nil }
+        )
+        XCTAssertEqual(input.saved?.sections.first?.items.map(\.title), ["plex"])
     }
 
     func testDefaultSnapshotHasFourItemsInEachSection() async throws {

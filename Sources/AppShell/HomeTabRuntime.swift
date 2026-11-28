@@ -2,6 +2,7 @@
 import CoreUI
 import CoreModels
 import FeatureHomeCore
+import TopShelfKit
 
 /// The Home tab's session-scoped handles: things owned **above** the tab so
 /// that SwiftUI churn inside the tab tree cannot destroy them.
@@ -23,6 +24,7 @@ struct HomeTabRuntime {
     let homeViewModel: LazyViewState<HomeViewModel>
     /// Identity of the account/profile scope the view model belongs to.
     let scopeKey: String
+    let topShelf: TopShelfPublication
     /// Home's Continue Watching row as shown, for the player (#388).
     @MainActor var continueWatchingRow: [MediaItem] {
         homeViewModel.existingValue(forKey: scopeKey)?.state.value?.continueWatching ?? []

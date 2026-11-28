@@ -95,8 +95,7 @@ final class MobileServerOnboardingInteractionTests: XCTestCase {
         for page in ["home-empty", "home-new", "sources", "libraries", "libraries-empty"] {
             let app = launch(page)
             defer { app.terminate() }
-            let identifier = page == "sources" ? "sources-add-source"
-                : page.hasPrefix("libraries") ? "libraries-add-source" : "home-add-source"
+            let identifier = page.hasPrefix("home-") ? "home-add-source" : "sources-add-source"
             let add = app.buttons[identifier]
             XCTAssertTrue(add.waitForExistence(timeout: 8), page)
             if !add.isHittable { app.swipeUp() }
@@ -432,18 +431,16 @@ final class MobileServerOnboardingInteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["654321"].waitForExistence(timeout: 8))
     }
 
-    func testPlexPreselectsOwnedServersAndAddsOnlySelection() throws {
+    func testPlexStartsWithNoServersSelectedAndAddsOnlyExplicitChoices() throws {
         let app = launch("plex-servers")
         defer { app.terminate() }
         let home = app.buttons["plex-server-home"]
         let studio = app.buttons["plex-server-studio"]
         let shared = app.buttons["plex-server-shared"]
         XCTAssertTrue(home.waitForExistence(timeout: 8))
-        XCTAssertTrue(home.isSelected)
-        XCTAssertTrue(studio.isSelected)
+        XCTAssertFalse(home.isSelected)
+        XCTAssertFalse(studio.isSelected)
         XCTAssertFalse(shared.isSelected)
-        home.tap()
-        studio.tap()
         XCTAssertFalse(app.buttons["plex-servers-continue"].isEnabled)
         home.tap()
         shared.tap()
@@ -453,10 +450,31 @@ final class MobileServerOnboardingInteractionTests: XCTestCase {
         XCTAssertEqual(app.staticTexts["onboarding-completed"].label, "Added: home, shared")
     }
 
+    func testSingleOwnedPlexServerStillNeedsSelectionAndContinue() {
+        let app = launch("plex-servers", arguments: ["--one-plex-server"])
+        defer { app.terminate() }
+        let home = app.buttons["plex-server-home"]
+        let next = app.buttons["plex-servers-continue"]
+        let result = app.staticTexts["onboarding-completed"]
+        XCTAssertTrue(home.waitForExistence(timeout: 8))
+        XCTAssertFalse(home.isSelected)
+        XCTAssertFalse(next.isEnabled)
+        XCTAssertFalse(result.exists)
+        home.tap()
+        XCTAssertTrue(home.isSelected)
+        XCTAssertTrue(next.isEnabled)
+        XCTAssertFalse(result.exists)
+        next.tap()
+        XCTAssertTrue(result.waitForExistence(timeout: 8))
+        XCTAssertEqual(result.label, "Added: home")
+    }
+
     func testPlexCancelConfirmationPreservesSelectionWhenKept() throws {
         let app = launch("plex-servers")
         defer { app.terminate() }
-        XCTAssertTrue(app.buttons["plex-server-home"].waitForExistence(timeout: 8))
+        let studio = app.buttons["plex-server-studio"]
+        XCTAssertTrue(studio.waitForExistence(timeout: 8))
+        studio.tap()
         app.buttons["Cancel"].tap()
         XCTAssertTrue(app.buttons["Start Over"].waitForExistence(timeout: 5))
         attach(app, name: "Onboarding-plex-cancel-confirmation")
@@ -467,8 +485,9 @@ final class MobileServerOnboardingInteractionTests: XCTestCase {
         } else {
             app.coordinate(withNormalizedOffset: .init(dx: 0.9, dy: 0.9)).tap()
         }
-        XCTAssertTrue(app.buttons["plex-server-home"].isSelected)
-        XCTAssertTrue(app.buttons["plex-server-studio"].isSelected)
+        XCTAssertFalse(app.buttons["plex-server-home"].isSelected)
+        XCTAssertTrue(studio.isSelected)
+        XCTAssertFalse(app.buttons["plex-server-shared"].isSelected)
     }
 
     private func renderedOutline(of button: XCUIElement, in app: XCUIApplication,

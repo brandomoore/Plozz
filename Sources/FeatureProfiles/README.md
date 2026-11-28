@@ -78,8 +78,12 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
 - **Account selections survive removals.** An explicit profile selection only
   admits its locally present accounts. Deleting its last selected account,
   locally or everywhere, leaves no active sources instead of enabling excluded
-  household accounts. Saved IDs remain available for sync and reconnection;
-  only a profile that has never chosen a subset inherits the household defaults.
+  household accounts. Saved IDs remain available for sync and reconnection.
+  New profiles start empty. On upgrade, a legacy profile without a selection
+  keeps the accounts it previously used; it does not gain later additions.
+  For a single existing profile only, an exact saved Live TV source reference
+  can offer explicit restoration of a formerly active playlist. Other profiles,
+  playlists sharing an address, and unreferenced accounts are never candidates.
 - **tvOS profile selection on return.** Automatically Sign In is the only
   device-wide access preference. When it is on, warm returns keep the current
   profile authorized. When it is off, `CoreModels.ProfileReturnPolicy` derives
@@ -124,13 +128,20 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
   after that handoff, without a timer or relaunch. Cancellation creates nothing;
   existing-profile edits remain immediate. New profiles retain their persistent
   setup gate until the user completes source and identity selection.
-- **Plex Home onboarding is opt-in.** After linking Plex, the shared page offers
-  Add all profiles or Just me. Add all commits the missing profiles first, confirms
-  Profiles added (or Profiles ready when already present), then offers Choose your
-  profile using those same Home identities. Just me offers Choose your Plex user
-  and binds only the current profile. Confirmation advances without another Continue
-  button; only the uncommitted Just me choice offers Back. Transitions use a short
-  lift/fade; Reduce Motion uses only a fade.
+- **Plex Home connections are per profile.** A new server asks “Who should use
+  [server]?” and groups named Plex avatars into people already on this device and
+  new profiles from Plex. Connect both profiles (or Connect all N profiles)
+  links those specific servers, then offers the ordinary profile picker.
+  Choose one profile opens the Plex user picker and connects only that person:
+  reuse their matched Plozz profile or create just theirs. Neither option
+  reassigns the initiating profile to someone else. A first-run placeholder
+  can become the selected viewer; choosing everyone seeds it with the Home
+  admin when present.
+  A same-server reconnect restores the previous bindings and source choices,
+  even when the initiating profile was not one of them. A batch that includes
+  another, new server asks only about the new server. Unavailable membership
+  storage, a failed Home-user lookup, a changed initiating profile, and a
+  stale server credential do not authorize an owner sign-in.
   Import preserves existing profiles and their customization. New profiles have
   non-authorizing Plex Home import provenance (owner and Home-user identity).
   It syncs with the profile so an explicit import on another device can reuse
@@ -138,9 +149,9 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
   device-local bindings take precedence; changing the mapped Home user clears
   the provenance. Older profiles without provenance and existing duplicate
   profiles are not automatically merged.
-  New profiles have
-  explicit membership in that login's selected
-  Plex servers, their own Home-user bindings/photos, and the normal setup gate.
+  New profiles have explicit membership in that login's selected Plex servers,
+  their own Home-user bindings/photos, and the normal setup gate. Existing
+  profiles keep their names, locks, settings and unrelated sources.
   Import is metadata-only: no other user's PIN or session is requested, and
   each user's current Plex protection is checked when they enter their profile.
   Choosing an imported profile uses the normal parental/local-lock gates before

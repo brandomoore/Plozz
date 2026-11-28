@@ -100,6 +100,30 @@ public final class AppState {
     public var canEnterApp: Bool { admissionContext.canEnterApp }
     var isLiveTVProfileAuthorized: Bool { isActiveProfileAuthorized }
 
+    @ObservationIgnored lazy var topShelfPublication = TopShelfPublication { [weak self] in
+        self?.topShelfViewer
+    }
+
+    var topShelfViewer: TopShelfPublication.Viewer? {
+        guard isActiveProfileAuthorized, accountsProviders.hasResolvedAccounts,
+              plexHomeUsers.plexReauthentication == nil, plexHomeUsers.pendingPlexUserSelection == nil
+        else { return nil }
+        let profileID = profilesModel.activeProfileID
+        let selected = accountsProviders.activeAccountIDs
+        guard !selected.isEmpty, selected == Set(accountsProviders.activeAccountIDs(forProfile: profileID))
+        else { return nil }
+        // Observe the signal even when the effective Plex tokens (not observable)
+        // are still pending, so their eventual resolution reopens publication.
+        let generation = plexHomeUsers.plexIdentityGeneration
+        let resolved = accountsProviders.resolvedActiveAccounts.map(\.account)
+        // Home can temporarily render a partial account set while a credential is
+        // unavailable. Do not export cached titles or fall back to a household account.
+        guard Set(resolved.map(\.id)) == selected else { return nil }
+        return .init(homeScope: HomeRuntimeScope.homeScopeKey(
+            profileID: profileID, accounts: resolved, plexIdentityGeneration: generation
+        ), accountIDs: selected)
+    }
+
     func lockBrowsingForForegroundIfNeeded() {
         if !profileFlow.isForegroundLocked {
             guard case .ready = rootPresentationState else { return }
@@ -921,7 +945,10 @@ public final class AppState {
     @ObservationIgnored
     lazy var providerCredentialSync = ProviderCredentialSync(
         accounts: accountsProviders.accountStore,
-        canRestore: { [weak self] in self?.profileFlow.managementRequiresParentalPIN == false },
+        canRestore: { [weak self] in
+            guard let self, !profileFlow.managementRequiresParentalPIN else { return false }
+            return (try? accountsProviders.prepareSourceRegistration()) != nil
+        },
         didRestore: { [weak self] in
             guard let self else { return }
             accountsProviders.reloadAccounts()
@@ -1033,7 +1060,11 @@ public final class AppState {
                                          connectionURLs: desc.candidateBaseURLs.isEmpty ? nil : desc.candidateBaseURLs)
                 let account = Account(id: desc.id, server: server, userID: desc.userID, userName: desc.userName,
                                       avatarURL: desc.avatarURL, deviceID: secret.deviceID)
-                do { try store.add(account, token: secret.token); added += 1 }
+                do {
+                    try accountsProviders.prepareSourceRegistration()
+                    try store.add(account, token: secret.token)
+                    added += 1
+                }
                 catch {
                     failedAccountIDs.append(desc.id)
                     PlozzLog.auth.error("Sync setup: failed to add transferred account \(desc.id): \(error.localizedDescription)")
@@ -1060,7 +1091,11 @@ public final class AppState {
                                          mediaShareLibraryConfiguration: desc.mediaShareLibraryConfiguration)
                 let account = Account(id: desc.id, server: server, userID: desc.userID, userName: desc.userName,
                                       avatarURL: desc.avatarURL, deviceID: store.deviceID())
-                do { try store.addMediaShare(account, credential: envelope, generatedPrivateKey: nil); added += 1 }
+                do {
+                    try accountsProviders.prepareSourceRegistration()
+                    try store.addMediaShare(account, credential: envelope, generatedPrivateKey: nil)
+                    added += 1
+                }
                 catch {
                     failedAccountIDs.append(desc.id)
                     PlozzLog.auth.error("Sync setup: failed to add transferred share \(desc.id): \(error.localizedDescription)")
@@ -1088,20 +1123,12 @@ public final class AppState {
             guard profilesModel.profiles.contains(where: { $0.id == pid }) else { continue }
             if pid == ProfileStore.defaultProfileID, receiverWasConfigured { continue }
             let usable = ids.filter { receivedAccountIDs.contains($0) }
-            // Storing an EMPTY set would read as "this profile chose to watch
-            // nothing" and blank its Home. An empty result here just means the
-            // sender's servers didn't all come across, which is not a choice the
-            // user made — clear the membership instead, which means "watches
-            // whatever the household has".
-            if usable.isEmpty, !ids.isEmpty {
-                profilesModel.clearActiveAccountIDs(for: pid)
-            } else {
-                profilesModel.setActiveAccountIDs(usable, for: pid)
-            }
+            profilesModel.setActiveAccountIDs(usable, for: pid)
         }
 
         // 4. Complete first-run and enter the app.
         profilesModel.markFirstRunProfileSetupComplete()
+        accountsProviders.refreshActiveAccountSelection()
         rebuildSettingsModels()
         apply(.accountsChanged(accountsProviders.accounts))
         // Pairing is an explicit consent to share this household, so turn on
@@ -1438,45 +1465,7 @@ public final class AppState {
         }
 
         accountsProviders.configureAuthenticatedArtwork()
-        defaultAuthenticatedHTTPResolver?.configure { [weak self] locator in
-            guard let self,
-                  let account = self.accountsProviders.accountStore.loadAccounts().first(where: {
-                      $0.id == locator.accountID
-                  }),
-                  account.server.provider == locator.provider,
-                  self.plexHomeUsers.effectiveCredentialRevision(for: account)
-                    == locator.credentialRevision,
-                  let token = self.plexHomeUsers.resolvedToken(for: account.id),
-                  !token.isEmpty else {
-                throw MediaTransportError.authentication(
-                    reason: "inactive authenticated HTTP identity"
-                )
-            }
-            let baseURL: URL
-            if account.server.provider == .plex {
-                let provider = try self.accountsProviders.registry.provider(
-                    for: self.accountsProviders.providerResolutionContext(for: account, token: token)
-                )
-                guard let originProvider = provider as? AuthenticatedHTTPOriginProviding else {
-                    throw MediaTransportError.unsupportedCapability(
-                        "dynamic authenticated HTTP origin"
-                    )
-                }
-                baseURL = originProvider.authenticatedHTTPOrigin
-            } else {
-                baseURL = account.server.baseURL
-            }
-            return ManagedAuthenticatedHTTPResolver.Context(
-                provider: account.server.provider,
-                accountID: account.id,
-                credentialRevision: self.plexHomeUsers.effectiveCredentialRevision(for: account),
-                baseURL: baseURL,
-                token: token,
-                resourceResolver: self.accountsProviders.provider(forAccountID: account.id) as? any ProviderHTTPResourceResolving,
-                originProvider: self.accountsProviders.provider(forAccountID: account.id) as? any AuthenticatedHTTPOriginProviding,
-                connectionScopeKey: account.connectionScopeKey
-            )
-        }
+        if let defaultAuthenticatedHTTPResolver { accountsProviders.configureAuthenticatedHTTP(defaultAuthenticatedHTTPResolver) }
 
         // Wire the accounts hub's Plex-override token/credential seams and its
         // media-share preferred-keys hook now that `self` is fully initialized.
@@ -1822,30 +1811,32 @@ public final class AppState {
         )
     }
 
-    /// Servers this device already has accounts on, grouped for the picker's
-    /// one-tap "add another user" targets. Order follows the accounts list
-    /// (first-added first); users are listed per server in that same order.
-    public var signedInServers: [SignedInServer] {
-        var order: [String] = []
-        var byKey: [String: (server: MediaServer, users: [String])] = [:]
-        for account in accountsProviders.accounts {
-            let key = account.server.identityKey
-            if byKey[key] == nil {
-                order.append(key)
-                byKey[key] = (account.server, [])
-            }
-            byKey[key]?.users.append(account.userName)
-        }
-        return order.compactMap { key in
-            byKey[key].map { SignedInServer(server: $0.server, userNames: $0.users) }
-        }
+    var verifiedOnboardingServer: MediaServer? {
+        guard case let .onboarding(.authenticating(server, true), _) = state else { return nil }
+        return server
+    }
+
+    func permitsSourceSetup(generation: Int) -> Bool {
+        profilesModel.selectionGeneration == generation && !profileFlow.isChoosingProfile
+            && !profileFlow.isForegroundLocked && !profileFlow.activeProfileAwaitsUnlock
+            && profileFlow.pendingLockedProfile == nil && profileFlow.pendingParentalSwitch == nil
+            && !profileFlow.managementRequiresParentalPIN && plexHomeUsers.pendingPlexPINRequest == nil
     }
 
     public func selectServer(_ server: MediaServer) {
         // Remember which provider's flow we're in so a later cancel returns to
         // this picker instead of the chooser.
         pendingOnboardingProvider = server.provider
-        apply(.serverSelected(server))
+        apply(.serverSelected(server, verifiedForSavedSignIn: true))
+    }
+
+    func useSavedSignIn(_ account: Account, for server: MediaServer) throws {
+        guard verifiedOnboardingServer == server else { throw AppError.unauthorized }
+        try accountsProviders.confirmSavedSignIn(account, for: server)
+        pendingOnboardingProvider = nil
+        pendingLibrarySelectionAccountIDs = [account.id]
+        pendingPlexUserApplyToAccountIDs = []
+        beginLibrarySelection(isFirstRun: false, seedName: "", seedAvatar: nil, applyPlexIdentity: false)
     }
 
     /// Starts the ordinary add-account flow from inside profile setup's
@@ -1876,15 +1867,20 @@ public final class AppState {
     /// otherwise it enters the app directly.
     @discardableResult
     public func didAuthenticate(_ session: UserSession, activateIPTVAccount: Bool = false) -> Bool {
-        let isFirstRun = accountsProviders.accounts.isEmpty && !profilesModel.firstRunProfileSetupComplete
+        let isFirstRun: Bool
         let registration: AccountRegistration
+        let newPlexAccountIDs: [String]
         do {
+            try accountsProviders.beginSourceAuthentication()
+            isFirstRun = try accountsProviders.beginsFirstRun(adding: session.server.provider)
             registration = try accountsProviders.accountStore.registerAuthenticatedSession(session)
-            if registration.previousAccount == nil || activateIPTVAccount {
-                try accountsProviders.includeIPTVAccountInActiveProfile(registration.account)
-                if registration.account.server.provider == .iptv {
-                    profileSettings.navigationStyleModel.showsLiveTV = true
-                }
+            if registration.account.server.provider == .plex,
+               try accountsProviders.needsPlexConnectionDecision(for: registration.account.id) {
+                newPlexAccountIDs = [registration.account.id]
+            } else { newPlexAccountIDs = [] }
+            if registration.account.server.provider != .iptv || registration.previousAccount == nil || activateIPTVAccount {
+                try accountsProviders.connectAuthenticatedSource(registration.account)
+                if registration.account.server.provider == .iptv { profileSettings.navigationStyleModel.showsLiveTV = true }
             }
         } catch {
             PlozzLog.auth.error("Unable to save authenticated account")
@@ -1895,7 +1891,8 @@ public final class AppState {
             session: session,
             account: registration.account,
             previousAccount: registration.previousAccount,
-            isFirstRun: isFirstRun
+            isFirstRun: isFirstRun,
+            newPlexAccountIDs: newPlexAccountIDs
         )
         if registration.account.server.provider == .iptv,
            registration.previousAccount == nil || activateIPTVAccount {
@@ -1912,7 +1909,8 @@ public final class AppState {
         session: UserSession,
         account: Account,
         previousAccount: Account?,
-        isFirstRun: Bool
+        isFirstRun: Bool,
+        newPlexAccountIDs: [String] = []
     ) {
         let completesAdditionalIdentity =
             (account.server.provider.usesMediaBrowserAPI || account.server.provider == .silo)
@@ -1931,7 +1929,7 @@ public final class AppState {
         clearRemovalTombstone(for: account.id)
         providerCredentialSync.didAuthenticateLocally(accountID: account.id)
         accountsProviders.reloadAccounts()
-        selectNewlyAddedUserIfNeeded(account)
+        if completesAdditionalIdentity { pendingAdditionalUser = nil }
         // Flow finished — next add-account starts at the chooser.
         pendingOnboardingProvider = nil
         pendingIPTVPlaylist = nil
@@ -1948,47 +1946,28 @@ public final class AppState {
         }
         pendingLibrarySelectionAccountIDs = [account.id]
         pendingPlexUserApplyToAccountIDs = session.server.provider == .plex ? [account.id] : []
-        finishAuthentication(session: session, accountID: account.id, isFirstRun: isFirstRun)
-    }
-
-    /// Selects the account that was just added from "Watching as", replacing any
-    /// other identity for that same server while preserving every other server.
-    private func selectNewlyAddedUserIfNeeded(_ account: Account) {
-        guard let pendingAdditionalUser,
-              pendingAdditionalUser.serverKey == account.server.identityKey
-        else { return }
-
-        var selected = Set(
-            profilesModel.activeAccountIDs(
-                for: pendingAdditionalUser.profileID,
-                fallback: accountsProviders.accounts.map(\.id)
-            )
-        )
-        for existing in accountsProviders.accounts
-        where existing.server.identityKey == pendingAdditionalUser.serverKey {
-            selected.remove(existing.id)
-        }
-        selected.insert(account.id)
-        profilesModel.setActiveAccountIDs(
-            Array(selected),
-            for: pendingAdditionalUser.profileID
-        )
-        accountsProviders.reloadAccounts()
-        self.pendingAdditionalUser = nil
+        finishAuthentication(session: session, accountID: account.id, isFirstRun: isFirstRun, newPlexAccountIDs: newPlexAccountIDs)
     }
 
     /// Batch sibling of `didAuthenticate` for a multi-server Plex sign-in: adds
     /// one account per selected server, then runs the onboarding continuation a
     /// single time so the library step / profile setup happen once for the whole
     /// batch. The first server drives the identity used downstream.
-    public func didAuthenticatePlexMany(_ sessions: [UserSession]) {
-        guard let first = sessions.first else { return }
+    @discardableResult
+    public func didAuthenticatePlexMany(_ sessions: [UserSession]) -> Bool {
+        guard let first = sessions.first, sessions.allSatisfy({ $0.server.provider == .plex }) else { return false }
 
-        let isFirstRun = accountsProviders.accounts.isEmpty && !profilesModel.firstRunProfileSetupComplete
+        let isFirstRun: Bool
         var addedIDs: [String] = []
+        var newPlexAccountIDs: [String] = []
         do {
+            try accountsProviders.beginSourceAuthentication()
+            isFirstRun = try accountsProviders.beginsFirstRun(adding: .plex)
             for session in sessions {
                 let registration = try accountsProviders.accountStore.registerAuthenticatedSession(session)
+                if try accountsProviders.needsPlexConnectionDecision(for: registration.account.id) {
+                    newPlexAccountIDs.append(registration.account.id)
+                }
                 clearRemovalTombstone(for: registration.account.id)
                 providerCredentialSync.didAuthenticateLocally(accountID: registration.account.id)
                 if let previousAccount = registration.previousAccount,
@@ -2003,24 +1982,25 @@ public final class AppState {
             PlozzLog.auth.error("Unable to save authenticated Plex accounts")
             accountsProviders.reloadAccounts()
             apply(.authenticationFailed(.unknown("")))
-            return
+            return false
         }
         accountsProviders.reloadAccounts()
         pendingOnboardingProvider = nil
         guard !addedIDs.isEmpty else {
             apply(.authenticationFailed(.unknown("")))
-            return
+            return false
         }
         pendingLibrarySelectionAccountIDs = addedIDs
         pendingPlexUserApplyToAccountIDs = addedIDs
-        finishAuthentication(session: first, accountID: addedIDs[0], isFirstRun: isFirstRun)
+        finishAuthentication(session: first, accountID: addedIDs[0], isFirstRun: isFirstRun, newPlexAccountIDs: newPlexAccountIDs)
+        return true
     }
 
-    /// After an account is persisted, decides the next onboarding step. A Plex
-    /// account with 2+ Home users that this profile hasn't bound yet detours
-    /// through the "Which Plex user are you?" picker first; otherwise we proceed
-    /// straight to the "choose your libraries" step.
-    private func finishAuthentication(session: UserSession, accountID: String, isFirstRun: Bool) {
+    /// Only newly staged Plex sources need a scope decision. Reauthentication
+    /// leaves each profile's membership, Home binding, and library choices alone.
+    private func finishAuthentication(
+        session: UserSession, accountID: String, isFirstRun: Bool, newPlexAccountIDs: [String]? = nil
+    ) {
         // A media share exposes exactly one browsable "library" (its root
         // folder), so the "choose your libraries" opt-out step is pure friction —
         // there's nothing to choose between. Skip straight past it (the single
@@ -2036,28 +2016,36 @@ public final class AppState {
             )
             return
         }
-        if session.server.provider == .plex,
-           profilesModel.activeProfile.homeUserBinding(forPlexAccount: accountID) == nil {
+        if session.server.provider == .plex {
+            let targets = newPlexAccountIDs ?? (pendingPlexUserApplyToAccountIDs.isEmpty ? [accountID] : pendingPlexUserApplyToAccountIDs)
+            let request = plexHomeUsers.beginOnboarding(accountIDs: targets)
             Task { [weak self] in
                 guard let self else { return }
-                let users = await self.plexHomeUsers.plexHomeUsers(forAccountID: accountID)
-                if users.count >= 2 {
-                    self.plexHomeUsers.presentUserSelection(PlexHomeUsersModel.PendingPlexUserSelection(
-                        accountID: accountID,
-                        serverName: session.server.name,
-                        users: users,
-                        isFirstRun: isFirstRun,
-                        applyToAccountIDs: self.pendingPlexUserApplyToAccountIDs.isEmpty
-                            ? [accountID] : self.pendingPlexUserApplyToAccountIDs
-                    ))
-                    self.apply(.plexUserSelectionRequired)
-                } else {
-                    self.beginLibrarySelection(
-                        isFirstRun: isFirstRun,
-                        seedName: session.userName,
-                        seedAvatar: session.avatarURL?.absoluteString,
-                        applyPlexIdentity: false
-                    )
+                do {
+                    let route = try await plexHomeUsers.prepareOnboarding(request, isFirstRun: isFirstRun)
+                    guard plexHomeUsers.ownsOnboardingRequest(request) else { return }
+                    switch route {
+                    case .restored:
+                        pendingLibrarySelectionAccountIDs = []
+                        pendingPlexUserApplyToAccountIDs = []
+                        plexHomeUsers.ensurePlexIdentityForActiveProfile()
+                        apply(.accountsChanged(accountsProviders.accounts))
+                    case .choose(let selection):
+                        guard plexHomeUsers.presentPreparedUserSelection(selection) else { return }
+                        pendingLibrarySelectionAccountIDs = selection.applyToAccountIDs
+                        apply(.plexUserSelectionRequired)
+                    case .libraries(let ids):
+                        pendingLibrarySelectionAccountIDs = ids
+                        beginLibrarySelection(
+                            isFirstRun: isFirstRun, seedName: session.userName,
+                            seedAvatar: session.avatarURL?.absoluteString, applyPlexIdentity: false
+                        )
+                    }
+                } catch is CancellationError {
+                    return
+                } catch {
+                    guard plexHomeUsers.ownsOnboardingRequest(request) else { return }
+                    apply(.authenticationFailed(error as? AppError ?? .serverUnreachable))
                 }
             }
         } else {
@@ -2115,23 +2103,17 @@ public final class AppState {
         }
     }
 
-    /// Handles the "Which Plex user are you?" pick. Binds the chosen Home user to
-    /// the active profile, and on first run re-seeds the profile identity from
-    /// that user (so the confirm screen shows *who's watching*, not the account
-    /// owner). Then continues to the profile confirm step (first run) or the
-    /// app, applying the binding so the Plex identity switches.
-    public func selectPlexUserDuringOnboarding(_ user: PlexHomeUser?, addAllProfiles: Bool = false) {
-        guard let pending = plexHomeUsers.pendingPlexUserSelection else { return }
-        if let user {
-            guard plexHomeUsers.selectOnboardingUser(user, addAllProfiles: addAllProfiles) else { return }
-            if addAllProfiles, let profileID = plexHomeUsers.importedOnboardingProfileID(for: user) {
-                profileFlow.switchProfileForPlexOnboarding(to: profileID) { [weak self] in
-                    self?.finishPlexUserOnboarding(user, pending: pending, imported: true)
-                }
-                return
-            }
+    @discardableResult
+    public func selectPlexUserDuringOnboarding(_ user: PlexHomeUser, addAllProfiles: Bool = false) -> Bool {
+        guard let pending = plexHomeUsers.pendingPlexUserSelection,
+              plexHomeUsers.selectOnboardingUser(user, addAllProfiles: addAllProfiles),
+              let profileID = plexHomeUsers.importedOnboardingProfileID(for: user) else { return false }
+        profileFlow.switchProfileForPlexOnboarding(to: profileID) { [weak self] in
+            guard let self, plexHomeUsers.pendingPlexUserSelection?.id == pending.id,
+                  plexHomeUsers.importedOnboardingProfileID(for: user) == profilesModel.activeProfileID else { return }
+            finishPlexUserOnboarding(user, pending: pending)
         }
-        finishPlexUserOnboarding(user, pending: pending, imported: false)
+        return true
     }
 
     public func importPlexHomeProfilesDuringOnboarding() -> PlexHomeProfileImportResult {
@@ -2139,10 +2121,10 @@ public final class AppState {
     }
 
     private func finishPlexUserOnboarding(
-        _ user: PlexHomeUser?, pending: PlexHomeUsersModel.PendingPlexUserSelection, imported: Bool
+        _ user: PlexHomeUser, pending: PlexHomeUsersModel.PendingPlexUserSelection
     ) {
         plexHomeUsers.clearUserSelection()
-        if imported, !pending.isFirstRun, profilesModel.activeProfile.needsSetup {
+        if !pending.isFirstRun, profilesModel.activeProfile.needsSetup {
             pendingLibrarySelectionAccountIDs = []
             pendingPlexUserApplyToAccountIDs = []
             apply(.accountAuthenticated)
@@ -2153,10 +2135,10 @@ public final class AppState {
         // The library step authenticates the selected viewer before discovery.
         beginLibrarySelection(
             isFirstRun: pending.isFirstRun,
-            seedName: user?.name ?? "",
-            seedAvatar: user?.avatarURL?.absoluteString,
+            seedName: user.name,
+            seedAvatar: user.avatarURL?.absoluteString,
             applyPlexIdentity: !pending.isFirstRun,
-            seedIdentity: !imported
+            seedIdentity: false
         )
     }
 
@@ -2308,7 +2290,7 @@ public final class AppState {
             && !profilesModel.firstRunProfileSetupComplete
         apply(.serverSelected(prepared.session.server))
         do {
-            try service.persist(prepared)
+            try accountsProviders.registerMediaShare(prepared, using: service)
         } catch {
             Self.reportMediaSharePersistenceFailure(
                 error,
@@ -2455,7 +2437,7 @@ public final class AppState {
         let isFirstRun = accountsProviders.accounts.isEmpty && !profilesModel.firstRunProfileSetupComplete
         apply(.serverSelected(prepared.session.server))
         do {
-            try service.persist(prepared)
+            try accountsProviders.registerMediaShare(prepared, using: service)
         } catch {
             Self.reportMediaSharePersistenceFailure(error, operation: "webdav-save")
             apply(.authenticationFailed(.unknown("Couldn’t save this WebDAV share")))
@@ -2545,7 +2527,7 @@ public final class AppState {
             && !profilesModel.firstRunProfileSetupComplete
         apply(.serverSelected(prepared.session.server))
         do {
-            try service.persist(prepared)
+            try accountsProviders.registerMediaShare(prepared, using: service)
         } catch {
             Self.reportMediaSharePersistenceFailure(
                 error,
@@ -2599,7 +2581,7 @@ public final class AppState {
             && !profilesModel.firstRunProfileSetupComplete
         apply(.serverSelected(prepared.session.server))
         do {
-            try service.persist(prepared)
+            try accountsProviders.registerMediaShare(prepared, using: service)
         } catch {
             Self.reportMediaSharePersistenceFailure(
                 error,
@@ -2647,7 +2629,7 @@ public final class AppState {
             && !profilesModel.firstRunProfileSetupComplete
         apply(.serverSelected(prepared.session.server))
         do {
-            try service.persist(prepared)
+            try accountsProviders.registerMediaShare(prepared, using: service)
         } catch {
             Self.reportMediaSharePersistenceFailure(
                 error,
@@ -2668,6 +2650,8 @@ public final class AppState {
     public func addAccount(
         provider: ProviderKind? = nil, playlist: LiveTVPlaylistSource? = nil, iptvAccount: Account? = nil
     ) {
+        if let iptvAccount, !accountsProviders.navigationAccounts.contains(iptvAccount) { return }
+        plexHomeUsers.clearUserSelection()
         if case .ready = state { accountSetupOriginProfileID = profilesModel.activeProfileID }
         // A fresh add-account flow always starts at the provider chooser.
         pendingOnboardingProvider = provider
@@ -2677,6 +2661,7 @@ public final class AppState {
     }
 
     public func cancelAuthentication() {
+        plexHomeUsers.clearUserSelection()
         pendingIPTVPlaylist = nil
         pendingIPTVAccount = nil
         if pendingAdditionalUser != nil {

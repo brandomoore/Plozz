@@ -2,6 +2,7 @@
 import SwiftUI
 import AppRuntime
 import CoreModels
+import CoreSecureStore
 import CoreNetworking
 import CoreUI
 import CrashReporting
@@ -275,9 +276,8 @@ struct MainTabView: View {
             Color.clear
                 .frame(width: 0, height: 0)
                 .accessibilityHidden(true)
-                .onChange(of: TopShelfSettingsModel.shared.settings, initial: true) { _, settings in
-                    TopShelfPublisher.settingsDidChange(settings)
-                    guard settings.isEnabled else { return }
+                .onChange(of: runtime.topShelf.authorizationID, initial: true) { _, authorization in
+                    guard authorization != nil else { return }
                     runtime.homeViewModel.existingValue(forKey: runtime.scopeKey)?.publishCurrentContent()
                 }
         }
@@ -1113,6 +1113,51 @@ struct MainTabView: View {
             connectServer: onAddAccount,
             didConfigurePlaylist: onConfiguredIPTVPlaylist
         )
+    }
+
+    @Environment(ProfilesModel.self) private var sourceProfiles: ProfilesModel?
+
+    private func sourceScope(for profile: Profile) -> ProfileLibrariesScope {
+        ProfileLibrariesScope(
+            accounts: accountsProviders.accounts, activeProfile: profile,
+            discoveredLibraries: librariesStore.state, refreshingLibraryAccountIDs: librariesStore.refreshingAccountIDs,
+            unreachableLibraryAccountIDs: librariesStore.unreachableAccountIDs, libraryFailures: librariesStore.failures,
+            reloadLibraries: { await reloadLibrariesFromCurrentScope() }, homeVisibility: homeVisibility,
+            isAccountIncludedInActiveProfile: { sourceProfiles?.activeProfileID == profile.id && isAccountIncludedInActiveProfile($0) },
+            onSetAccountIncluded: { id, enabled in
+                guard sourceProfiles?.activeProfileID == profile.id else { return }
+                onSetAccountIncluded(id, enabled)
+                scheduleLibraryReloadFromCurrentScope(changedAccountID: id)
+            }, onAddAccount: onAddAccount, onAddUser: onAddUser, plexHomeUsersFetcher: plexHomeUsersFetcher,
+            onSelectPlexHomeUser: onSelectPlexHomeUser, onRescanShare: onRescanShare,
+            connectedIPTVMode: accountsProviders.connectedIPTVMode(accountID:)
+        )
+    }
+
+    private func profileLiveSection(_ presentation: LiveTVSourcesView.Presentation) -> some View {
+        LiveTVShellSourcesDestination(
+            profileID: activeProfile.id, preferencesNamespace: liveTVPreferencesNamespace,
+            accountsProviders: accountsProviders, connectServer: onAddAccount,
+            didConfigurePlaylist: onConfiguredIPTVPlaylist, isProfileAuthorized: isLiveTVProfileAuthorized,
+            sourcePresentation: presentation
+        )
+    }
+
+    private func sourceDestination(_ accountID: String, canManage: @escaping @MainActor () -> Bool) -> AnyView {
+        let profile = activeProfile
+        let owner = sourceProfiles
+        let pin = owner?.parentalPIN
+        let selection = owner?.selectionGeneration
+        return AnyView(ProfileSourceDetail(
+            profileID: profile.id, accountID: accountID, scope: { sourceScope(for: profile) },
+            isAuthorized: {
+                canManage() && isLiveTVProfileAuthorized() && owner?.activeProfileID == profile.id
+                    && owner?.selectionGeneration == selection
+                    && owner?.activeProfile.effectiveLockRevision == profile.effectiveLockRevision
+                    && owner?.activeProfile.effectiveKidsProfileRevision == profile.effectiveKidsProfileRevision
+                    && owner?.parentalPIN == pin
+            }, liveControls: { profileLiveSection(.profileAccount(accountID)) }
+        ).environment(owner))
     }
 
     private var settingsViewContent: some View {
@@ -1995,6 +2040,12 @@ struct MainTabView: View {
         let _ = plozzPrintChanges { Self._printChanges() }
         let _ = PlozzBodyRate.tick("MainTabView")
         return playbackShell
+        .environment(\.profileSourceGuideStore, { id in
+            guard sourceProfiles?.activeProfileID == id, activeProfile.id == id else { return nil }
+            return LiveTVSourceStorage.approvalAwareStore(profileID: id, namespace: liveTVPreferencesNamespace)
+        })
+        .environment(\.profileSourceDestination, sourceDestination)
+        .environment(\.profileSourcePlaylists, { AnyView(profileLiveSection(.profilePlaylists)) })
         #if os(tvOS)
         .background(
             TVProfilePlaybackPresence(

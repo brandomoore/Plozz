@@ -3,11 +3,40 @@ import FeatureLiveTVCore
 import Foundation
 import Observation
 
+public struct LiveTVPlaylistAccountRecovery {
+    let eligible: @MainActor (LiveTVSourcesConfiguration) -> Set<String>
+    let restore: @MainActor (String, LiveTVSourcesConfiguration, String) throws -> Void
+
+    public init(
+        eligible: @escaping @MainActor (LiveTVSourcesConfiguration) -> Set<String>,
+        restore: @escaping @MainActor (String, LiveTVSourcesConfiguration, String) throws -> Void
+    ) {
+        self.eligible = eligible
+        self.restore = restore
+    }
+}
+
+extension LiveTVSourcesConfiguration {
+    /// Management starts with the stored setup; browsing starts with the approval-filtered setup.
+    /// Neither may present enrollment left behind by a no-longer-selected account.
+    func presented(for choices: [LiveTVServerChoice], names: [String: String]?) -> Self {
+        let accounts = Set(choices.map(\.id))
+        var result = self
+        result.servers = servers.compactMap { source in
+            guard accounts.contains(source.accountID) else { return nil }
+            var displayed = source
+            displayed.name = names?[source.accountID] ?? source.name
+            return displayed
+        }
+        return result
+    }
+}
+
 @MainActor
 @Observable
 final class LiveTVSourceManagementModel {
     enum Issue: Equatable {
-        case load, save, changedSource, accessDenied, importedFileRemoval
+        case load, save, changedSource, accessDenied, importedFileRemoval, playlistRecovery
 
         var message: LocalizedStringResource {
             switch self {
@@ -21,6 +50,8 @@ final class LiveTVSourceManagementModel {
                 "Source management is locked. Reopen Sources and enter the Parental PIN before making changes."
             case .importedFileRemoval:
                 "The source was removed, but its encrypted local playlist copy couldn't be removed. Retry to finish removing it."
+            case .playlistRecovery:
+                "The playlist account couldn't be restored. Reopen Sources and try again."
             }
         }
     }
@@ -160,32 +191,35 @@ final class LiveTVSourceManagementModel {
         }
     }
 
-    func setServerEnabled(_ id: String, enabled: Bool) {
-        perform {
-            try mutate { configuration in
-                guard let index = configuration.servers.firstIndex(where: { $0.id == id }) else {
-                    throw MutationError.changedSource
-                }
-                configuration.servers[index].isEnabled = enabled
-            }
+    func restorePlaylistAccount(
+        _ source: LiveTVServerSource, for profileID: String, using recovery: LiveTVPlaylistAccountRecovery
+    ) {
+        guard hasLoaded, canMutate() else {
+            mutationIssue = .accessDenied
+            return
+        }
+        reload()
+        guard hasLoaded else { return }
+        guard configuration.servers.contains(source), recovery.eligible(configuration).contains(source.accountID) else {
+            mutationIssue = .changedSource
+            return
+        }
+        do {
+            try recovery.restore(source.accountID, configuration, profileID)
+            mutationIssue = nil
+            reload()
+        } catch {
+            mutationIssue = .playlistRecovery
         }
     }
 
-    func removeServer(_ id: String) {
-        perform {
-            try mutate { configuration in
-                configuration.servers.removeAll { $0.id == id }
-            }
-        }
-    }
-
-    func renameServer(_ original: LiveTVServerSource, name: String) throws {
+    func setServerEnabled(_ original: LiveTVServerSource, enabled: Bool) throws {
         try mutate { configuration in
             guard let index = configuration.servers.firstIndex(where: { $0.id == original.id }),
-                  configuration.servers[index] == original else {
+                  configuration.servers[index].accountID == original.accountID else {
                 throw MutationError.changedSource
             }
-            configuration.servers[index].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            configuration.servers[index].isEnabled = enabled
         }
     }
 
@@ -201,7 +235,7 @@ final class LiveTVSourceManagementModel {
         mutationRevision &+= 1
     }
 
-    private func perform(_ action: () throws -> Void) {
+    func perform(_ action: () throws -> Void) {
         do {
             try action()
         } catch MutationError.accessDenied {

@@ -11,12 +11,11 @@ import FeatureDiscoveryCore
 struct AddAccountView: View {
     let deviceID: String
     let canReturnToApp: Bool
-    let signedInServers: [SignedInServer]
     let onMediaBrowserServerSelected: (MediaServer) -> Void
-    let onPlexAuthenticated: (UserSession) -> Void
+    let onPlexAuthenticated: (UserSession) throws -> Void
     let onIPTVAuthenticated: (UserSession) throws -> Void
     let onSubsonicAuthenticated: (UserSession) throws -> Void
-    let onPlexAuthenticatedMany: ([UserSession]) -> Void
+    let onPlexAuthenticatedMany: ([UserSession]) throws -> Void
     let onShareConfigured: (ShareDraft) -> Void
     let onWebDAVShareConfigured: (WebDAVShareConfiguration) -> Void
     let onMediaShareConfigured: (MediaShareOnboardingResult) -> Void
@@ -39,12 +38,11 @@ struct AddAccountView: View {
         initialProvider: ProviderKind? = nil,
         initialIPTVPlaylist: LiveTVPlaylistSource? = nil,
         reconnectingIPTV: UserSession? = nil,
-        signedInServers: [SignedInServer] = [],
         onMediaBrowserServerSelected: @escaping (MediaServer) -> Void,
-        onPlexAuthenticated: @escaping (UserSession) -> Void,
+        onPlexAuthenticated: @escaping (UserSession) throws -> Void,
         onIPTVAuthenticated: ((UserSession) throws -> Void)? = nil,
         onSubsonicAuthenticated: ((UserSession) throws -> Void)? = nil,
-        onPlexAuthenticatedMany: @escaping ([UserSession]) -> Void = { _ in },
+        onPlexAuthenticatedMany: @escaping ([UserSession]) throws -> Void = { _ in },
         onShareConfigured: @escaping (ShareDraft) -> Void = { _ in },
         onWebDAVShareConfigured: @escaping (WebDAVShareConfiguration) -> Void = { _ in },
         onMediaShareConfigured: @escaping (MediaShareOnboardingResult) -> Void = { _ in },
@@ -55,7 +53,6 @@ struct AddAccountView: View {
         self.initialIPTVPlaylist = initialIPTVPlaylist
         self.reconnectingIPTV = reconnectingIPTV
         self.canReturnToApp = canReturnToApp
-        self.signedInServers = signedInServers
         self.onMediaBrowserServerSelected = onMediaBrowserServerSelected
         self.onPlexAuthenticated = onPlexAuthenticated
         self.onIPTVAuthenticated = onIPTVAuthenticated ?? onPlexAuthenticated
@@ -105,14 +102,12 @@ struct AddAccountView: View {
             ServerPickerView(
                 provider: .jellyfin,
                 isPageReady: pageIsReady,
-                signedInServers: signedInServers.filter { $0.server.provider == .jellyfin },
                 onBack: navigateBackToChooser
             ) { onMediaBrowserServerSelected($0) }
         case .emby:
             ServerPickerView(
                 provider: .emby,
                 isPageReady: pageIsReady,
-                signedInServers: signedInServers.filter { $0.server.provider == .emby },
                 onBack: navigateBackToChooser
             ) { onMediaBrowserServerSelected($0) }
         case .plex:
@@ -124,7 +119,6 @@ struct AddAccountView: View {
             ServerPickerView(
                 provider: .silo,
                 isPageReady: pageIsReady,
-                signedInServers: signedInServers.filter { $0.server.provider == .silo },
                 onBack: navigateBackToChooser
             ) { onMediaBrowserServerSelected($0) }
         case .iptv:

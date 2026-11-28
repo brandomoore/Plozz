@@ -2840,6 +2840,15 @@ final class PlexAuthClientTests: XCTestCase {
         XCTAssertEqual(users[0].pinRequirementVerified, false)
     }
 
+    func testHomeRosterWithMissingViewerIdentityIsNotAnEmptyHome() async throws {
+        let stub = StubHTTPClient()
+        stub.stub(pathSuffix: "/api/v2/home/users", json: #"{"users":[{"title":"Guest"}]}"#)
+        do {
+            _ = try await client(stub).homeUsers(authToken: "fixture")
+            XCTFail("An unidentified member is not proof of an owner-only account")
+        } catch let error as AppError { XCTAssertEqual(error, .invalidResponse) }
+    }
+
     func testHomeUsersNeverTreatMissingProtectionMetadataAsPINRemoval() async throws {
         let stub = StubHTTPClient()
         stub.stub(pathSuffix: "/api/v2/home/users", json: """

@@ -55,12 +55,12 @@ account/session persistence.
   removal still requires confirmation, and the original address cannot be removed.
   The add action uses a native title-and-icon label so the group's muted row-icon
   color cannot override the prominent button's contrasting foreground.
-- **Source entry points** — both platforms use **Sources** for the device's
+- **Source entry points** — both platforms use **Sources** for the active profile's
   connected accounts and **Add Source** for the general provider chooser, using
   `SettingsCopy` for shared labels. Mobile Home and Settings do not have a
   separate network-share shortcut: **Media Share** is one of the chooser's
-  provider choices. Profile Libraries retains its add action even with connected
-  sources, with device-wide scope made explicit. First-run provider choices,
+  provider choices. Adding a source connects it to the initiating profile;
+  storing its credential on the device is not permission for other profiles. First-run provider choices,
   provider-specific reconnects, additional-user sign-in, and device transfer
   remain distinct flows. **TV Sources / Add TV Source** names the narrower
   profile-scoped channel setup; its general connection action still opens
@@ -68,12 +68,15 @@ account/session persistence.
 - **Mobile server onboarding** — `AppShelliOS.AddServerView` starts with the
   same provider choices as first-run setup, then uses native navigation to
   discovery and sign-in. Seeded server/user, synced-server, and IPTV reconnect
-  routes skip the chooser. Saved and discovered servers open sign-in directly;
-  manual addresses still pass through `ServerPickerViewModel` validation.
+  routes skip the chooser. Discovery never lists household accounts or saved
+  addresses. Manual and discovered addresses pass through `ServerPickerViewModel`
+  validation. On a verified Jellyfin or Emby server, fresh sign-in is primary;
+  a separate action can use an authorized saved login for that exact server and
+  endpoint. It never uses a hostname match or silently selects a saved login.
   `ServerOnboardingPage` keeps mobile discovery, Quick Connect, password, and
   Plex screens scrollable and width-capped on iPhone and iPad. Plex keeps browser
-  linking and manual codes, preselects owned servers, and adds only the checked
-  servers after Continue. Empty selection cannot continue. Leaving the server
+  linking and manual codes. No servers start checked, even if only one is
+  available. Empty selection cannot continue. Leaving the server
   selection asks for confirmation, and leaving authentication cancels its work.
   Mobile primary and secondary page actions use `plozzPageActionButton`, with matching
   20-point page insets and a 640-point content cap across the server flows.

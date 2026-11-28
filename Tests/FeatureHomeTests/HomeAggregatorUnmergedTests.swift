@@ -9,6 +9,21 @@ import Synchronization
 /// a block — Home stays lean by default.
 @MainActor
 final class HomeAggregatorUnmergedTests: XCTestCase {
+    func testTopShelfDoesNotExportProfileLaunchCacheBeforeLiveViewerLoad() async {
+        let cached = item("earlier-viewer")
+        let exported = expectation(description: "Launch cache exported")
+        exported.isInverted = true
+        let model = HomeViewModel(
+            accounts: [resolved("acct", provider: UnmergedStub(libraries: []))],
+            layoutStore: InMemoryHomeLayoutStore(),
+            contentStore: InMemoryHomeContentStore(.init(continueWatching: [cached], latest: [cached])),
+            contentPublisher: { _, _ in exported.fulfill() }
+        )
+        XCTAssertTrue(model.isShowingCachedSnapshot)
+        model.publishCurrentContent()
+        await fulfillment(of: [exported], timeout: 0.1)
+    }
+
     func testRecentlyAddedKeepsSiloRewatchAfterIdentityMergeAndReenrichment() async throws {
         let movie = MediaItem(
             id: "rewatch", title: "Rewatch", kind: .movie,

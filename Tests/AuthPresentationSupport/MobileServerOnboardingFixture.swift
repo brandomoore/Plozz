@@ -26,13 +26,17 @@ struct MobileServerOnboardingFixture: View {
         SyncSetupFeatureFlag().isEnabled = false
         let defaults = UserDefaults(suiteName: "MobileOnboarding.\(UUID().uuidString)")!
         let accounts = AccountStore(secureStore: InMemorySecureStore())
-        let model = PlozziOSAppModel(accountStore: accounts, profileStore: ProfileStore(defaults: defaults))
+        let admission = AppAdmissionStore(defaults: defaults)
+        if page == "libraries-empty" { admission.recordStandaloneChoice() }
+        let model = PlozziOSAppModel(appAdmissionStore: admission, accountStore: accounts,
+                                     profileStore: ProfileStore(defaults: defaults))
         if ["discovery", "sources", "libraries"].contains(page) {
             do {
                 try accounts.add(Account(
                     id: "fixture", server: Self.server(.jellyfin),
                     userID: "alex", userName: "Alex", deviceID: "fixture"
                 ), token: "fixture")
+                try model.profiles.addSourceMemberships(["fixture"], for: model.profiles.activeProfileID)
                 model.accountsProviders.reloadAccounts()
             } catch {
                 fatalError("Could not prepare onboarding fixture: \(error)")
@@ -41,6 +45,7 @@ struct MobileServerOnboardingFixture: View {
         _appModel = State(initialValue: model)
         _http = State(initialValue: MobileOnboardingHTTP(
             plexLinked: page == "plex-servers",
+            singlePlexServer: ProcessInfo.processInfo.arguments.contains("--one-plex-server"),
             rejectsFirstPassword: page == "password-error",
             rejectsFirstQuickConnect: page == "quick-error"
         ))
@@ -200,13 +205,15 @@ private struct MobileOnboardingRecents: LastServerStoring {
 
 actor MobileOnboardingHTTP: HTTPClient {
     let plexLinked: Bool
+    let singlePlexServer: Bool
     private var rejectsFirstPassword: Bool
     private var rejectsFirstQuickConnect: Bool
     private let silo = OnboardingPreviewHTTP()
 
-    init(plexLinked: Bool = false, rejectsFirstPassword: Bool = false,
+    init(plexLinked: Bool = false, singlePlexServer: Bool = false, rejectsFirstPassword: Bool = false,
          rejectsFirstQuickConnect: Bool = false) {
         self.plexLinked = plexLinked
+        self.singlePlexServer = singlePlexServer
         self.rejectsFirstPassword = rejectsFirstPassword
         self.rejectsFirstQuickConnect = rejectsFirstQuickConnect
     }
@@ -243,16 +250,15 @@ actor MobileOnboardingHTTP: HTTPClient {
         case "/api/v2/user":
             body = #"{"uuid":"alex","username":"Alex"}"#
         case "/api/v2/resources":
-            body = """
-            [
-              {"clientIdentifier":"home","name":"Home Server","provides":"server","owned":true,
-               "accessToken":"fixture","connections":[{"uri":"https://home.example.test","local":true}]},
-              {"clientIdentifier":"studio","name":"Studio Server","provides":"server","owned":true,
-               "accessToken":"fixture","connections":[{"uri":"https://studio.example.test","local":true}]},
-              {"clientIdentifier":"shared","name":"Friends and Family","provides":"server","owned":false,
-               "accessToken":"fixture","connections":[{"uri":"https://shared.example.test","local":false}]}
-            ]
-            """
+            let servers = [("home", "Home Server", true), ("studio", "Studio Server", true),
+                           ("shared", "Friends and Family", false)]
+            let rows = servers.prefix(singlePlexServer ? 1 : servers.count).map { id, name, owned in
+                """
+                {"clientIdentifier":"\(id)","name":"\(name)","provides":"server","owned":\(owned),
+                 "accessToken":"fixture","connections":[{"uri":"https://\(id).example.test","local":\(owned)}]}
+                """
+            }
+            body = "[" + rows.joined(separator: ",") + "]"
         case "/identity": body = "{}"
         default: throw AppError.notFound
         }

@@ -613,12 +613,6 @@ public struct SettingsView: View {
             PlozzDivider()
 
             SettingsControlRows(dividerLeadingInset: SettingsRowMetrics.iconTitleInset) {
-                // Shared server sign-ins (the household's full inventory). The
-                // list screen opens with a prominent Add Source button.
-                sectionRow(SettingsCopy.sources, icon: "externaldrive.connected.to.line.below",
-                       value: householdServersSummary,
-                       route: .servers)
-
                 // Profile roster management is a device concern (who exists on
                 // this Apple TV), not a per-profile one — so it lives here.
                 // Device startup sign-in lives inside Profiles.
@@ -1040,7 +1034,7 @@ public struct SettingsView: View {
                 repoURL: repoURL
             )
         case .servers:
-            ServersAndLibrariesDetailView(context: context)
+            personalSources
         case .grownUps:
             GrownUpsUnlockView(context: context)
         case let .profileAppearance(profileID):
@@ -1056,7 +1050,7 @@ public struct SettingsView: View {
         case let .profileSettings(profileID):
             ProfileSettingsDetailView(context: context, profileID: profileID, syncEnabled: syncEnabled)
         case .myLibraries:
-            MyLibrariesDetailView(scope: context.librariesScope)
+            personalSources
         case .appearance:
             AppearanceDetailView(
                 librariesScope: context.librariesScope,
@@ -1191,11 +1185,13 @@ public struct SettingsView: View {
             )
         case let .plexUser(accountID):
             PlexLinkedUserDetailView(scope: context.librariesScope, accountID: accountID)
-        case let .serverUser(serverKey):
-            ServerUserDetailView(scope: context.librariesScope, serverKey: serverKey)
-        case let .server(key):
-            ServerDetailView(context: context, serverKey: key)
+        case .serverUser, .server:
+            personalSources
         }
+    }
+
+    private var personalSources: some View {
+        ProfileSourcesView(scope: context.librariesScope, canManage: { !isParentalSealed })
     }
 
     // MARK: - Header (inside the profile container)

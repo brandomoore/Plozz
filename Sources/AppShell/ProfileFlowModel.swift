@@ -670,9 +670,12 @@ public final class ProfileFlowModel {
         // platform — see `addAwaitingSetup`.
         let configured = profilesModel.addAwaitingSetup(
             draft,
-            isKids: isKids,
-            activeAccountIDs: draft.activeAccountIDs
+            isKids: isKids
         )
+        guard (try? profilesModel.confirmPersistedProfile(configured)) != nil else {
+            PlozzLog.auth.error("Could not save the new profile for setup")
+            return configured
+        }
         appearanceSetupStore.markPending(profileID: configured.id)
         // Claim the root setup page BEFORE switching dismisses the picker. Root
         // can then render setup directly underneath the editor sheet, so the
@@ -857,16 +860,11 @@ public final class ProfileFlowModel {
     /// ("Use this server" toggle on Settings → Servers & Libraries → server).
     public func setAccount(_ accountID: String, includedInActiveProfile included: Bool) {
         let profileID = profilesModel.activeProfileID
-        // An explicit edit starts from the locally available selection shown by
-        // the UI, not absent accounts retained for sync or later reconnection.
-        let current = accountsProviders.activeAccountIDs
-        var next = current
-        if included { next.insert(accountID) } else { next.remove(accountID) }
-        guard next != current
-            || profilesModel.storedActiveAccountIDs(for: profileID) == nil
-            || profilesModel.unconfirmedAccountSelectionProfileIDs.contains(profileID)
-        else { return }
-        profilesModel.setActiveAccountIDs(Array(next), for: profileID)
+        do {
+            try profilesModel.updateSourceMemberships(
+                adding: included ? [accountID] : [], removing: included ? [] : [accountID], for: profileID
+            )
+        } catch { return }
         // Noted BEFORE the reload, which schedules a watchlist import: the whole
         // point is that the import waits for the answer, and a note taken after
         // it has already been scheduled is too late.

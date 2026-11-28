@@ -29,7 +29,11 @@ public final class IPTVProvider: MediaProvider, CapabilityReporting, MediaSortFi
         self.guideLoader = guideLoader
         self.guideIndex = guideIndex
         session = context.session
-        client = try IPTVClient(credential: credential, directory: cacheDirectory, configuration: configuration)
+        client = try IPTVClient(
+            credential: credential, directory: cacheDirectory, configuration: configuration,
+            liveFormatPreference: credential.mode == .xtream
+                ? .init(accountID: local.accountID, profileID: local.profileID) : nil
+        )
         watch = LocalMediaWatchStore(localMediaContext: local, durableStore: durableStore)
         playback = IPTVPlaybackSessions(client: client, configuration: configuration)
         LiveTVSourceDiagnostics.shared.record(

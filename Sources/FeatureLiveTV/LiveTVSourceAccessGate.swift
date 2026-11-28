@@ -6,13 +6,15 @@ import SwiftUI
 struct LiveTVSourceAccessGate<Content: View>: View {
     let model: LiveTVSourceManagementModel
     var unrestrictedContent: AnyView? = nil
+    var isProfileAuthorized: @MainActor () -> Bool = { true }
     @ViewBuilder let content: (@escaping @MainActor () -> Bool) -> Content
     @Environment(ProfilesModel.self) private var profiles: ProfilesModel?
 
     var body: some View {
         if let profiles {
             LiveTVProfileSourceAccessGate(
-                model: model, profiles: profiles, unrestrictedContent: unrestrictedContent, content: content
+                model: model, profiles: profiles, unrestrictedContent: unrestrictedContent,
+                isProfileAuthorized: isProfileAuthorized, content: content
             )
         } else {
             VStack(alignment: .leading, spacing: 24) {
@@ -48,6 +50,7 @@ private struct LiveTVProfileSourceAccessGate<Content: View>: View {
     let model: LiveTVSourceManagementModel?
     @State private var access: LiveTVSourceManagementAccess
     let unrestrictedContent: AnyView?
+    let isProfileAuthorized: @MainActor () -> Bool
     @ViewBuilder let content: (@escaping @MainActor () -> Bool) -> Content
     @SettingsPageDismiss private var dismiss
     @State private var unlocking = false
@@ -56,18 +59,22 @@ private struct LiveTVProfileSourceAccessGate<Content: View>: View {
         model: LiveTVSourceManagementModel?,
         profiles: ProfilesModel,
         unrestrictedContent: AnyView? = nil,
+        isProfileAuthorized: @escaping @MainActor () -> Bool = { true },
         @ViewBuilder content: @escaping (@escaping @MainActor () -> Bool) -> Content
     ) {
         self.model = model
         _access = State(initialValue: LiveTVSourceManagementAccess(profiles: profiles))
         self.unrestrictedContent = unrestrictedContent
+        self.isProfileAuthorized = isProfileAuthorized
         self.content = content
     }
 
     var body: some View {
         Group {
             if access.canManage {
-                content { [weak access] in access?.canManage ?? false }
+                content { [weak access, isProfileAuthorized] in
+                    access?.canManage == true && isProfileAuthorized()
+                }
             } else if let unrestrictedContent {
                 VStack(alignment: .leading, spacing: 24) {
                     SettingsSectionGroup(SettingsCopy.tvSources) {
@@ -83,7 +90,9 @@ private struct LiveTVProfileSourceAccessGate<Content: View>: View {
         }
         .settingsPageDestination(isPresented: $unlocking) { unlockForm }
         .onAppear {
-            model?.authorizeMutations { [weak access] in access?.canManage ?? false }
+            model?.authorizeMutations { [weak access, isProfileAuthorized] in
+                access?.canManage == true && isProfileAuthorized()
+            }
         }
     }
 
@@ -114,40 +123,46 @@ private struct LiveTVProfileSourceAccessGate<Content: View>: View {
 final class LiveTVSourceManagementAccess {
     private struct Scope: Equatable {
         let profileID: String
-        let parentalPIN: ParentalPIN?
+        let selectionGeneration: Int
+        let lockRevision: ProfileLockRevision?
+        let kidsRevision: ProfileLockRevision?
+
+        @MainActor init(_ profiles: ProfilesModel) {
+            profileID = profiles.activeProfileID
+            selectionGeneration = profiles.selectionGeneration
+            let profile = profiles.activeProfile
+            lockRevision = profile.effectiveLockRevision
+            kidsRevision = profile.effectiveKidsProfileRevision
+        }
     }
 
     @ObservationIgnored private let profiles: ProfilesModel
-    private let expectedProfileID: String
-    private var unlockedScope: Scope?
+    private let initialScope: Scope
+    private var unlockedPIN: ParentalPIN?
     private(set) var errorMessage: LocalizedStringResource?
 
     init(profiles: ProfilesModel) {
         self.profiles = profiles
-        expectedProfileID = profiles.activeProfileID
+        initialScope = Scope(profiles)
     }
 
     var canManage: Bool {
-        guard profiles.activeProfileID == expectedProfileID else { return false }
-        guard profiles.activeProfile.isKids, profiles.parentalPIN != nil else { return true }
-        return unlockedScope == scope
+        guard Scope(profiles) == initialScope else { return false }
+        guard profiles.activeProfile.isKids, let pin = profiles.parentalPIN else { return true }
+        return unlockedPIN == pin
     }
 
     func unlock(_ pin: String) {
-        guard profiles.activeProfileID == expectedProfileID, profiles.matchesParentalPIN(pin) else {
+        guard Scope(profiles) == initialScope, profiles.matchesParentalPIN(pin) else {
             errorMessage = ProfileLockCopy.incorrectPIN
             return
         }
-        unlockedScope = scope
+        unlockedPIN = profiles.parentalPIN
         errorMessage = nil
     }
 
     func lock() {
-        unlockedScope = nil
+        unlockedPIN = nil
         errorMessage = nil
-    }
-
-    private var scope: Scope {
-        Scope(profileID: profiles.activeProfileID, parentalPIN: profiles.parentalPIN)
     }
 }

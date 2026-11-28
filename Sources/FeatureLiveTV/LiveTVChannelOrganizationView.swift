@@ -54,6 +54,7 @@ private struct LiveTVCategoryManagementView: View {
     let model: LiveTVPrototypeModel
     let imports: LiveTVPrototypeImportModel
     let canMutate: () -> Bool
+    @Environment(ProfilesModel.self) private var profiles: ProfilesModel?
     @State private var query = ""
 
     var body: some View {
@@ -73,7 +74,9 @@ private struct LiveTVCategoryManagementView: View {
                     LiveTVCategoryManagementRow(
                         model: model, summary: summary,
                         sourceName: imports.configuration.playlists.first { $0.id == summary.rule.sourceID }?.name
-                            ?? imports.configuration.servers.first { $0.id == summary.rule.sourceID }?.name,
+                            ?? imports.configuration.servers.first { $0.id == summary.rule.sourceID }.map {
+                                profiles?.activeProfile.sourceNames?[$0.accountID] ?? $0.name
+                            },
                         canMutate: canMutate
                     )
                 }
@@ -419,7 +422,7 @@ private extension LiveTVChannelHiddenReason {
     }
 }
 
-private struct LiveTVOrganizationFailure: View {
+struct LiveTVOrganizationFailure: View {
     let model: LiveTVPrototypeModel
 
     var body: some View {

@@ -16,20 +16,25 @@ container, where the Top Shelf extension reads it.
   by the extension and its package tests without the app's model stack.
 - `TopShelfPublisher` — app-side mapping from `[MediaItem]`
   Continue-Watching + Latest rows onto a `TopShelfSnapshot`, with empty-row
-  pruning. Always writes (even empty) so a freshly-signed-out state clears
-  the shelf.
+  pruning. `TopShelfPublication` fences exports against the authorized Home scope.
 
 On the canonical tvOS build, the app and extension both run as the current
 Apple TV user. Each person opens Plozz under their Apple TV user, selects a
 Plozz profile, and lets Home load. When tvOS next requests the shelf for that
-user, the extension reads their last published Home rows; it returns no
-personalized content if there is no snapshot. This applies to every provider
+user, the extension reads only that system user's App Group container. It
+requires the snapshot's opaque authorization ID to match the grant beside it,
+including immediately before returning native content. A missing grant, legacy
+snapshot or unavailable App Group yields no personalized content. The grant
+contains no profile name, source URL or credentials. This applies to every provider
 that contributes to Home. Two profiles using the same server login can still
 have the same Continue Watching history. The extension needs the User Management
 capability on its own App ID and provisioning profile, but does not need the
 app's user-independent Keychain privilege.
 
-Top Shelf preferences are device-local and shared by Plozz profiles. Settings →
+Top Shelf preferences belong to the **current Apple TV system user**. tvOS
+partitions the app's standard defaults and the canonical app/extension containers
+when it switches users. Plozz profiles within that user share the switch;
+another system user can turn it off independently. Settings →
 Everyone → Top Shelf explains the Apple TV Home Screen placement, offers a
 default-on **Show Top Shelf** switch with its explanation beneath the label, and
 exposes independent Continue Watching and Recently Added
@@ -38,12 +43,17 @@ resolving artwork, without changing provider order, content identity, library
 visibility, or the active profile's artwork policy. Editing either count
 republishes current Home content, cancels superseded artwork work, and notifies
 tvOS after a successful snapshot write. Short feeds are not padded.
-Turning Top Shelf off writes an empty snapshot immediately, including without a
-loaded Home model, and hides layout/count controls without erasing their values.
-Publication commits and settings changes are serialized on the main actor;
-generation checks reject suspended artwork from before a settings change or a
-newer publication, including a quick off/on cycle. Disabled publication does not
-resolve artwork. The extension returns no media for the empty snapshot.
+Turning Top Shelf off withdraws the grant and snapshot immediately, even when
+Home is not mounted. It hides layout/count controls without erasing their
+values. App launch revokes the prior grant before setup or profile selection.
+Opening the picker, locking, changing viewers or losing selected source access
+revokes authorization before the next selection or PIN can complete.
+Publication and revocation are serialized on the main actor. Both the producing
+Home scope and its current authorization must still match after artwork or
+metadata suspends. Superseded, cancelled and disabled work cannot restore the
+old snapshot. A profile's disk-cached Home rows alone cannot populate a shelf;
+publication needs a live load and only exports items from resolved, selected accounts.
+tvOS controls when its Home Screen redraws following the content-change notification.
 
 Artwork selection remains on the main actor, but `TopShelfArtworkEncoder`
 serializes PNG poster and JPEG backdrop compression on its own actor so an
@@ -91,7 +101,8 @@ real episode title or synopsis. Ratings also honor the independent hide-until-wa
 preference, using Home watch state rather than provider detail state.
 Only the selected style's artwork is resolved. Preview cards in
 Settings are schematic illustrations, never a second copy of profile media.
-Old settings and snapshots without a layout flag keep their poster presentation.
+Older settings without a layout flag retain their poster presentation. An
+upgrade waits for an authorized live publication rather than displaying old snapshots.
 
 ## Invariants
 

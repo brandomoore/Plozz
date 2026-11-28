@@ -191,6 +191,11 @@ checks, not an atomic transaction with either remote service.
   uses immutable image identity and placement, never a pixel comparison.
 - Profiles persistence contract: `ProfilePersisting`, `ProfileStore`,
   `ProfilesModel`, plus the Plex Home-user mapping (`PlexHomeUser`).
+- Source memberships are exact account IDs, not household account discovery.
+  Cutover freezes the legacy active set before any new credential is admitted,
+  preserves explicit and absent IDs, and retries interrupted writes against
+  that frozen plan. An absent set after cutover grants nothing. Unconfirmed
+  writes deny access until their requested value can be verified.
 - Shared profile migration writes memberships before the roster and retires
   legacy copies only after every write succeeds. Failed writes retain the legacy
   roster as the local authority, including edits made before retry. A failed

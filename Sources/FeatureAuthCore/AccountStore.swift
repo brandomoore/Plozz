@@ -9,6 +9,7 @@ public protocol AccountPersisting: Sendable {
     func deviceID() -> String
     func loadAccounts() -> [Account]
     func activeAccountIDs() -> [String]
+    func legacySourceSelection() throws -> (active: [String], playlists: Set<String>)
     func setActiveAccountIDs(_ ids: [String])
     func token(for accountID: String) -> String?
     @discardableResult
@@ -41,6 +42,9 @@ public struct AccountRegistration: Sendable {
 }
 
 public extension AccountPersisting {
+    func legacySourceSelection() throws -> (active: [String], playlists: Set<String>) {
+        (activeAccountIDs(), Set(loadAccounts().filter { $0.server.provider == .iptv }.map(\.id)))
+    }
     func replaceAuthenticatedSession(_ session: UserSession, expected: Account) throws {
         throw AccountStoreError.metadataUpdatesUnavailable
     }
@@ -180,10 +184,21 @@ public final class AccountStore: AccountPersisting, RotatingCredentialStoring, @
             primeTokenCacheLocked(for: accounts)
         }
         let known = Set(accounts.map(\.id))
-        guard let ids = decodeIDs(secureStore.string(for: activeIDsKey)) else {
-            return accounts.map(\.id)
-        }
-        return ids.filter { known.contains($0) }
+        do {
+            guard let raw = try secureStore.readString(for: activeIDsKey) else { return accounts.map(\.id) }
+            return try JSONDecoder().decode([String].self, from: Data(raw.utf8)).filter { known.contains($0) }
+        } catch { return [] }
+    }
+
+    public func legacySourceSelection() throws -> (active: [String], playlists: Set<String>) {
+        lock.lock(); defer { lock.unlock() }
+        let visible = visibleAccountsResultLocked()
+        guard visible.complete else { throw AccountStoreError.decodingFailed }
+        let known = visible.accounts.map(\.id)
+        let raw = try secureStore.readString(for: activeIDsKey)
+        let active = try raw.map { try JSONDecoder().decode([String].self, from: Data($0.utf8)) } ?? known
+        let local = Set(known)
+        return (active.filter(local.contains), Set(visible.accounts.filter { $0.server.provider == .iptv }.map(\.id)))
     }
 
     public func setActiveAccountIDs(_ ids: [String]) {
@@ -484,7 +499,9 @@ public final class AccountStore: AccountPersisting, RotatingCredentialStoring, @
         if let exact, !matchesIdentity(exact) { throw AppError.conflict }
         let hasKnownIdentity = !session.server.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !session.userID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let previous = exact ?? (hasKnownIdentity ? accounts.first(where: matchesIdentity) : nil)
+        let matches = hasKnownIdentity ? accounts.filter(matchesIdentity) : []
+        guard exact != nil || matches.count <= 1 else { throw AppError.conflict }
+        let previous = exact ?? matches.first
         if let previous {
             account.id = previous.id
             account.addedAt = previous.addedAt

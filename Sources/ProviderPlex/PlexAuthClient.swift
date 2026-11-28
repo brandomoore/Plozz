@@ -262,8 +262,10 @@ public struct PlexAuthClient: Sendable {
         )
         endpoint.reportsServerTrustFailures = true
         let dto = try await http.decode(PlexHomeUsersDTO.self, from: endpoint, baseURL: baseURL)
-        return dto.users.compactMap { user -> PlexHomeUser? in
-            guard let id = user.uuid ?? user.id.map(String.init) else { return nil }
+        return try dto.users.map { user -> PlexHomeUser in
+            // Silently dropping an unknown identity could turn a malformed Home
+            // into a successful empty roster and authorize an owner-only sign-in.
+            guard let id = user.uuid ?? user.id.map(String.init), !id.isEmpty else { throw AppError.invalidResponse }
             if user.protected == nil {
                 PlozzLog.auth.error("Plex Home-user metadata omitted PIN protection; leaving its requirement unknown")
             }

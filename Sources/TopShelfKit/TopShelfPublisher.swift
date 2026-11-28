@@ -1,5 +1,6 @@
 import Foundation
 import CoreModels
+import Observation
 import OSLog
 #if os(tvOS)
 import TVServices
@@ -15,12 +16,15 @@ public enum TopShelfPublisher {
     public typealias ArtworkResolver = @MainActor @Sendable (MediaItem) async -> Data?
     public typealias MetadataResolver = @MainActor @Sendable (MediaItem) async throws -> MediaItem
 
-    @MainActor private static let publication = TopShelfPublication(save: save)
-
-    /// Clears disabled media even when Home has no loaded model to republish.
+    /// Also called at process entry, before launch preparation can suspend or present a gate.
     @MainActor
-    public static func settingsDidChange(_ settings: TopShelfSettings) {
-        publication.settingsDidChange(settings)
+    public static func revoke() {
+        guard let files = TopShelfStore.files else { return }
+        files.revoke()
+        #if os(tvOS)
+        TVTopShelfContentProvider.topShelfContentDidChange()
+        #endif
+        TopShelfStore.pruneArtwork(keeping: [])
     }
 
     /// Builds and saves a snapshot from the Home screen's two playable rows.
@@ -29,8 +33,8 @@ public enum TopShelfPublisher {
     /// bar composited into the artwork (posters can't show the native Top Shelf
     /// progress bar — see `TopShelfPosterComposer`). The app resolves each image
     /// using the active profile's policy before exporting it. Empty rows are dropped; if nothing is playable the
-    /// snapshot is still written (empty) so a freshly-signed-out state clears the
-    /// shelf. Stale composited art is pruned each publish.
+    /// authorized snapshot can still be empty. Signing out separately revokes
+    /// access even if Home never publishes again. Stale art is pruned each publish.
     /// - Parameter locale: the language the APP is currently showing. The Top
     ///   Shelf extension is a separate process with its own bundle, so it can
     ///   neither read the app's catalog nor know about an in-app language
@@ -41,6 +45,7 @@ public enum TopShelfPublisher {
     ///   value crosses a process boundary.
     @MainActor
     public static func publish(
+        for homeScope: String, publication: TopShelfPublication,
         continueWatching: [MediaItem],
         latest: [MediaItem],
         locale: Locale? = nil,
@@ -50,10 +55,11 @@ public enum TopShelfPublisher {
         resolveArtwork: ArtworkResolver? = nil,
         resolveBackdrop: ArtworkResolver? = nil
     ) async {
-        let settings = TopShelfSettingsModel.shared.settings
-        await publication.publish {
-            await makeSnapshot(
-                continueWatching: continueWatching, latest: latest, settings: settings,
+        await publication.publish(for: homeScope) { settings, accountIDs in
+            let authorized: (MediaItem) -> Bool = { $0.sourceAccountID.map(accountIDs.contains) == true }
+            return await makeSnapshot(
+                continueWatching: continueWatching.filter(authorized), latest: latest.filter(authorized),
+                settings: settings,
                 locale: locale, spoilerSettings: spoilerSettings,
                 showsContentRatings: showsContentRatings,
                 resolveMetadata: resolveMetadata,
@@ -63,8 +69,14 @@ public enum TopShelfPublisher {
     }
 
     @MainActor
-    private static func save(_ snapshot: TopShelfSnapshot) {
-        guard TopShelfStore.save(snapshot) else { return }
+    fileprivate static func save(_ snapshot: TopShelfSnapshot) {
+        guard let files = TopShelfStore.files else { return }
+        do { try files.save(snapshot) }
+        catch {
+            Logger(subsystem: "com.plozz.app", category: "top-shelf")
+                .error("Unable to publish the authorized Top Shelf snapshot.")
+            return
+        }
         let keptArtwork = Set(
             snapshot.sections
                 .flatMap(\.items)
@@ -280,27 +292,90 @@ public enum TopShelfPublisher {
     }
 }
 
-/// Serializes the commit with settings changes; suspended artwork cannot restore a cleared shelf.
+/// One app-side authority, independent of whether Home or Settings is mounted.
 @MainActor
-final class TopShelfPublication {
-    private var generation = UUID()
-    private let save: (TopShelfSnapshot) -> Void
+@Observable
+public final class TopShelfPublication {
+    public struct Viewer: Equatable, Sendable {
+        public let homeScope: String
+        public let accountIDs: Set<String>
 
-    init(save: @escaping (TopShelfSnapshot) -> Void) {
+        public init(homeScope: String, accountIDs: Set<String>) {
+            self.homeScope = homeScope
+            self.accountIDs = accountIDs
+        }
+    }
+
+    public private(set) var authorizationID: UUID?
+    @ObservationIgnored private var started = false
+    @ObservationIgnored private var generation = UUID()
+    @ObservationIgnored private var authorizedViewer: Viewer?
+    private let viewer: @MainActor () -> Viewer?
+    private let settings: @MainActor () -> TopShelfSettings
+    private let save: @MainActor (TopShelfSnapshot) -> Void
+    private let revoke: @MainActor () -> Void
+
+    public convenience init(viewer: @escaping @MainActor () -> Viewer?) {
+        self.init(viewer: viewer, settings: { TopShelfSettingsModel.shared.settings },
+                  save: TopShelfPublisher.save, revoke: TopShelfPublisher.revoke)
+    }
+
+    init(viewer: @escaping @MainActor () -> Viewer?, settings: @escaping @MainActor () -> TopShelfSettings,
+         save: @escaping @MainActor (TopShelfSnapshot) -> Void, revoke: @escaping @MainActor () -> Void) {
+        self.viewer = viewer
+        self.settings = settings
         self.save = save
+        self.revoke = revoke
     }
 
-    func settingsDidChange(_ settings: TopShelfSettings) {
-        generation = UUID()
-        if !settings.isEnabled { save(TopShelfSnapshot(sections: [])) }
+    public func start() {
+        guard !started else { return }
+        started = true
+        observe()
     }
 
-    func publish(makeSnapshot: () async -> TopShelfSnapshot?) async {
-        guard !Task.isCancelled else { return }
+    private func observe() {
+        let owner = withObservationTracking {
+            settings().isEnabled ? viewer() : nil
+        } onChange: { [weak self] in
+            // All inputs are main-actor-owned. Observation fires before mutation:
+            // withdraw first, then evaluate the settled selection on the next turn.
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.withdraw()
+                Task { @MainActor [weak self] in self?.observe() }
+            }
+        }
+        authorizedViewer = owner
+        if owner != nil { authorizationID = UUID() }
+    }
+
+    private func withdraw() {
+        guard authorizationID != nil else { return }
+        authorizedViewer = nil
+        authorizationID = nil
+        revoke()
+    }
+
+    private func currentViewer() -> Viewer? {
+        guard let authorizedViewer else { return nil }
+        guard settings().isEnabled, viewer() == authorizedViewer else {
+            withdraw()
+            return nil
+        }
+        return authorizedViewer
+    }
+
+    func publish(for homeScope: String, makeSnapshot: (TopShelfSettings, Set<String>) async -> TopShelfSnapshot?) async {
+        guard !Task.isCancelled, let authorization = authorizationID,
+              let owner = currentViewer(), owner.homeScope == homeScope else { return }
+        let preferences = settings()
         generation = UUID()
         let currentGeneration = generation
-        guard let snapshot = await makeSnapshot(),
-              currentGeneration == generation, !Task.isCancelled else { return }
+        guard var snapshot = await makeSnapshot(preferences, owner.accountIDs),
+              currentGeneration == generation, authorization == authorizationID,
+              !Task.isCancelled, currentViewer() == owner, settings() == preferences else { return }
+        snapshot.authorizationID = authorization
         save(snapshot)
     }
 }

@@ -7,6 +7,61 @@ import XCTest
 
 @MainActor
 final class LiveTVSourceManagementTests: XCTestCase {
+    func testSourceListUsesOnlyEligibleAccountsAndKeepsGuideNamesWithoutAnOverride() {
+        let playlist = source("playlist")
+        let saved = LiveTVSourcesConfiguration(playlists: [playlist], servers: [
+            .init(id: "renamed", name: "Original", accountID: "one"),
+            .init(id: "legacy", name: "Guide name", accountID: "two", isEnabled: false),
+            .init(id: "gone", name: "Private", accountID: "other")
+        ])
+        let choices = ["one", "two"].map { LiveTVServerChoice(id: $0, name: "Server", userName: "", kind: .plex) }
+        let display = saved.presented(for: choices, names: ["one": "My source", "other": "Also private"])
+        XCTAssertEqual(display.playlists, [playlist])
+        XCTAssertEqual(display.servers.map(\.name), ["My source", "Guide name"])
+        XCTAssertEqual(display.servers.filter(\.isEnabled).map(\.id), ["renamed"])
+        XCTAssertEqual(saved.servers.map(\.name), ["Original", "Guide name", "Private"])
+    }
+
+    func testGuideToggleRejectsAReassignedEnrollment() throws {
+        let source = LiveTVServerSource(id: "source", name: "Guide", accountID: "first")
+        let store = SourceManagementTestStore(.init(servers: [source]))
+        let model = LiveTVSourceManagementModel(store: store)
+        model.reload()
+        var reassigned = source
+        reassigned.accountID = "second"
+        try store.save(.init(servers: [reassigned]))
+        XCTAssertThrowsError(try model.setServerEnabled(source, enabled: false))
+        XCTAssertEqual(store.snapshot.servers, [reassigned])
+    }
+
+    func testExplicitRecoveryRechecksTheSavedEnrollmentAndPreservesUnrelatedSources() throws {
+        let enrolled = LiveTVServerSource(id: "enrolled", name: "Local name", accountID: "account")
+        let store = SourceManagementTestStore(.init(servers: [enrolled]))
+        let model = LiveTVSourceManagementModel(store: store)
+        model.reload()
+        let latest = LiveTVSourcesConfiguration(playlists: [source("added")], servers: [enrolled])
+        try store.save(latest)
+        var restored: [String] = []
+        let recovery = LiveTVPlaylistAccountRecovery(eligible: { _ in ["account"] }, restore: { id, saved, profile in
+            XCTAssertEqual(saved, latest)
+            XCTAssertEqual(profile, "owner")
+            restored.append(id)
+        })
+        model.restorePlaylistAccount(enrolled, for: "owner", using: recovery)
+        XCTAssertEqual(restored, ["account"])
+        XCTAssertEqual(model.configuration, latest)
+        XCTAssertEqual(store.writeCount, 1)
+
+        try store.save(.init(playlists: latest.playlists))
+        model.restorePlaylistAccount(enrolled, for: "owner", using: recovery)
+        XCTAssertEqual(model.mutationIssue, .changedSource)
+        XCTAssertEqual(restored, ["account"])
+        store.setReadFailure(true)
+        model.restorePlaylistAccount(enrolled, for: "owner", using: recovery)
+        XCTAssertEqual(model.loadIssue, .load)
+        XCTAssertEqual(restored, ["account"])
+    }
+
     func testBrowseMenuSimplifiesOnlyOneEnabledPlaylistOrServer() {
         let playlist = source("playlist")
         let server = LiveTVServerSource(id: "server", name: "Server", accountID: "account")

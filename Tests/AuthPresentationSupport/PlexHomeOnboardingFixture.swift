@@ -12,6 +12,7 @@ struct PlexHomeOnboardingFixture: View {
             .init(id: "child", name: "Sam", requiresPIN: false, isRestricted: true),
             .init(id: "guest", name: "Taylor", requiresPIN: false)
         ]
+        if ProcessInfo.processInfo.arguments.contains("--plex-home-single-user") { return [initial[0]] }
         guard ProcessInfo.processInfo.arguments.contains("--plex-home-long-list") else { return initial }
         return initial + (1...13).map {
             .init(id: "viewer-\($0)", name: String(format: "Viewer %02d", $0), requiresPIN: false)
@@ -24,12 +25,13 @@ struct PlexHomeOnboardingFixture: View {
                 Text(verbatim: result)
                     .accessibilityIdentifier("plex-home-result")
             } else {
-                PlexHomeOnboardingContent(users: users,
+                PlexHomeOnboardingContent(serverName: "Cedar House", users: users, existingUserIDs: ["parent"],
                     reduceMotion: ProcessInfo.processInfo.arguments.contains("--plex-home-reduce-motion"), onImportAll: {
                     imported = true
                     return .added
                 }) { user, addAll in
-                    result = addAll && !imported ? "incorrect-order" : "\(user.id):\(addAll ? "all" : "one")"
+                    result = addAll != imported ? "incorrect-import" : "\(user.id):\(addAll ? "all" : "one")"
+                    return true
                 }
             }
         }

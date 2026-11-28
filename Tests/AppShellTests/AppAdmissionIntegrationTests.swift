@@ -241,6 +241,7 @@ final class AppAdmissionIntegrationTests: XCTestCase {
 
         XCTAssertNil(harness.state.plexHomeUsers.resolvedToken(for: "media-account"))
         XCTAssertTrue(harness.state.accountsProviders.homeAccounts.isEmpty)
+        XCTAssertNil(harness.state.topShelfViewer)
         XCTAssertFalse(harness.state.isLiveTVProfileAuthorized)
         let accounts = harness.state.accountsProviders.navigationAccounts
         XCTAssertEqual(accounts.map(\.id), ["media-account"])
@@ -262,6 +263,23 @@ final class AppAdmissionIntegrationTests: XCTestCase {
         let request = try XCTUnwrap(harness.state.pendingPlay.request)
         XCTAssertEqual(request.reference, .init(id: "1", accountID: "plex", action: .details))
         XCTAssertEqual(harness.state.pendingPlay.request, request)
+    }
+
+    func testTopShelfViewerRequiresAdmittedProfileAndResolvedSelectedSources() throws {
+        let harness = try makeHarness(profileSetupComplete: true, withAccount: true)
+        let id = harness.profiles.activeProfileID
+        harness.profiles.setActiveAccountIDs(["media-account"], for: id)
+        harness.state.accountsProviders.registry.register(.jellyfin) { OnboardingLibraryProvider(session: $0.session) }
+        XCTAssertNil(harness.state.topShelfViewer)
+        harness.state.bootstrap()
+        let viewer = try XCTUnwrap(harness.state.topShelfViewer)
+        XCTAssertEqual(viewer.accountIDs, ["media-account"])
+        harness.state.profileFlow.requestProfileSelection()
+        XCTAssertNil(harness.state.topShelfViewer)
+        harness.state.profileFlow.cancelProfileSelection()
+        XCTAssertEqual(harness.state.topShelfViewer, viewer)
+        harness.state.accountsProviders.tokenResolver = { _ in nil }
+        XCTAssertNil(harness.state.topShelfViewer, "A remembered account without its credential cannot export media")
     }
 
     func testTopShelfNewActionSupersedesEvenTheSameItemAndConsumesOnlyOnce() throws {

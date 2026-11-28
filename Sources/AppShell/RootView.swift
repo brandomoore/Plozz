@@ -168,6 +168,7 @@ public struct RootView: View {
     }
 
     private func setUpPendingServer(_ descriptor: SyncedAccountDescriptor) {
+        guard let descriptor = appState.accountsProviders.scopedSetupDescriptors([descriptor]).first else { return }
         if descriptor.provider.permitsCredentialTransfer {
             showSyncReceiveFromSettings = true
         } else if let baseURL = descriptor.candidateBaseURLs.first {
@@ -315,7 +316,8 @@ public struct RootView: View {
         if providerSetupRouter.addressAccount != nil { requests.append(.serverAddresses) }
         if providerSetupRouter.reauthenticationAccount != nil { requests.append(.accountRecovery) }
         if startupPresentationReady && nextFeatureIntroduction == nil && startupNotesPrepared,
-           appState.cloudSyncUI.pendingServerPrompt != nil {
+           let descriptor = appState.cloudSyncUI.pendingServerPrompt,
+           !appState.accountsProviders.scopedSetupDescriptors([descriptor]).isEmpty {
             requests.append(.newServer)
         }
         return requests
@@ -450,7 +452,8 @@ public struct RootView: View {
                     account: account, store: appState.accountsProviders.accountStore,
                     isAuthorized: {
                         appState.profilesModel.activeProfileID == profileID
-                            && !appState.profileFlow.managementRequiresParentalPIN
+                            && appState.isActiveProfileAuthorized && !appState.profileFlow.managementRequiresParentalPIN
+                            && appState.accountsProviders.activeAccountIDs.contains(account.id)
                     },
                     onChanged: { appState.accountsProviders.reloadAccounts(updatingServerAddressesFor: account.id) }
                 )
@@ -464,6 +467,7 @@ public struct RootView: View {
                         isAuthorized: {
                             appState.isLiveTVProfileAuthorized
                                 && !appState.profileFlow.managementRequiresParentalPIN
+                                && appState.accountsProviders.activeAccountIDs.contains(account.id)
                         },
                         onComplete: {
                             providerSetupRouter.reauthenticationAccount = nil
@@ -483,7 +487,8 @@ public struct RootView: View {
                 }
             }
         case .newServer:
-            if let descriptor = appState.cloudSyncUI.pendingServerPrompt {
+            if let raw = appState.cloudSyncUI.pendingServerPrompt,
+               let descriptor = appState.accountsProviders.scopedSetupDescriptors([raw]).first {
                 VStack(spacing: 24) {
                     Text("New server from your other device").font(.title2.bold())
                     Text("“\(descriptor.serverName)” is set up on another device. Sign in to watch it here — your login stays private to each device. You can also find it later under Settings ▸ iCloud Sync.")
@@ -804,6 +809,7 @@ public struct RootView: View {
                                 plexIdentityGeneration:
                                     appState.plexHomeUsers.plexIdentityGeneration
                             ),
+                            topShelf: appState.topShelfPublication,
                             pendingPlay: appState.pendingPlay,
                             screenshotDirector: appState.screenshotDirector
                         ),
@@ -864,7 +870,7 @@ public struct RootView: View {
                         },
                         onSyncNow: { appState.syncCloudNow() },
                         syncRepair: syncRepairActions,
-                        pendingSyncedServers: appState.cloudSyncUI.pendingSyncedServers,
+                        pendingSyncedServers: appState.accountsProviders.scopedSetupDescriptors(appState.cloudSyncUI.pendingSyncedServers),
                         onIgnorePendingServer: { appState.ignorePendingSyncedServer($0) },
                         onSetUpPendingServer: setUpPendingServer,
                         admissionContext: appState.admissionContext,
@@ -1059,6 +1065,7 @@ public struct RootView: View {
                 .environment(appState.profilesModel)
         }
         .task {
+            appState.topShelfPublication.start()
             while case .launching = appState.state {
                 let namespace = appState.profilesModel.activeNamespace
                 await HomeContentPrewarmer.shared.prepare {
@@ -1231,7 +1238,7 @@ private enum OnboardingPage: Equatable {
         switch step {
         case .selectingServer:
             self = .selectingServer(canReturnToApp: canReturnToApp)
-        case let .authenticating(server):
+        case let .authenticating(server, _):
             self = .authenticating(server)
         case .selectPlexUser:
             self = .selectPlexUser(plexUserSelection)
@@ -1293,6 +1300,7 @@ struct OnboardingFlowView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var displayedPage: OnboardingPage
+    @State private var sourceSetupGeneration: Int
     @State private var pendingPage: OnboardingPage?
     @State private var navigationDirection: OnboardingNavigationDirection = .forward
     @State private var isTransitioning = false
@@ -1311,6 +1319,7 @@ struct OnboardingFlowView: View {
         self.deviceColorScheme = deviceColorScheme
         self.onSetUpFromAnotherDevice = onSetUpFromAnotherDevice
         self.onAppearanceSelected = onAppearanceSelected
+        _sourceSetupGeneration = State(initialValue: appState.profilesModel.selectionGeneration)
         _displayedPage = State(initialValue: OnboardingPage(
             step: step,
             canReturnToApp: canReturnToApp,
@@ -1323,6 +1332,7 @@ struct OnboardingFlowView: View {
             OnboardingPageContent(
                 page: displayedPage,
                 appState: appState,
+                generation: sourceSetupGeneration,
                 deviceColorScheme: deviceColorScheme,
                 onSetUpFromAnotherDevice: onSetUpFromAnotherDevice,
                 onAppearanceSelected: onAppearanceSelected
@@ -1397,12 +1407,14 @@ struct OnboardingFlowView: View {
 private struct OnboardingPageContent: View {
     let page: OnboardingPage
     let appState: AppState
+    let generation: Int
     let deviceColorScheme: ColorScheme
     var onSetUpFromAnotherDevice: (() -> Void)?
     var onAppearanceSelected: (() -> Void)?
 
     @ViewBuilder
     var body: some View {
+        let permitsSetup = { appState.permitsSourceSetup(generation: generation) }
         switch page {
         case let .selectingServer(canReturnToApp):
             AddAccountView(
@@ -1413,14 +1425,18 @@ private struct OnboardingPageContent: View {
                 reconnectingIPTV: appState.pendingIPTVAccount.map {
                     $0.session(token: appState.accountsProviders.accountStore.token(for: $0.id) ?? "")
                 },
-                signedInServers: appState.signedInServers,
-                onMediaBrowserServerSelected: { server in appState.selectServer(server) },
-                onPlexAuthenticated: { session in appState.didAuthenticatePlex(session) },
-                onIPTVAuthenticated: { [profileID = appState.profilesModel.activeProfileID,
-                                       previous = appState.pendingIPTVAccount] session in
-                    guard appState.profilesModel.activeProfileID == profileID,
+                onMediaBrowserServerSelected: { server in
+                    guard permitsSetup() else { return }
+                    appState.selectServer(server)
+                },
+                onPlexAuthenticated: { session in
+                    guard permitsSetup() else { throw AppError.cancelled }
+                    guard appState.didAuthenticate(session) else { throw AppError.invalidResponse }
+                },
+                onIPTVAuthenticated: { [previous = appState.pendingIPTVAccount] session in
+                    guard permitsSetup(),
                           previous.map({ original in
-                              appState.accountsProviders.accounts.contains {
+                              appState.accountsProviders.navigationAccounts.contains {
                                   $0.id == original.id && $0.credentialRevision == original.credentialRevision
                               }
                           }) != false,
@@ -1428,12 +1444,16 @@ private struct OnboardingPageContent: View {
                         throw IPTVAuthViewModel.CompletionError.persistence
                     }
                 },
-                onSubsonicAuthenticated: { [profileID = appState.profilesModel.activeProfileID] session in
-                    guard appState.profilesModel.activeProfileID == profileID else { throw AppError.cancelled }
+                onSubsonicAuthenticated: { session in
+                    guard permitsSetup() else { throw AppError.cancelled }
                     guard appState.didAuthenticate(session) else { throw AppError.invalidResponse }
                 },
-                onPlexAuthenticatedMany: { sessions in appState.didAuthenticatePlexMany(sessions) },
+                onPlexAuthenticatedMany: { sessions in
+                    guard permitsSetup() else { throw AppError.cancelled }
+                    guard appState.didAuthenticatePlexMany(sessions) else { throw AppError.invalidResponse }
+                },
                 onShareConfigured: { draft in
+                    guard permitsSetup() else { return }
                     appState.didConfigureShare(
                         host: draft.host,
                         port: draft.port,
@@ -1446,6 +1466,7 @@ private struct OnboardingPageContent: View {
                     )
                 },
                 onWebDAVShareConfigured: { config in
+                    guard permitsSetup() else { return }
                     appState.didConfigureWebDAVShare(
                         baseURL: config.baseURL,
                         auth: config.auth,
@@ -1455,6 +1476,7 @@ private struct OnboardingPageContent: View {
                     )
                 },
                 onMediaShareConfigured: { result in
+                    guard permitsSetup() else { return }
                     switch result {
                     case let .nfs(config):
                         appState.didConfigureNFSShare(
@@ -1496,8 +1518,8 @@ private struct OnboardingPageContent: View {
                 SubsonicSignInView(
                     deviceID: appState.accountsProviders.deviceID,
                     address: server.baseURL.absoluteString,
-                    onAuthenticated: { [profileID = appState.profilesModel.activeProfileID] session in
-                        guard appState.profilesModel.activeProfileID == profileID else { throw AppError.cancelled }
+                    onAuthenticated: { session in
+                        guard permitsSetup() else { throw AppError.cancelled }
                         guard appState.didAuthenticate(session) else { throw AppError.invalidResponse }
                     },
                     onCancel: { appState.cancelAuthentication() }
@@ -1507,12 +1529,21 @@ private struct OnboardingPageContent: View {
                     .font(.title2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                AuthView(
-                    server: server,
-                    deviceID: appState.accountsProviders.deviceID,
-                    onAuthenticated: { session in appState.didAuthenticate(session) },
-                    onCancel: { appState.cancelAuthentication() }
-                )
+                let complete: (UserSession) throws -> Void = { session in
+                    guard permitsSetup() else { throw AppError.cancelled }
+                    guard appState.didAuthenticate(session) else { throw AppError.invalidResponse }
+                }
+                SavedServerSignInChoices(
+                    accounts: permitsSetup() && appState.verifiedOnboardingServer == server
+                        ? appState.accountsProviders.savedSignIns(for: server) : [],
+                    use: {
+                        guard permitsSetup() else { throw AppError.cancelled }
+                        try appState.useSavedSignIn($0, for: server)
+                    }
+                ) {
+                    AuthView(server: server, deviceID: appState.accountsProviders.deviceID,
+                             onAuthenticated: complete, onCancel: appState.cancelAuthentication)
+                }
             }
 
         case let .selectPlexUser(selection):

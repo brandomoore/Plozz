@@ -78,6 +78,9 @@ private func groupedAccounts(_ accounts: [Account], key: (Account) -> String,
 }
 
 public func serverKey(for account: Account) -> String {
+    // Playlist paths and credentials are deliberately absent from the public origin.
+    // The saved account ID also survives editing or reconnecting the source.
+    if account.server.provider == .iptv { return "iptv|\(account.id)" }
     let url = account.server.baseURL
     let host = url.host?.lowercased() ?? url.absoluteString
 

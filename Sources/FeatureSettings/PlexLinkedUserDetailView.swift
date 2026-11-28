@@ -12,16 +12,17 @@ import CoreUI
 struct PlexLinkedUserDetailView: View {
     let scope: ProfileLibrariesScope
     let accountID: String
+    var canManage: () -> Bool = { true }
 
     @State private var users: [PlexHomeUser] = []
     @State private var loading = true
 
     private var plexAccounts: [Account] {
-        scope.accounts.filter { $0.server.provider == .plex }
+        scope.accounts.filter { $0.server.provider == .plex && scope.isAccountIncludedInActiveProfile($0.id) }
     }
 
     private var account: Account? {
-        plexAccounts.first { $0.id == accountID } ?? plexAccounts.first
+        canManage() ? plexAccounts.first { $0.id == accountID } : nil
     }
 
     /// Signing in a SECOND Plex account on this server.
@@ -33,8 +34,9 @@ struct PlexLinkedUserDetailView: View {
     /// providers answer "who am I here?" the same way.
     @ViewBuilder
     private func addAccountPanel(_ account: Account) -> some View {
-        SettingsPanel(footer: "Signing in adds the account to this Apple TV. Any profile can then watch as it.") {
+        SettingsPanel {
             Button {
+                guard self.account?.id == account.id else { return }
                 scope.onAddUser(account.server)
             } label: {
                 Label("Add Another Plex Account", systemImage: "person.badge.plus")
@@ -84,16 +86,8 @@ struct PlexLinkedUserDetailView: View {
                     }
                     addAccountPanel(account)
                 } else {
-                    SettingsPanel(title: "No Plex Account") {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("Sign in to a Plex account under This Apple TV › Servers to pick a Plex Home user.")
-                                .plozzForeground(.secondary)
-                            // tvOS: at least one focusable element so Menu pops.
-                            Button { /* no-op — anchors focus */ } label: {
-                                Label("No Plex account", systemImage: "person.crop.circle.badge.xmark")
-                            }
-                        }
-                    }
+                    ContentUnavailableView("Source unavailable", systemImage: "person.crop.circle.badge.xmark")
+                        .focusable()
                 }
             }
             .frame(maxWidth: PlozzTheme.Metrics.settingsContentMaxWidth, alignment: .leading)
@@ -105,7 +99,9 @@ struct PlexLinkedUserDetailView: View {
         .task(id: account?.id) {
             guard let account else { return }
             loading = true
-            users = await scope.plexHomeUsersFetcher(account.id)
+            let result = await scope.plexHomeUsersFetcher(account.id)
+            guard !Task.isCancelled, self.account?.id == account.id else { return }
+            users = result
             loading = false
         }
     }
@@ -118,7 +114,7 @@ struct PlexLinkedUserDetailView: View {
 
     private func ownerRow(admin: PlexHomeUser?, account: Account) -> some View {
         Button {
-            guard let admin else { return }
+            guard let admin, self.account?.id == account.id else { return }
             scope.onSelectPlexHomeUser(account.id, admin)
         } label: {
             if let admin {
@@ -168,6 +164,7 @@ struct PlexLinkedUserDetailView: View {
     private func userRow(_ user: PlexHomeUser, account: Account) -> some View {
         let isSelected = scope.activeProfile.homeUserBinding(forPlexAccount: account.id)?.homeUserID == user.id
         return Button {
+            guard self.account?.id == account.id else { return }
             scope.onSelectPlexHomeUser(account.id, user)
         } label: {
             PlexHomeUserRow(user: user, accessory: isSelected ? .selected : .none)

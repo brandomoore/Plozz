@@ -462,6 +462,47 @@ final class IPTVAuthenticationTests: XCTestCase {
         XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.query?.contains("action=") == false }.count, 2)
     }
 
+    func testLiveDeliveryUsesOnlyThisProfilesXtreamPreferenceAndHonorsServerFormats() async throws {
+        let accountID = UUID().uuidString
+        let owner = XtreamLiveFormatPreference(accountID: accountID, profileID: "owner")
+        let guest = XtreamLiveFormatPreference(accountID: accountID, profileID: "guest")
+        let credential = try IPTVCredential(mode: .xtream, address: XCTUnwrap(URL(string: "https://provider.test")),
+                                            username: "viewer", password: "fixture")
+        func serve(_ formats: [String]) {
+            IPTVFixture.state.handler = { request in
+                let query = request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems
+                let data: Data
+                switch query?.first(where: { $0.name == "action" })?.value {
+                case nil: data = try JSONSerialization.data(withJSONObject: [
+                    "user_info": ["auth": "1", "status": "Active", "allowed_output_formats": formats] as [String: Any]
+                ])
+                case "get_live_categories": data = Data("[]".utf8)
+                case "get_live_streams": data = Data(#"[{"stream_id":10,"name":"Fixture"}]"#.utf8)
+                default: throw URLError(.unsupportedURL)
+                }
+                return (200, [:], data)
+            }
+        }
+        let directory = temporaryDirectory()
+        func client(_ preference: XtreamLiveFormatPreference) throws -> IPTVClient {
+            try IPTVClient(credential: credential, directory: directory, configuration: IPTVFixture.configuration(),
+                           liveFormatPreference: preference)
+        }
+        serve(["m3u8", "ts"])
+        let first = try client(owner)
+        _ = try await first.liveChannels()
+        let defaultURL = try await first.delivery("live:10").url
+        XCTAssertEqual(defaultURL.pathExtension, "m3u8")
+        try owner.save(.transportStream)
+        let changedURL = try await first.delivery("live:10").url
+        XCTAssertEqual(changedURL.pathExtension, "ts")
+        let otherURL = try await client(guest).delivery("live:10").url
+        XCTAssertEqual(otherURL.pathExtension, "m3u8")
+        serve(["m3u8"])
+        let fallbackURL = try await client(owner).delivery("live:10").url
+        XCTAssertEqual(fallbackURL.pathExtension, "m3u8")
+    }
+
     private func checkPlayback(_ credential: IPTVCredential) async throws {
         let root = temporaryDirectory()
         let session = try await IPTVProvider.signIn(

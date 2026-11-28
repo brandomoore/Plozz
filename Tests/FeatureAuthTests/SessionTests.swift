@@ -122,6 +122,14 @@ final class SessionStateMachineTests: XCTestCase {
         XCTAssertEqual(m.state, .ready)
     }
 
+    func testReselectionDoesNotCarryServerVerificationToAnUnverifiedEntry() {
+        var m = SessionStateMachine(state: .onboarding(.selectingServer, canReturnToApp: true))
+        m.apply(.serverSelected(server, verifiedForSavedSignIn: true))
+        XCTAssertEqual(m.state, .onboarding(.authenticating(server, verifiedForSavedSignIn: true), canReturnToApp: true))
+        m.apply(.serverSelected(server))
+        XCTAssertEqual(m.state, .onboarding(.authenticating(server), canReturnToApp: true))
+    }
+
     func testAddSecondAccountLoopReturnsToReady() {
         var m = SessionStateMachine(state: .ready)
         m.apply(.addAccountRequested)

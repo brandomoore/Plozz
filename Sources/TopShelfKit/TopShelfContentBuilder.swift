@@ -4,12 +4,18 @@ import TVServices
 /// Shared by the extension and tests, without the app's model or artwork stack.
 public enum TopShelfContentBuilder {
     public static func makeContent(from snapshot: TopShelfSnapshot) -> (any TVTopShelfContent)? {
+        // tvOS may retain native items between reloads. A new viewer must not
+        // reuse another viewer's card, even for the same server and item ID.
+        func identifier(for item: TopShelfSnapshot.Item) -> String {
+            guard let authorization = snapshot.authorizationID else { return item.shelfIdentifier }
+            return "\(authorization.uuidString)/\(item.shelfIdentifier)"
+        }
         if snapshot.usesFullScreen {
             var seen = Set<String>()
             let items = snapshot.sections.flatMap { section in
                 section.items.compactMap { item -> TVTopShelfCarouselItem? in
                     guard seen.insert(item.shelfIdentifier).inserted else { return nil }
-                    let result = TVTopShelfCarouselItem(identifier: item.shelfIdentifier)
+                    let result = TVTopShelfCarouselItem(identifier: identifier(for: item))
                     configure(result, from: item)
                     result.contextTitle = [section.title, item.subtitle].compactMap { $0 }.joined(separator: " · ")
                     result.summary = item.summary
@@ -34,7 +40,7 @@ public enum TopShelfContentBuilder {
         let sections = snapshot.sections.compactMap { section -> TVTopShelfItemCollection<TVTopShelfSectionedItem>? in
             guard !section.items.isEmpty else { return nil }
             let items = section.items.map { item in
-                let result = TVTopShelfSectionedItem(identifier: item.shelfIdentifier)
+                let result = TVTopShelfSectionedItem(identifier: identifier(for: item))
                 configure(result, from: item)
                 result.imageShape = .poster
                 result.displayAction = result.playAction

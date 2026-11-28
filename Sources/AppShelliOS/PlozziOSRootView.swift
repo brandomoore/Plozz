@@ -3,6 +3,7 @@ import AppRuntime
 import CoreModels
 import CoreUI
 import CrashReporting
+import FeatureAuth
 import FeatureHomeCore
 import FeatureLiveTV
 import FeatureMusic
@@ -52,6 +53,7 @@ public struct PlozziOSRootView: View {
     /// A synced server the user tapped "Set Up" on, used to pre-fill the Add Server
     /// sheet so they only have to sign in.
     @State private var serverSetupSeed: SyncedAccountDescriptor?
+    @State private var additionalUserServer: MediaServer?
     /// Action chosen in the new-server prompt, run after the prompt sheet dismisses so
     /// we never stack two sheets in the same runloop.
     @State private var serverPromptFollowUp: ServerPromptFollowUp?
@@ -207,6 +209,10 @@ public struct PlozziOSRootView: View {
             themeMusicController.stop()
         }
         .scrollContentBackground(.hidden)
+        .modifier(MobileProfileSourceRoutes(appModel: appModel, onAdd: showAddServer, onAddUser: { server in
+            additionalUserServer = server
+            showAddServer()
+        }))
         .environment(\.managedProviderSetupRouter, providerSetupRouter)
         .background { downloadSelectionPresenter }
         .onChange(of: appModel.isActiveProfileAuthorized) { _, authorized in
@@ -216,11 +222,23 @@ public struct PlozziOSRootView: View {
 
     private var profileAccessContent: some View {
         appDownloadContent
+        .plozzSheet(item: $providerSetupRouter.addressAccount) { account in
+            let profileID = appModel.profiles.activeProfileID
+            ServerAddressesView(
+                account: account, store: appModel.accountStore,
+                isAuthorized: {
+                    appModel.isActiveProfileAuthorized && !appModel.managementRequiresParentalPIN
+                        && appModel.profiles.activeProfileID == profileID && appModel.accountsProviders.activeAccountIDs.contains(account.id)
+                },
+                onChanged: { appModel.accountsProviders.reloadAccounts(updatingServerAddressesFor: account.id) }
+            ).presentationSizing(.page)
+        }
         .plozzSheet(item: $providerSetupRouter.reauthenticationAccount) { account in
             PlozziOSAccountReauthenticationView(appModel: appModel, account: account)
                 .presentationSizing(.page)
         }
         .onChange(of: appModel.profiles.activeProfileID) { _, _ in
+            providerSetupRouter.addressAccount = nil
             providerSetupRouter.reauthenticationAccount = nil
             contentRefreshCoordinator.reset()
         }
@@ -563,6 +581,7 @@ public struct PlozziOSRootView: View {
             isPresented: $showingAddServer,
             onDismiss: {
                 serverSetupSeed = nil
+                additionalUserServer = nil
                 iptvSetup = nil
                 appModel.finishManagedServerPresentation()
                 consumeDeferredPairingURL()
@@ -571,8 +590,8 @@ public struct PlozziOSRootView: View {
         ) {
             AddServerView(
                 appModel: appModel,
-                initialProvider: iptvSetup == nil ? serverSetupSeed?.provider : .iptv,
-                initialAddress: serverSetupSeed?.candidateBaseURLs.first?.absoluteString ?? "",
+                initialProvider: iptvSetup == nil ? (additionalUserServer?.provider ?? serverSetupSeed?.provider) : .iptv,
+                initialAddress: (additionalUserServer?.baseURL ?? serverSetupSeed?.candidateBaseURLs.first)?.absoluteString ?? "",
                 initialIPTVPlaylist: iptvSetup?.playlist, initialIPTVAccount: iptvSetup?.account,
                 initialIPTVMode: iptvSetup?.mode ?? .playlist
             )
@@ -912,13 +931,15 @@ public struct PlozziOSRootView: View {
             appModel.transientStatusPresenter.present(icon: "wifi.slash", text: "Unavailable in Offline Mode.")
             return
         }
-        appModel.beginManagedServerPresentation()
+        if let additionalUserServer { appModel.beginAddingUser(on: additionalUserServer) }
+        else { appModel.beginManagedServerPresentation() }
         showingAddServer = true
     }
 
     /// Adopt a server synced from another device: open the Add Server sheet pre-filled
     /// with its provider + address, so the user only has to sign in.
     private func setUpPendingSyncedServer(_ descriptor: SyncedAccountDescriptor) {
+        guard let descriptor = appModel.accountsProviders.scopedSetupDescriptors([descriptor]).first else { return }
         serverSetupSeed = descriptor
         showAddServer()
     }
@@ -931,8 +952,9 @@ public struct PlozziOSRootView: View {
             // cover is (or is about to be) presented at cold launch, so the two don't
             // fight over the same server.
             get: {
-                (appModel.isSettingsPresented || showDetectedCover || detectedFollowUpReceive)
-                    ? nil : appModel.pendingSyncedServerPrompt
+                guard !appModel.isSettingsPresented && !showDetectedCover && !detectedFollowUpReceive,
+                      let prompt = appModel.pendingSyncedServerPrompt else { return nil }
+                return appModel.accountsProviders.scopedSetupDescriptors([prompt]).first
             },
             set: { if $0 == nil { appModel.clearPendingSyncedServerPrompt() } }
         )

@@ -60,6 +60,10 @@ struct NavigationRailFocusHost<Content: View>: UIViewControllerRepresentable {
             target.detailPlaybackPreparationAllowed = source.detailPlaybackPreparationAllowed
             target.seasonRequestContextID = source.seasonRequestContextID
             target.libraryPresentationLoader = source.libraryPresentationLoader
+            target.profileSourceDestination = source.profileSourceDestination
+            target.profileSourcePlaylists = source.profileSourcePlaylists
+            target.profileSourceGuideStore = source.profileSourceGuideStore
+            target.managedProviderSetupRouter = source.managedProviderSetupRouter
             target[NavigationChromeModel.self] = source[NavigationChromeModel.self]
             target[ProfilesModel.self] = source[ProfilesModel.self]
             target[HeroTrailerController.self] = source[HeroTrailerController.self]

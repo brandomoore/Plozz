@@ -24,6 +24,7 @@ extension PlozziOSAppModel {
 
     static var isRunningUnitTests: Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            || NSClassFromString("XCTestCase") != nil
     }
 
     static func writableStateDirectory() -> URL? {
@@ -420,7 +421,7 @@ extension PlozziOSAppModel {
            removedIDs.contains(prompt.id) || localIDs.contains(prompt.id) {
             pendingSyncedServerPrompt = nil
         }
-        pendingSyncedServers = store.pending(excludingLocal: localIDs)
+        pendingSyncedServerCandidates = store.pending(excludingLocal: localIDs)
             .filter { !removedIDs.contains($0.id) }
         // Do not prompt before the separately delivered credentials arrive.
     }

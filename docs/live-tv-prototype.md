@@ -78,7 +78,17 @@ treatment, including lightening near-black monochrome ink on dark plates.
 Large preview artwork, mobile logo sizing,
 and custom-focus backing treatments keep their existing presentation.
 
-Source details offers **Refresh guide**, which revalidates the guide without
+Settings → Sources and the guide's account-backed source rows open the same
+profile source editor. **Show in guide** changes only that enrollment, not the
+account's library selection. **Manage channels** shows only channels belonging
+to that enrollment and edits this profile's visibility preferences. Guide lists
+use a profile's source label when set, otherwise the saved Live TV name. An
+account no longer available to the profile is not listed. Standalone URL and
+file playlists keep their own editors and parental approval controls. Eligible
+legacy playlist accounts can be restored explicitly from Settings → Sources;
+displaying a saved enrollment does not grant account access.
+
+An enrolled IPTV account offers **Refresh guide**, which revalidates the guide without
 refreshing the playlist or interrupting playback. Existing listings survive a
 failed refresh. Completion distinguishes missing guide configuration, no current
 listings, successful matching and failure; displayed matching counts cover the

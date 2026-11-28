@@ -49,12 +49,58 @@ final class LiveTVSourceAccessTests: XCTestCase {
     func testAProfileSwitchCannotAuthorizeThePreviousProfilesEditor() {
         let (profiles, suite) = makeProfiles()
         defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let originalID = profiles.activeProfileID
         let access = LiveTVSourceManagementAccess(profiles: profiles)
         XCTAssertTrue(access.canManage)
         let other = profiles.add(name: "Another adult")
         profiles.select(other.id)
         XCTAssertFalse(access.canManage)
         XCTAssertTrue(LiveTVSourceManagementAccess(profiles: profiles).canManage)
+        profiles.select(originalID)
+        XCTAssertFalse(access.canManage)
+        XCTAssertTrue(LiveTVSourceManagementAccess(profiles: profiles).canManage)
+    }
+
+    func testReplacingThenClearingTheProfileLockRevokesTheRetainedGrant() throws {
+        let (profiles, suite) = makeProfiles()
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        var child = profiles.add(name: "Child", isKidsProfile: true)
+        profiles.select(child.id)
+        profiles.setParentalPIN(try XCTUnwrap(ParentalPIN.make(pin: "1234", iterations: 1)))
+        let access = LiveTVSourceManagementAccess(profiles: profiles)
+        access.unlock("1234")
+        let canManage = { access.canManage }
+        XCTAssertTrue(canManage())
+
+        child.replaceLock(with: try XCTUnwrap(ProfileLock.make(pin: "1357", iterations: 1)))
+        profiles.update(child)
+        child.replaceLock(with: nil)
+        profiles.update(child)
+        XCTAssertFalse(canManage())
+        access.unlock("1234")
+        XCTAssertFalse(canManage())
+    }
+
+    func testChangingKidsStatusRequiresReopeningEvenAfterTheOriginalStatusReturns() throws {
+        let (profiles, suite) = makeProfiles()
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        var child = profiles.add(name: "Child", isKidsProfile: true)
+        profiles.select(child.id)
+        profiles.setParentalPIN(try XCTUnwrap(ParentalPIN.make(pin: "1234", iterations: 1)))
+        let access = LiveTVSourceManagementAccess(profiles: profiles)
+        access.unlock("1234")
+        XCTAssertTrue(access.canManage)
+
+        child.isKids = false
+        profiles.update(child)
+        XCTAssertFalse(access.canManage)
+        child.isKids = true
+        profiles.update(child)
+        access.unlock("1234")
+        XCTAssertFalse(access.canManage)
+        let reopened = LiveTVSourceManagementAccess(profiles: profiles)
+        reopened.unlock("1234")
+        XCTAssertTrue(reopened.canManage)
     }
 
     func testAutomaticChannelsUseTheSourceManagementPINGrantAndRevokeIt() async throws {

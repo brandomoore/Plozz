@@ -1,8 +1,10 @@
 #if os(iOS)
 import AppRuntime
 import CoreModels
+import CoreSecureStore
 import CoreNetworking
 import CoreUI
+import FeatureLiveTV
 import FeatureSettings
 import FeatureSyncSetup
 import SwiftUI
@@ -10,223 +12,12 @@ import SwiftUI
 struct PlozziOSServersSettingsView: View {
     let appModel: PlozziOSAppModel
     let onAddServer: () -> Void
-    @State private var selectedServerKey: String?
-
-    private var groups: [ServerAccountGroup] {
-        serverGroups(from: appModel.accounts)
-    }
 
     var body: some View {
-        SettingsPageList {
-            SettingsSectionGroup {
-                Button(action: onAddServer) {
-                    Label {
-                        Text(SettingsCopy.addSource)
-                    } icon: {
-                        Image(systemName: "plus")
-                    }
-                }
-                .settingsActionRow()
-                .accessibilityIdentifier("sources-add-source")
-            }
-
-            SettingsSectionGroup(SettingsCopy.sources) {
-                if groups.isEmpty {
-                    Text("No sources have been added yet.")
-                        .plozzForeground(.secondary)
-                } else {
-                    ForEach(groups, id: \.serverKey) { group in
-                        // A plain Button (not NavigationLink) because SettingsSectionGroup
-                        // re-emits its children through Group(subviews:), which renders
-                        // every NavigationLink destination eagerly (tap any → opens the
-                        // last) and breaks value links. A Button just sets state, and
-                        // navigationDestination(item:) pushes exactly the tapped one.
-                        Button {
-                            selectedServerKey = group.serverKey
-                        } label: {
-                            serverRowLabel(group)
-                        }
-                        .settingsActionRow()
-                    }
-                }
-            } footer: {
-                Text("Sign-ins and network shares are available to every profile on this \(deviceName).")
-            }
-        }
-        .navigationTitle(Text(SettingsCopy.sources))
-        .navigationDestination(item: $selectedServerKey) { key in
-            PlozziOSServerSettingsDetailView(appModel: appModel, serverKey: key)
-        }
-    }
-
-    @ViewBuilder
-    private func serverRowLabel(_ group: ServerAccountGroup) -> some View {
-        HStack(spacing: 12) {
-            ProviderBrandMark(
-                provider: group.providerKind,
-                size: 32,
-                mediaShareTransport: group.transportKind,
-                siteURL: group.accounts.first?.server.baseURL
-            )
-            VStack(alignment: .leading, spacing: 2) {
-                Text(group.serverName)
-                if let summary = summary(for: group) {
-                    Text(summary)
-                        .font(.caption)
-                        .plozzForeground(.secondary)
-                }
-            }
-            Spacer(minLength: 0)
-            Image(systemName: "chevron.forward")
-                .font(.footnote.weight(.semibold))
-                .plozzForeground(.tertiary)
-        }
-        .contentShape(Rectangle())
-    }
-
-    private func summary(for group: ServerAccountGroup) -> LocalizedStringResource? {
-        if group.accounts.count > 1 {
-            return "\(group.accounts.count) sign-ins"
-        }
-        guard let account = group.accounts.first else { return nil }
-        let user = account.userName.trimmingCharacters(in: .whitespaces)
-        if user.isEmpty {
-            return group.transportKind == .nfs ? nil : "Guest access"
-        }
-        return "Signed in as \(user)"
-    }
-
-}
-
-private struct PlozziOSServerSettingsDetailView: View {
-    let appModel: PlozziOSAppModel
-    let serverKey: String
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.managedProviderSetupRouter) private var providerSetupRouter
-    @State private var confirmRemoveServer = false
-    @State private var confirmRemoveEverywhere = false
-    @State private var selectedAccountID: String?
-
-    private var group: ServerAccountGroup? {
-        serverGroups(from: appModel.accounts).first {
-            $0.serverKey == serverKey
-        }
-    }
-
-    var body: some View {
-        SettingsPageList {
-            if let group {
-                SettingsSectionGroup("Signed in as") {
-                    ForEach(group.accounts) { account in
-                        Button {
-                            selectedAccountID = account.id
-                        } label: {
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(account.userName.isEmpty ? "Guest" : account.userName)
-                                    Text(account.server.baseURL.host() ?? account.server.baseURL.absoluteString)
-                                        .font(.caption)
-                                        .plozzForeground(.secondary)
-                                }
-                                Spacer(minLength: 0)
-                                Image(systemName: "chevron.forward")
-                                    .font(.footnote.weight(.semibold))
-                                    .plozzForeground(.tertiary)
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .settingsActionRow()
-                    }
-                } footer: {
-                    Text("Removing a sign-in affects every profile on this \(deviceName).")
-                }
-
-                if group.providerKind == .iptv, let providerSetupRouter {
-                    SettingsSectionGroup {
-                        ForEach(group.accounts) { account in
-                            Button("Edit connection", systemImage: "pencil") {
-                                providerSetupRouter.connectIPTV(account: account)
-                            }
-                            .settingsActionRow()
-                        }
-                    }
-                }
-
-                if [.jellyfin, .emby, .plex, .silo].contains(group.providerKind),
-                   providerSetupRouter != nil {
-                    SettingsSectionGroup("Connection addresses") {
-                        ServerAddressSettingsLink(accounts: group.accounts)
-                    }
-                }
-
-                if group.accounts.count > 1 {
-                    SettingsSectionGroup {
-                        Button("Remove Server", role: .destructive) {
-                            confirmRemoveServer = true
-                        }
-                        .settingsActionRow()
-                    } footer: {
-                        Text("Signs out every account on \(group.serverName).")
-                    }
-                }
-            } else {
-                ContentUnavailableView(
-                    "Server Removed",
-                    systemImage: "externaldrive.badge.xmark",
-                    description: Text("This server is no longer available.")
-                )
-            }
-        }
-        .navigationTitle(group?.serverName ?? "Server")
-        // When the server is gone (removed here, or the last sign-in removed on the
-        // pushed account detail, or a remote "Remove Everywhere" landed), pop back to
-        // the Servers list instead of stranding the user on an empty detail.
-        .onChange(of: group == nil) { _, gone in
-            if gone { dismiss() }
-        }
-        .navigationDestination(item: $selectedAccountID) { accountID in
-            if let account = appModel.accounts.first(where: { $0.id == accountID }) {
-                PlozziOSAccountDetailView(
-                    appModel: appModel,
-                    account: account
-                )
-            }
-        }
-        .confirmationDialog(
-            "Remove \(group?.serverName ?? "server")?",
-            isPresented: $confirmRemoveServer,
-            titleVisibility: .visible
-        ) {
-            if appModel.offersRemoveEverywhere {
-                Button("Remove Everywhere", role: .destructive) { confirmRemoveEverywhere = true }
-                Button("Remove from This \(deviceName)", role: .destructive) {
-                    for account in group?.accounts ?? [] {
-                        appModel.removeAccount(id: account.id)
-                    }
-                }
-            } else {
-                Button("Remove Server", role: .destructive) {
-                    for account in group?.accounts ?? [] {
-                        appModel.removeAccount(id: account.id)
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(appModel.offersRemoveEverywhere
-                 ? "Remove it from all your devices, or just this \(deviceName)?"
-                 : "Signs everyone out and removes this server.")
-        }
-        .alert("Remove from all devices?", isPresented: $confirmRemoveEverywhere) {
-            Button("Remove Everywhere", role: .destructive) {
-                for account in group?.accounts ?? [] {
-                    appModel.removeAccountEverywhere(id: account.id)
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("“\(group?.serverName ?? "This server")” will also be removed from your other devices signed in to iCloud.")
-        }
+        PlozziOSMyLibrariesSettingsView(appModel: appModel, onAddServer: onAddServer)
+            .environment(appModel.profiles)
+            .modifier(MobileProfileSourceRoutes(appModel: appModel, onAdd: onAddServer,
+                                                onAddUser: appModel.beginAddingUser(on:)))
     }
 }
 
@@ -236,6 +27,7 @@ struct PlozziOSMyLibrariesSettingsView: View {
     /// Signs an additional user in to an already-added server. Same capability as
     /// the tvOS "Watching as" page, in the idiom iOS uses for this screen.
     var onAddUser: (MediaServer) -> Void = { _ in }
+    var parentalAccess: () -> Bool = { false }
     /// Where this screen is being shown. Shared with tvOS, which renders the same
     /// page in both places for the same reason — see `ProfileLibrariesScope`.
     ///
@@ -245,15 +37,95 @@ struct PlozziOSMyLibrariesSettingsView: View {
     var presentation: ProfileLibrariesScope.Presentation = .settings
 
     var body: some View {
+        if presentation == .settings {
+            ProfileSourcesView(scope: appModel.sourceSettingsScope(onAdd: onAddServer, onAddUser: onAddUser),
+                               canManage: { appModel.isActiveProfileAuthorized &&
+                                   (!appModel.managementRequiresParentalPIN || parentalAccess()) })
+                .environment(appModel.profiles)
+        } else {
+            setupContent
+        }
+    }
+
+    private var setupContent: some View {
         let libraries = (appModel.settings.discoveredLibraries.state.value ?? [])
             .filter { !$0.library.isMusic }
             .map { ProfileLibraryChoice(accountID: $0.accountID, library: $0.library) }
             .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
-        PlozziOSMyLibrariesContent(
+        return PlozziOSMyLibrariesContent(
             appModel: appModel, onAddServer: onAddServer, onAddUser: onAddUser,
-            presentation: presentation, groups: libraryPickerGroups(from: appModel.accounts),
+            presentation: presentation, groups: libraryPickerGroups(from: appModel.accounts.filter {
+                appModel.accountsProviders.activeAccountIDs.contains($0.id)
+            }),
             librariesByAccountID: Dictionary(grouping: libraries, by: \.accountID)
         )
+    }
+}
+
+extension PlozziOSAppModel {
+    func sourceSettingsScope(onAdd: @escaping () -> Void,
+                             onAddUser: @escaping (MediaServer) -> Void) -> ProfileLibrariesScope {
+        let profile = profiles.activeProfile
+        let discovery = settings.discoveredLibraries
+        return ProfileLibrariesScope(
+            accounts: accounts, activeProfile: profile, discoveredLibraries: discovery.state,
+            refreshingLibraryAccountIDs: discovery.refreshingAccountIDs,
+            unreachableLibraryAccountIDs: discovery.unreachableAccountIDs,
+            libraryFailures: discovery.failures,
+            reloadLibraries: { _ = await self.refreshNavigationLibraries() },
+            homeVisibility: settings.homeVisibility,
+            isAccountIncludedInActiveProfile: { self.profiles.activeProfileID == profile.id
+                && self.accountsProviders.activeAccountIDs.contains($0) },
+            onSetAccountIncluded: { id, enabled in
+                guard self.isActiveProfileAuthorized, self.profiles.activeProfileID == profile.id else { return }
+                self.setAccount(id, enabled: enabled, for: profile.id)
+            }, onAddAccount: onAdd, onAddUser: onAddUser,
+            plexHomeUsersFetcher: { await self.plexHomeUsers.plexHomeUsers(forAccountID: $0) },
+            onSelectPlexHomeUser: { self.plexHomeUsers.setPlexHomeUserForActiveProfile(accountID: $0, user: $1) },
+            onRescanShare: rescanShare(accountID:), connectedIPTVMode: accountsProviders.connectedIPTVMode(accountID:)
+        )
+    }
+}
+
+struct MobileProfileSourceRoutes: ViewModifier {
+    let appModel: PlozziOSAppModel
+    let onAdd: () -> Void
+    let onAddUser: (MediaServer) -> Void
+
+    func body(content: Content) -> some View {
+        let profile = appModel.profiles.activeProfile
+        let parentalPIN = appModel.profiles.parentalPIN
+        let selection = appModel.profiles.selectionGeneration
+        let namespace = appModel.profiles.activeNamespace
+        let authorized = {
+            appModel.isActiveProfileAuthorized && appModel.profiles.activeProfileID == profile.id
+                && appModel.profiles.selectionGeneration == selection
+                && appModel.profiles.activeProfile.effectiveLockRevision == profile.effectiveLockRevision
+                && appModel.profiles.activeProfile.effectiveKidsProfileRevision == profile.effectiveKidsProfileRevision
+                && appModel.profiles.parentalPIN == parentalPIN
+        }
+        let live: (LiveTVSourcesView.Presentation) -> AnyView = { section in
+            AnyView(PlozziOSLiveTVSourcesDestination(
+                profileID: profile.id, preferencesNamespace: namespace,
+                accountsProviders: appModel.accountsProviders, profiles: appModel.profiles,
+                connectServer: onAdd, didConfigurePlaylist: { _ = appModel.recordSuccessfulIPTVSetup() },
+                isProfileAuthorized: { authorized() && appModel.isLiveTVProfileAuthorized },
+                sourcePresentation: section
+            ))
+        }
+        content
+            .environment(\.profileSourceGuideStore, { id in
+                guard authorized(), id == profile.id else { return nil }
+                return LiveTVSourceStorage.approvalAwareStore(profileID: id, namespace: namespace)
+            })
+            .environment(\.profileSourcePlaylists, { live(.profilePlaylists) })
+            .environment(\.profileSourceDestination, { accountID, canManage in
+                AnyView(ProfileSourceDetail(
+                    profileID: profile.id, accountID: accountID,
+                    scope: { appModel.sourceSettingsScope(onAdd: onAdd, onAddUser: onAddUser) },
+                    isAuthorized: { authorized() && canManage() }, liveControls: { live(.profileAccount(accountID)) }
+                ).environment(appModel.profiles))
+            })
     }
 }
 
@@ -336,7 +208,7 @@ private struct PlozziOSMyLibrariesContent: View {
                     }
                     .accessibilityIdentifier("libraries-add-source")
                 } footer: {
-                    Text("New sources are available to every profile on this \(deviceName).")
+                    Text("Adds a source to this profile.")
                 }
             }
         }
@@ -487,7 +359,7 @@ private struct PlozziOSMyLibrariesContent: View {
                 fallbackFor: group.serverKey == searchGroup(for: "watcher-server-user")?.serverKey
                     ? ["watcher-server-user"] : []
             )
-        } else if group.providerKind != .mediaShare, group.accounts.count > 1 {
+        } else if group.providerKind != .iptv && group.providerKind != .mediaShare, group.accounts.count > 1 {
             Picker(
                 "Watching as",
                 selection: Binding(
@@ -516,7 +388,7 @@ private struct PlozziOSMyLibrariesContent: View {
     /// chooser. Matches the tvOS "Watching as" page.
     @ViewBuilder
     private func addUserButton(_ group: ServerAccountGroup) -> some View {
-        if group.providerKind != .mediaShare,
+        if group.providerKind != .mediaShare, group.providerKind != .iptv,
            let server = group.accounts.first?.server {
             Button {
                 onAddUser(server)

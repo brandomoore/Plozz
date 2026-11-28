@@ -28,7 +28,7 @@ public enum OnboardingStep: Equatable, Sendable {
     /// No server chosen yet — show the picker.
     case selectingServer
     /// Server chosen, running Quick Connect / password sign-in.
-    case authenticating(MediaServer)
+    case authenticating(MediaServer, verifiedForSavedSignIn: Bool = false)
     /// One or more accounts were just added — pick which of each new server's
     /// libraries appear on Home. Shown on every add (first run and later),
     /// after any Plex-user pick, before profile setup / entering the app.
@@ -77,7 +77,7 @@ public enum SessionEvent: Sendable {
     case standalonePlaybackRequested(needsProfileSetup: Bool)
     /// User asked to add another account from inside the app.
     case addAccountRequested
-    case serverSelected(MediaServer)
+    case serverSelected(MediaServer, verifiedForSavedSignIn: Bool = false)
     /// An account finished authenticating and was persisted.
     case accountAuthenticated
     /// The *first-ever* account finished authenticating on a brand-new install;
@@ -163,11 +163,11 @@ public struct SessionStateMachine: Sendable {
             return .onboarding(.selectingServer, canReturnToApp: true)
 
         // Server picked during onboarding.
-        case let (.onboarding(.selectingServer, canReturn), .serverSelected(server)):
-            return .onboarding(.authenticating(server), canReturnToApp: canReturn)
+        case let (.onboarding(.selectingServer, canReturn), .serverSelected(server, verified)):
+            return .onboarding(.authenticating(server, verifiedForSavedSignIn: verified), canReturnToApp: canReturn)
         // Re-select a different server while authenticating.
-        case let (.onboarding(.authenticating, canReturn), .serverSelected(server)):
-            return .onboarding(.authenticating(server), canReturnToApp: canReturn)
+        case let (.onboarding(.authenticating, canReturn), .serverSelected(server, verified)):
+            return .onboarding(.authenticating(server, verifiedForSavedSignIn: verified), canReturnToApp: canReturn)
 
         // Authentication outcomes.
         case (.onboarding(.authenticating, _), .accountAuthenticated):
@@ -242,8 +242,8 @@ public struct SessionStateMachine: Sendable {
         case let (.failed(_, canReturn), .retry),
              let (.failed(_, canReturn), .cancelOnboarding):
             return canReturn ? .ready : .onboarding(.selectingServer, canReturnToApp: false)
-        case let (.failed(_, canReturn), .serverSelected(server)):
-            return .onboarding(.authenticating(server), canReturnToApp: canReturn)
+        case let (.failed(_, canReturn), .serverSelected(server, verified)):
+            return .onboarding(.authenticating(server, verifiedForSavedSignIn: verified), canReturnToApp: canReturn)
 
         // Account set changed (removal / sign-out) from anywhere meaningful.
         case let (_, .accountsChanged(accounts)):

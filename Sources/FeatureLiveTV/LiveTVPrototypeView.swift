@@ -127,6 +127,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var pendingIPTVPlaylist: LiveTVPlaylistSource?
     @State private var pendingIPTVMode: IPTVCredential.Mode = .playlist
     @Environment(\.managedProviderSetupRouter) private var providerSetupRouter
+    @Environment(ProfilesModel.self) private var profiles: ProfilesModel?
     @State private var externalPlayback: PrototypeExternalPlayback?
     @State private var multiviewSelection: LiveTVMultiviewSelection?
     @State private var multiviewEditingInsets: EdgeInsets?
@@ -617,7 +618,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             })
             .toolbar {
                 PrototypeTouchBrowseToolbar(
-                    model: model, configuration: imports.configuration,
+                    model: model, configuration: browseConfiguration,
                     isSearching: isSearching || searchRetainsToolbar,
                     showsDirectory: usesCategoryDirectory(layout),
                     hasSidebar: layout.sidebarWidth > 0,
@@ -1212,9 +1213,10 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             #endif
             updatePreviewAvailability()
         }
-        .onChange(of: sheet?.id) { _, _ in
+        .onChange(of: sheet?.id) { previous, _ in
             if sheet != nil { playback.cancelWatch() }
             else {
+                if previous == PrototypeSheet.sources.id, isProfileAuthorized() { model.reloadPreferences() }
                 managesLibraryChannels = false
                 showsScanSources = false
             }
@@ -1354,7 +1356,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                     }
                 }
             } else if showsSourceEmptyState, let sources,
-                      sources.configuration.playlists.isEmpty && sources.configuration.servers.isEmpty {
+                      sources.configuration.playlists.isEmpty && browseConfiguration.servers.isEmpty {
                 PrototypeGuidePlacement(frame: layout.contentFrame, canvasWidth: canvasWidth) {
                     LiveTVSetupWelcome(
                         addPlaylist: {
@@ -1363,7 +1365,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         },
                         useServer: { sheet = .serverSetup },
                         issue: sources.mutationIssue?.message,
-                        serverStatuses: enrollment.statuses.filter { $0.phase != .idle },
+                        serverStatuses: enrollment.statuses.filter { status in
+                            status.phase != .idle && serverChoices.contains { $0.id == status.id }
+                        },
                         retryServers: requestCatalogRefresh,
                         createChannel: canManageLibraryChannels ? {
                             managesLibraryChannels = true
@@ -1374,7 +1378,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 }
             } else if showsSourceEmptyState, let sources,
                       !sources.configuration.playlists.contains(where: \.isEnabled),
-                      !sources.configuration.servers.contains(where: \.isEnabled) {
+                      !browseConfiguration.servers.contains(where: \.isEnabled) {
                 PrototypeGuidePlacement(frame: layout.contentFrame, canvasWidth: canvasWidth) {
                     ContentUnavailableView {
                         Label("Your sources are paused", systemImage: "pause.circle")
@@ -1473,6 +1477,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                         selectBrowseSource(sourceID)
                         sheet = nil
                     },
+                    isProfileAuthorized: { isActive && isProfileAuthorized() },
                     didConfigurePlaylist: didConfigurePlaylist,
                     createChannel: canManageLibraryChannels ? { managesLibraryChannels = true } : nil,
                     scanChannels: { showsScanSources = true },
@@ -1798,7 +1803,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 PrototypeLoadingSidebar()
             } else {
                 PrototypeBrowseSidebar(
-                    model: model, configuration: imports.configuration, active: $controlsActive,
+                    model: model, configuration: browseConfiguration, active: $controlsActive,
                     lastFocusedControl: $sidebarLastFocusedControl,
                     focusRequest: toolbarFocusRequest, isSearching: isSearching,
                     categoryFocusRequest: categoryFocusRequest,
@@ -2372,11 +2377,16 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     }
     #endif
 
+    private var browseConfiguration: LiveTVSourcesConfiguration {
+        guard isProfileAuthorized(), !sourceApplicationFailed else { return .empty }
+        return imports.configuration.presented(for: serverChoices, names: profiles?.activeProfile.sourceNames)
+    }
+
     private func selectBrowseSource(_ sourceID: String?) {
         guard isActive, scenePhase == .active, isProfileAuthorized(), !sourceApplicationFailed,
               sources == nil || applySourceConfiguration(),
-              sourceID == nil || imports.configuration.playlists.contains(where: { $0.id == sourceID && $0.isEnabled })
-                || imports.configuration.servers.contains(where: { $0.id == sourceID && $0.isEnabled }) else { return }
+              sourceID == nil || browseConfiguration.playlists.contains(where: { $0.id == sourceID && $0.isEnabled })
+                || browseConfiguration.servers.contains(where: { $0.id == sourceID && $0.isEnabled }) else { return }
         model.source = nil
         model.configuredSourceID = sourceID
         if let category = model.category, !model.browsingCategories.contains(where: { $0.name == category }) {

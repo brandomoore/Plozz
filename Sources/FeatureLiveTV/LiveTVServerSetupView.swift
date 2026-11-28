@@ -11,6 +11,7 @@ struct LiveTVServerSetupView: View {
     @State private var saveFailed = false
     @SettingsPageDismiss private var dismiss
     @Environment(NavigationStyleSettingsModel.self) private var navigation: NavigationStyleSettingsModel?
+    @Environment(ProfilesModel.self) private var profiles: ProfilesModel?
 
     init(
         sources: LiveTVSourceManagementModel,
@@ -49,7 +50,7 @@ struct LiveTVServerSetupView: View {
                             saveFailed = false
                             probe.beginCheck(choice)
                         } label: {
-                            SettingsRowLabel(icon: "server.rack", title: Text(choice.name)) {
+                            SettingsRowLabel(icon: "server.rack", title: Text(verbatim: name(for: choice))) {
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text(choice.kind.rawValue)
                                     if !choice.userName.isEmpty {
@@ -69,8 +70,8 @@ struct LiveTVServerSetupView: View {
                 }
             }
 
-            if let choice = probe.choice {
-                SettingsSectionGroup(verbatim: choice.name) {
+            if let choice = probe.choice, choices.contains(where: { $0.id == choice.id }) {
+                SettingsSectionGroup(verbatim: name(for: choice)) {
                     if probe.isChecking {
                         ProgressView("Checking Live TV")
                     } else if let failure = probe.failure {
@@ -130,6 +131,11 @@ struct LiveTVServerSetupView: View {
             if let request = probe.pendingRequest { await probe.perform(request) }
         }
         .onDisappear { probe.cancelCheck() }
+    }
+
+    private func name(for choice: LiveTVServerChoice) -> String {
+        profiles?.activeProfile.sourceNames?[choice.id]
+            ?? sources.configuration.servers.first { $0.accountID == choice.id }?.name ?? choice.name
     }
 }
 

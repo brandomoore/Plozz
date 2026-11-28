@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import CoreModels
 import CoreNetworking
+import MediaTransportCore
 import FeatureAuthCore
 import CryptoKit
 import FeatureLiveTVCore
@@ -42,12 +43,18 @@ public final class AccountsProvidersModel {
     /// throw away a perfectly good snapshot during launch, before the account store
     /// has been read, and the page has to re-fetch everything.
     public private(set) var hasResolvedAccounts = false
-    /// The subset of `accounts` currently included in the active set. Sourced
-    /// from the active profile (falling back to the household-global active set
-    /// for the default profile).
-    public private(set) var activeAccountIDs: Set<String> = []
+    private var publishedAccountIDs: Set<String> = []
+    private var publishedProfileID: String?
+    private var publishedSelection: [String]?
+    /// Do not reuse the previous profile's grants between a switch or failed
+    /// write and the account hub's next publication.
+    public var activeAccountIDs: Set<String> {
+        guard !accountSelectionIsUnavailable, publishedProfileID == profilesModel.activeProfileID,
+              publishedSelection == profilesModel.storedActiveAccountIDs(for: profilesModel.activeProfileID)
+        else { return [] }
+        return publishedAccountIDs
+    }
     /// Snapshot on reload so rendering picker badges never reads the Keychain.
-    private var householdActiveAccountIDs: [String] = []
     @ObservationIgnored private var lastReloadedViewer: AutomaticSignInStore.Session.ProfileAccess?
 
     /// An explicit selection has no locally available accounts, including when
@@ -107,6 +114,7 @@ public final class AccountsProvidersModel {
         self.registry = registry
         self.profilesModel = profilesModel
         self.removedAccountIDs = removedAccountIDs
+        try? prepareSourceRegistration()
         let token = NotificationCenter.default.addObserver(
             forName: LiveTVSourceDiagnostics.snapshotRequested, object: nil, queue: .main
         ) { [weak self] _ in
@@ -152,11 +160,14 @@ public final class AccountsProvidersModel {
         account: Account, isAuthorized: @escaping () -> Bool, onComplete: @escaping () -> Void
     ) -> AccountReauthenticationModel {
         let profile = AutomaticSignInStore.Session.ProfileAccess(profilesModel.activeProfile)
+        let generation = profilesModel.selectionGeneration
         return AccountReauthenticationModel(
             account: account, deviceID: deviceID, store: accountStore,
             isAuthorized: { [weak self] in
                 guard let self else { return false }
-                return profile == .init(self.profilesModel.activeProfile) && isAuthorized()
+                return generation == self.profilesModel.selectionGeneration
+                    && profile == .init(self.profilesModel.activeProfile) && isAuthorized()
+                    && (try? self.profilesModel.confirmedSourceMembership(for: profile.id).contains(account.id)) == true
             },
             onComplete: { [weak self] in
                 guard let self else { return }
@@ -169,7 +180,8 @@ public final class AccountsProvidersModel {
     }
 
     private var accountSelectionIsUnavailable: Bool {
-        profilesModel.unconfirmedAccountSelectionProfileIDs.contains(profilesModel.activeProfileID)
+        !profilesModel.sourceMembershipsPrepared ||
+            profilesModel.unconfirmedAccountSelectionProfileIDs.contains(profilesModel.activeProfileID)
     }
 
     /// Sync may record a question before the account's provider is known.
@@ -474,11 +486,8 @@ public final class AccountsProvidersModel {
 
     /// The active account that drives the current single-provider UI.
     public var primaryActiveAccount: Account? {
-        // A profile that chose to watch nothing has no primary account. Without
-        // this the `?? accounts.first` below answered with the household's first
-        // server, so Settings showed every server off while Home played from one.
-        if watchesNothingByChoice || accountSelectionIsUnavailable { return nil }
-        return accounts.first { activeAccountIDs.contains($0.id) } ?? accounts.first
+        guard !accountSelectionIsUnavailable else { return nil }
+        return accounts.first { activeAccountIDs.contains($0.id) }
     }
 
     /// The active accounts paired with their resolved providers. Multi-account
@@ -508,6 +517,7 @@ public final class AccountsProvidersModel {
     /// "choose your libraries" step (which fans a library-listing call out over
     /// the just-added accounts). Tokens are resolved on demand.
     public func resolvedAccounts(withIDs ids: [String]) -> [ResolvedAccount] {
+        guard !accountSelectionIsUnavailable else { return [] }
         if let localProviders {
             return accounts.compactMap { account in
                 guard ids.contains(account.id), activeAccountIDs.contains(account.id),
@@ -516,7 +526,7 @@ public final class AccountsProvidersModel {
             }
         }
         return ids.compactMap { id in
-            guard let account = accounts.first(where: { $0.id == id }),
+            guard activeAccountIDs.contains(id), let account = accounts.first(where: { $0.id == id }),
                   let token = tokenResolver(account.id),
                   let provider = resolveProvider(
                       for: providerResolutionContext(for: account, token: token)
@@ -526,35 +536,14 @@ public final class AccountsProvidersModel {
         }
     }
 
-    /// The accounts the unified Home/Search fan out over. Normally the active
-    /// set; falls back to the primary account so the signed-in UI is never empty
-    /// when the active-id set is empty for a reason the user didn't ask for.
-    ///
-    /// The fallback is deliberately NOT applied when the profile chose to watch
-    /// nothing — that's an instruction, not a gap to paper over, and honouring it
-    /// is what stops a Kids Profile with every server switched off still being
-    /// fed the household's first server.
-    public var homeAccounts: [ResolvedAccount] {
-        let active = resolvedActiveAccounts
-        if localProviders != nil { return active }
-        if !active.isEmpty { return active }
-        if watchesNothingByChoice { return [] }
-        guard let account = primaryActiveAccount,
-              let token = tokenResolver(account.id),
-              let provider = resolveProvider(
-                  for: providerResolutionContext(for: account, token: token)
-              )
-        else { return [] }
-        return [resolvedAccount(account, provider: provider)]
-    }
+    /// Home and Search resolve exactly the active profile's available sources.
+    public var homeAccounts: [ResolvedAccount] { resolvedActiveAccounts }
 
     /// Configured sources for navigation, not authorization to access their data.
     /// Pending credentials must not turn a media profile into a Live-TV-only one.
     public var navigationAccounts: [Account] {
-        guard !watchesNothingByChoice, !accountSelectionIsUnavailable else { return [] }
-        let active = accounts.filter { activeAccountIDs.contains($0.id) }
-        if !active.isEmpty { return active }
-        return primaryActiveAccount.map { [$0] } ?? []
+        let ids = activeAccountIDs
+        return accounts.filter { ids.contains($0.id) }
     }
 
     private func resolvedAccount(_ account: Account, provider: any MediaProvider) -> ResolvedAccount {
@@ -570,8 +559,8 @@ public final class AccountsProvidersModel {
     /// library/item from the merged Home back to its owning provider. Tokens are
     /// resolved on demand and never stored on the value.
     public func provider(forAccountID id: String) -> (any MediaProvider)? {
+        guard activeAccountIDs.contains(id), !accountSelectionIsUnavailable else { return nil }
         if let localProviders {
-            guard activeAccountIDs.contains(id), !accountSelectionIsUnavailable else { return nil }
             return localProviders[id]
         }
         guard let account = accounts.first(where: { $0.id == id }),
@@ -630,14 +619,28 @@ public final class AccountsProvidersModel {
     }
 
     /// The active account ids for a specific profile, filtered to accounts that
-    /// are still signed in. Only an unset selection inherits the household set;
-    /// missing selected accounts never authorize other accounts.
+    /// are still signed in. Absent IDs are retained but never authorize another account.
     public func activeAccountIDs(forProfile id: String) -> [String] {
+        guard profilesModel.sourceMembershipsPrepared else { return [] }
         let known = Set(accounts.map(\.id))
-        if let stored = profilesModel.storedActiveAccountIDs(for: id) {
-            return stored.filter { known.contains($0) }
+        return (profilesModel.storedActiveAccountIDs(for: id) ?? []).filter(known.contains)
+    }
+
+    /// A signed-out connection may be recoverable on another device, but its
+    /// descriptor is not a discovery result and cannot be advertised to peers.
+    public func scopedSetupDescriptors(_ candidates: [SyncedAccountDescriptor]) -> [SyncedAccountDescriptor] {
+        guard !accountSelectionIsUnavailable else { return [] }
+        let members = Set(profilesModel.storedActiveAccountIDs(for: profilesModel.activeProfileID) ?? [])
+        return candidates.compactMap { candidate in
+            guard members.contains(candidate.id) else { return nil }
+            guard candidate.provider == .iptv else { return candidate }
+            var display = candidate
+            display.serverName = candidate.provider.displayName
+            display.candidateBaseURLs = []
+            display.userName = ""
+            display.avatarURL = nil
+            return display
         }
-        return householdActiveAccountIDs.filter { known.contains($0) }
     }
 
     public func profileShowsPINLock(_ profile: Profile) -> Bool {
@@ -647,23 +650,126 @@ public final class AccountsProvidersModel {
         )
     }
 
-    /// Explicitly adding IPTV includes it in this viewer's selection, not just the household fallback.
-    public func includeIPTVAccountInActiveProfile(_ account: Account) throws {
-        guard account.server.provider == .iptv else { return }
-        let profileID = profilesModel.activeProfileID
-        guard !accountSelectionIsUnavailable else {
-            PlozzLog.auth.error("IPTV setup could not read the current profile's server selection")
-            throw ProfilesModel.AccountSelectionError.unavailable
+    public func prepareSourceRegistration() throws {
+        try profilesModel.prepareSourceMemberships {
+            let legacy = try accountStore.legacySourceSelection()
+            let removed = removedAccountIDs()
+            return (legacy.active.filter { !removed.contains($0) }, legacy.playlists)
         }
-        guard var selected = profilesModel.storedActiveAccountIDs(for: profileID),
-              !selected.contains(account.id) else { return }
-        selected.append(account.id)
-        profilesModel.setActiveAccountIDs(selected, for: profileID)
-        guard !accountSelectionIsUnavailable,
-              Set(profilesModel.storedActiveAccountIDs(for: profileID) ?? []) == Set(selected) else {
-            PlozzLog.auth.error("IPTV setup could not save the current profile's server selection")
-            throw ProfilesModel.AccountSelectionError.unavailable
+
+    }
+
+    public func connectedIPTVMode(accountID: String) throws -> IPTVCredential.Mode {
+        guard activeAccountIDs.contains(accountID),
+              accounts.contains(where: { $0.id == accountID && $0.server.provider == .iptv }),
+              try profilesModel.confirmedSourceMembership(for: profilesModel.activeProfileID).contains(accountID),
+              let token = accountStore.token(for: accountID) else { throw AppError.unauthorized }
+        return try IPTVCredential.decode(token).mode
+    }
+
+    public func configureAuthenticatedHTTP(_ resolver: ManagedAuthenticatedHTTPResolver) {
+        resolver.configure { [weak self] locator in
+            guard let self, activeAccountIDs.contains(locator.accountID),
+                  let published = accounts.first(where: { $0.id == locator.accountID }),
+                  let account = accountStore.loadAccounts().first(where: { $0.id == locator.accountID }),
+                  account.server.provider == locator.provider, published.server.provider == locator.provider,
+                  account.userID == published.userID, account.server.id == published.server.id,
+                  account.credentialRevision == published.credentialRevision,
+                  credentialRevision(account) == locator.credentialRevision,
+                  let token = tokenResolver(account.id), !token.isEmpty else {
+                throw MediaTransportError.authentication(reason: "inactive authenticated HTTP identity")
+            }
+            // After an address edit, an old provider must not override the freshly saved origin.
+            let provider = published.connectionScopeKey == account.connectionScopeKey
+                ? self.provider(forAccountID: account.id) : nil
+            let origin = provider as? any AuthenticatedHTTPOriginProviding
+            guard account.server.provider != .plex || origin != nil else {
+                throw MediaTransportError.unsupportedCapability("dynamic authenticated HTTP origin")
+            }
+            return ManagedAuthenticatedHTTPResolver.Context(
+                provider: locator.provider, accountID: account.id, credentialRevision: locator.credentialRevision,
+                baseURL: origin?.authenticatedHTTPOrigin ?? account.server.baseURL, token: token,
+                resourceResolver: provider as? any ProviderHTTPResourceResolving, originProvider: origin,
+                connectionScopeKey: "\(profilesModel.selectionGeneration)|\(profilesModel.activeProfileID)|\(account.connectionScopeKey)"
+            )
         }
+    }
+
+    public func beginSourceAuthentication() throws {
+        try prepareSourceRegistration()
+        try profilesModel.confirmPersistedProfile(profilesModel.activeProfile)
+        _ = try profilesModel.confirmedSourceMembership(for: profilesModel.activeProfileID)
+    }
+
+    /// Plex credentials stay staged until the Home identity flow commits its
+    /// explicit targets. Every other provider joins only the initiating profile.
+    public func connectAuthenticatedSource(_ account: Account) throws {
+        guard account.server.provider != .plex else { return }
+        try profilesModel.addSourceMemberships([account.id], for: profilesModel.activeProfileID)
+    }
+
+    public func registerMediaShare(
+        _ prepared: PreparedMediaShareAccount, using service: MediaShareAccountConfigurationService
+    ) throws {
+        try beginSourceAuthentication()
+        try service.persist(prepared)
+        try connectAuthenticatedSource(prepared.account)
+    }
+
+    public func needsPlexConnectionDecision(for accountID: String) throws -> Bool {
+        let roster = try profilesModel.confirmedSourceRoster()
+        return try !roster.contains {
+            if $0.homeUserBinding(forPlexAccount: accountID) != nil { return true }
+            return try profilesModel.confirmedSourceMembership(for: $0.id).contains(accountID)
+        }
+    }
+
+    public func beginsFirstRun(adding provider: ProviderKind) throws -> Bool {
+        guard !profilesModel.firstRunProfileSetupComplete else { return false }
+        if accounts.isEmpty { return true }
+        // A failed or cancelled Plex Home decision leaves staged credentials,
+        // not a configured viewer. Retrying must still complete first run.
+        guard provider == .plex, accounts.allSatisfy({ $0.server.provider == .plex }),
+              try profilesModel.confirmedSourceRoster().count == 1 else { return false }
+        return try profilesModel.confirmedSourceMembership(for: profilesModel.activeProfileID).isEmpty
+    }
+
+    /// A URL manufactured as a fallback ID is not a verified server identity.
+    /// Only offer a credential back to its original endpoint, never a lookalike
+    /// host, a LAN advertisement, a playlist or an unverified redirect.
+    public func savedSignIns(for verified: MediaServer) -> [Account] {
+        guard verified.provider.usesMediaBrowserAPI, !verified.id.isEmpty,
+              URL(string: verified.id)?.scheme == nil else { return [] }
+        let authorized = Set(activeAccountIDs(forProfile: profilesModel.activeProfileID))
+        return accounts.filter {
+            authorized.contains($0.id) && $0.server.provider == verified.provider &&
+            $0.server.id == verified.id && $0.server.baseURL == verified.baseURL &&
+            !$0.userName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            accountStore.token(for: $0.id)?.isEmpty == false
+        }
+    }
+
+    public func confirmSavedSignIn(_ account: Account, for verified: MediaServer) throws {
+        try profilesModel.confirmPersistedProfile(profilesModel.activeProfile)
+        guard try profilesModel.confirmedSourceMembership(for: profilesModel.activeProfileID).contains(account.id),
+              !removedAccountIDs().contains(account.id),
+              savedSignIns(for: verified).contains(account),
+              accountStore.loadAccounts().contains(account) else { throw AppError.unauthorized }
+    }
+
+    public func recoverablePlaylistAccountIDs(referencedBy configuration: LiveTVSourcesConfiguration) -> Set<String> {
+        profilesModel.legacyPlaylistRecoveryIDs.intersection(configuration.servers.map(\.accountID))
+            .intersection(accounts.filter { $0.server.provider == .iptv }.map(\.id))
+    }
+
+    public func recoverPlaylistAccount(
+        _ id: String, referencedBy configuration: LiveTVSourcesConfiguration, for profileID: String
+    ) throws {
+        guard recoverablePlaylistAccountIDs(referencedBy: configuration).contains(id),
+              accountStore.loadAccounts().contains(where: { $0.id == id && $0.server.provider == .iptv }),
+              !removedAccountIDs().contains(id) else { throw AppError.unauthorized }
+        try profilesModel.restoreLegacyPlaylistMembership(id, for: profileID)
+        refreshActiveAccountSelection()
     }
 
     /// Reloads accounts from the store and recomputes the active set for the
@@ -671,6 +777,7 @@ public final class AccountsProvidersModel {
     /// `onActiveAccountsChanged` so the media-share runtime can update its
     /// preferred-account keys.
     public func reloadAccounts(updatingServerAddressesFor addressAccountID: String? = nil) {
+        try? prepareSourceRegistration()
         profilesModel.retryUnconfirmedAccountSelections()
         liveTVAuthorizationCache = [:]
         let removed = removedAccountIDs()
@@ -682,8 +789,7 @@ public final class AccountsProvidersModel {
         // must be retried on a later reload.
         let updated = accountStore.loadAccounts().filter { !removed.contains($0.id) }
         let viewer = AutomaticSignInStore.Session.ProfileAccess(profilesModel.activeProfile)
-        let householdIDs = accountStore.activeAccountIDs()
-        let selectedIDs = Set(profilesModel.storedActiveAccountIDs(for: viewer.id) ?? householdIDs)
+        let selectedIDs = Set(profilesModel.storedActiveAccountIDs(for: viewer.id) ?? [])
         if let addressAccountID,
            viewer == lastReloadedViewer, !accountSelectionIsUnavailable,
            activeAccountIDs == selectedIDs.intersection(updated.map(\.id)),
@@ -713,7 +819,6 @@ public final class AccountsProvidersModel {
         onAccountsInvalidated()
         accounts = updated
         hasResolvedAccounts = true
-        householdActiveAccountIDs = householdIDs
         publishActiveAccountSelection()
     }
 
@@ -722,7 +827,7 @@ public final class AccountsProvidersModel {
     public func refreshActiveAccountSelection() {
         profilesModel.retryUnconfirmedAccountSelections()
         let resolved = Set(activeAccountIDs(forProfile: profilesModel.activeProfileID))
-        for id in activeAccountIDs.subtracting(resolved) {
+        for id in publishedAccountIDs.subtracting(resolved) {
             registry.invalidate(accountID: id)
         }
         onAccountsInvalidated()
@@ -731,7 +836,9 @@ public final class AccountsProvidersModel {
 
     private func publishActiveAccountSelection() {
         let resolved = Set(activeAccountIDs(forProfile: profilesModel.activeProfileID))
-        activeAccountIDs = resolved
+        publishedProfileID = profilesModel.activeProfileID
+        publishedSelection = profilesModel.storedActiveAccountIDs(for: profilesModel.activeProfileID)
+        publishedAccountIDs = resolved
         watchesNothingByChoice = resolved.isEmpty
             && !accountSelectionIsUnavailable
             && profilesModel.storedActiveAccountIDs(for: profilesModel.activeProfileID) != nil

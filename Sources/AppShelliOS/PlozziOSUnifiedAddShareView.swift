@@ -53,7 +53,9 @@ struct PlozziOSUnifiedAddShareView: View {
         .onAppear {
             if !wired {
                 wired = true
+                let generation = appModel.profiles.selectionGeneration
                 viewModel.onSMBConfigured = { draft in
+                    guard appModel.permitsSourceSetup(generation: generation) else { return }
                     saveError = nil
                     if appModel.addSMBShare(
                         host: draft.host,
@@ -72,6 +74,7 @@ struct PlozziOSUnifiedAddShareView: View {
                     }
                 }
                 viewModel.onWebDAVConfigured = { config in
+                    guard appModel.permitsSourceSetup(generation: generation) else { return }
                     saveError = nil
                     if appModel.addWebDAVShare(
                         baseURL: config.baseURL,
@@ -87,6 +90,7 @@ struct PlozziOSUnifiedAddShareView: View {
                     }
                 }
                 viewModel.onMediaShareConfigured = { result in
+                    guard appModel.permitsSourceSetup(generation: generation) else { return }
                     saveError = nil
                     let saved: Bool
                     switch result {

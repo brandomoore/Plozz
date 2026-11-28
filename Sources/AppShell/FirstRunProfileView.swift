@@ -83,7 +83,7 @@ struct FirstRunProfileView: View {
             ProfileEditorView(
                 editingProfile: profile,
                 canDelete: false,
-                photoSourceAccounts: appState.accountsProviders.accounts,
+                photoSourceAccounts: appState.accountsProviders.navigationAccounts,
                 plexHomeUsersFetcher: { await appState.plexHomeUsers.plexHomeUsers(forAccountID: $0) },
                 onSave: { draft in
                     appState.profileFlow.saveProfile(draft)

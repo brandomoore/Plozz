@@ -1300,6 +1300,9 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
     }
 
     public func publishCurrentContent() {
+        // The launch cache is per Plozz profile, not per effective server viewer.
+        // It can seed Home, but it is never evidence for a system Home Screen export.
+        guard hasCompletedHomeLoad, canLoadContent else { return }
         let content: Content
         switch state {
         case .loaded(let loaded): content = loaded
@@ -1308,7 +1311,9 @@ public final class HomeViewModel: HomeContentSnapshotProviding {
         }
         let visibility = currentVisibility()
         let isLibraryVisible: (String) -> Bool = { visibility.isVisible($0) }
-        let continueWatching = content.continueWatching
+        let continueWatching = content.continueWatching.filter {
+            !serverConfirmedTargets.isDisjoint(with: Self.scopeKeys(of: $0))
+        }
         let latest = content.latest.filter { $0.isVisibleOnHome(isLibraryVisible: isLibraryVisible) }
         // Supersede any in-flight publish: the async per-item poster compositing
         // makes a publish take seconds, so two overlapping `load()`s would run two

@@ -312,7 +312,8 @@ struct ProfileSelectionView: View {
                     ProfileEditorView(
                         editingProfile: profile,
                         canDelete: appState.profilesModel.profiles.count > 1,
-                        photoSourceAccounts: appState.accountsProviders.accounts,
+                        photoSourceAccounts: profile.id == appState.profilesModel.activeProfileID
+                            ? appState.accountsProviders.navigationAccounts : [],
                         plexHomeUsersFetcher: { await appState.plexHomeUsers.plexHomeUsers(forAccountID: $0) },
                         onSave: { appState.profileFlow.saveProfile($0); route = nil },
                         onLiveChange: { appState.profileFlow.updateProfileCosmetics($0) },
@@ -326,7 +327,7 @@ struct ProfileSelectionView: View {
             case let .creating(isKids):
                 ProfileEditorView(
                     canDelete: false,
-                    photoSourceAccounts: appState.accountsProviders.accounts,
+                    photoSourceAccounts: [],
                     existingColorIndices: appState.profilesModel.profiles.map(\.colorIndex),
                     existingEmojiAvatars: appState.profilesModel.profiles.compactMap(\.avatarEmoji),
                     plexHomeUsersFetcher: { await appState.plexHomeUsers.plexHomeUsers(forAccountID: $0) },

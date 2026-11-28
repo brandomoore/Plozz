@@ -67,7 +67,9 @@ final class AccountsProvidersModelTests: XCTestCase {
         )
     }
 
-    private func makeModel(accountIDs: [(String, String)]) throws -> (AccountsProvidersModel, AccountStore, ProfilesModel) {
+    private func makeModel(
+        accountIDs: [(String, String)], beforeCutover: ((AccountStore, ProfilesModel) throws -> Void)? = nil
+    ) throws -> (AccountsProvidersModel, AccountStore, ProfilesModel) {
         let secrets = InMemorySecureStore()
         let store = AccountStore(
             secureStore: secrets, mediaCredentialVault: MediaCredentialVault(secureStore: secrets),
@@ -79,6 +81,7 @@ final class AccountsProvidersModelTests: XCTestCase {
             try store.add(account(id: id, host: host), token: "token-\(id)")
         }
         let profiles = ProfilesModel(store: ProfileStore(defaults: makeDefaults()))
+        try beforeCutover?(store, profiles)
         let model = AccountsProvidersModel(
             accountStore: store,
             registry: ProviderRegistry(),
@@ -538,16 +541,82 @@ final class AccountsProvidersModelTests: XCTestCase {
         XCTAssertEqual(model.deviceID, store.deviceID())
     }
 
-    func testPrimaryActiveAccountFallsBackToFirst() throws {
-        let (model, store, _) = try makeModel(accountIDs: [("a", "a.example.com"), ("b", "b.example.com")])
-        store.setActiveAccountIDs([])
+    func testPrimaryActiveAccountCannotUseTheFirstHouseholdAccount() throws {
+        let (model, _, profiles) = try makeModel(accountIDs: [("a", "a.example.com"), ("b", "b.example.com")])
+        profiles.select(profiles.add(name: "New").id)
         model.reloadAccounts()
-        // Even if the active set were empty, primaryActiveAccount falls back to the
-        // first account so the signed-in UI is never empty.
-        XCTAssertNotNil(model.primaryActiveAccount)
-        XCTAssertTrue(["a", "b"].contains(model.primaryActiveAccount!.id))
+        XCTAssertNil(model.primaryActiveAccount)
         XCTAssertTrue(model.activeAccountIDs.isEmpty)
-        XCTAssertEqual(model.navigationAccounts, [try XCTUnwrap(model.primaryActiveAccount)])
+        XCTAssertTrue(model.navigationAccounts.isEmpty)
+    }
+
+    func testSavedSignInRequiresVerifiedEndpointAccountAndCurrentMembership() throws {
+        let (model, _, profiles) = try makeModel(accountIDs: [("mine", "shared.test"), ("other", "shared.test")])
+        profiles.setActiveAccountIDs(["mine"], for: profiles.activeProfileID)
+        model.reloadAccounts()
+        let mine = try XCTUnwrap(model.accounts.first { $0.id == "mine" })
+        let other = try XCTUnwrap(model.accounts.first { $0.id == "other" })
+        XCTAssertEqual(model.savedSignIns(for: mine.server), [mine])
+        XCTAssertTrue(model.savedSignIns(for: other.server).isEmpty)
+        var alias = mine.server
+        alias.baseURL.appendPathComponent("another-instance")
+        XCTAssertTrue(model.savedSignIns(for: alias).isEmpty)
+        alias = mine.server
+        alias.id = mine.server.baseURL.absoluteString
+        XCTAssertTrue(model.savedSignIns(for: alias).isEmpty)
+        XCTAssertNoThrow(try model.confirmSavedSignIn(mine, for: mine.server))
+        profiles.select(profiles.add(name: "Other", activeAccountIDs: ["other"]).id)
+        XCTAssertThrowsError(try model.confirmSavedSignIn(mine, for: mine.server))
+        XCTAssertTrue(model.savedSignIns(for: mine.server).isEmpty)
+    }
+
+    func testStagedPlexIsNotAGrantAndFirstRunRetryRemainsAvailable() throws {
+        let (model, store, profiles) = try makeModel(accountIDs: [])
+        let plex = account(id: "plex", host: "plex.example", provider: .plex)
+        try model.beginSourceAuthentication()
+        try store.add(plex, token: "fixture")
+        try model.connectAuthenticatedSource(plex)
+        model.reloadAccounts()
+        XCTAssertTrue(model.activeAccountIDs.isEmpty)
+        XCTAssertTrue(try model.needsPlexConnectionDecision(for: plex.id))
+        XCTAssertTrue(try model.beginsFirstRun(adding: .plex))
+        try profiles.addSourceMemberships([plex.id], for: profiles.activeProfileID)
+        XCTAssertFalse(try model.beginsFirstRun(adding: .plex))
+        XCTAssertFalse(try model.needsPlexConnectionDecision(for: plex.id))
+    }
+
+    func testPlaylistRecoveryRequiresTheExactProfileSourceRecord() throws {
+        let (model, _, profiles) = try makeModel(accountIDs: [("media", "server.test")]) { store, profiles in
+            for id in ["one", "two"] {
+                try store.add(self.account(id: id, host: "lists.test", provider: .iptv), token: "fixture")
+            }
+            store.setActiveAccountIDs(["media", "one", "two"])
+            profiles.setActiveAccountIDs(["media"], for: profiles.activeProfileID)
+        }
+        model.reloadAccounts()
+        let saved = LiveTVSourcesConfiguration(servers: [.init(name: "Saved list", accountID: "one")])
+        XCTAssertEqual(model.activeAccountIDs, ["media"])
+        XCTAssertTrue(model.recoverablePlaylistAccountIDs(referencedBy: .empty).isEmpty)
+        XCTAssertEqual(model.recoverablePlaylistAccountIDs(referencedBy: saved), ["one"])
+        XCTAssertThrowsError(try model.recoverPlaylistAccount("two", referencedBy: saved, for: profiles.activeProfileID))
+        try model.recoverPlaylistAccount("one", referencedBy: saved, for: profiles.activeProfileID)
+        XCTAssertEqual(model.activeAccountIDs, ["media", "one"])
+    }
+
+    func testRemoteSetupListsOnlyExactProfileReferencesAndDoesNotExposeAPlaylistAddress() throws {
+        let (model, _, profiles) = try makeModel(accountIDs: [])
+        let url = try XCTUnwrap(URL(string: "https://lists.example/private/fixture"))
+        let mine = SyncedAccountDescriptor(id: "mine", provider: .iptv, serverID: "playlist",
+            serverName: url.absoluteString, userID: "u", userName: "u", candidateBaseURLs: [url])
+        var other = mine
+        other.id = "other"
+        profiles.setActiveAccountIDs(["mine"], for: profiles.activeProfileID)
+        let eligible = model.scopedSetupDescriptors([other, mine])
+        XCTAssertEqual(eligible.map(\.id), ["mine"])
+        XCTAssertEqual(eligible.first?.candidateBaseURLs, [])
+        XCTAssertNotEqual(eligible.first?.serverName, url.absoluteString)
+        profiles.select(profiles.add(name: "New").id)
+        XCTAssertTrue(model.scopedSetupDescriptors([mine, other]).isEmpty)
     }
 
     // MARK: Active-set resolution matrix (reloadAccounts)
@@ -568,7 +637,7 @@ final class AccountsProvidersModelTests: XCTestCase {
         profiles.update(target)
         model.reloadAccounts()
         XCTAssertNotEqual(profiles.activeProfileID, target.id)
-        XCTAssertTrue(model.profileShowsPINLock(target), "An unset subset inherits household sources.")
+        XCTAssertFalse(model.profileShowsPINLock(target), "A new profile does not inherit household sources.")
 
         profiles.setActiveAccountIDs(["silo"], for: target.id)
         XCTAssertFalse(model.profileShowsPINLock(target), "Inactive picker tiles use their own source choice.")
@@ -686,9 +755,41 @@ final class AccountsProvidersModelTests: XCTestCase {
 
         profiles.setActiveAccountIDs([], for: profiles.activeProfileID)
         model.reloadAccounts()
-        XCTAssertNotNil(model.provider(forAccountID: "a"))
+        XCTAssertNil(model.provider(forAccountID: "a"))
         XCTAssertTrue(model.liveTVServerChoices.isEmpty)
         XCTAssertNil(resolver("a"))
+    }
+
+    func testFivePlaylistsOnOneOriginResolveTheirOwnLineupsUntilIndividuallyRemoved() async throws {
+        let (model, store, profiles) = try makeModel(accountIDs: [])
+        model.registry.register(.iptv) { context in
+            let credential = try IPTVCredential.decode(context.session.accessToken)
+            let name = credential.address.lastPathComponent
+            return LiveTVAccountsTestProvider(session: context.session, channels: {
+                [ServerLiveTVChannel(id: name, name: name)]
+            })
+        }
+        model.tokenResolver = { store.token(for: $0) }
+        let ids = (1...5).map { "list-\($0)" }
+        for id in ids {
+            try model.beginSourceAuthentication()
+            let source = account(id: id, host: "lists.example", provider: .iptv)
+            let credential = try IPTVCredential(mode: .playlist, address: source.server.baseURL.appendingPathComponent(id))
+            try store.add(source, token: try credential.encoded())
+            try model.connectAuthenticatedSource(source)
+        }
+        model.reloadAccounts()
+        let resolve = model.liveTVProviderResolver()
+        XCTAssertEqual(Set(model.liveTVServerChoices.map(\.id)), Set(ids))
+        for id in ids {
+            let provider = try XCTUnwrap(resolve(id)).provider
+            let channels = try await provider.liveTVChannels()
+            XCTAssertEqual(channels.map(\.name), [id])
+        }
+        profiles.setActiveAccountIDs(Array(ids.dropFirst()), for: profiles.activeProfileID)
+        model.reloadAccounts()
+        XCTAssertNil(resolve(ids[0]))
+        for id in ids.dropFirst() { XCTAssertNotNil(resolve(id)) }
     }
 
     func testLiveTVUsesEffectiveCredentialsAndInvalidatesTheirIdentity() throws {

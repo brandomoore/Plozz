@@ -21,7 +21,8 @@ struct ServerUserDetailView: View {
     @State private var revision = 0
 
     private var group: ServerAccountGroup? {
-        serverGroups(from: scope.accounts).first { $0.serverKey == serverKey }
+        serverGroups(from: scope.accounts.filter { scope.isAccountIncludedInActiveProfile($0.id) })
+            .first { $0.serverKey == serverKey && $0.providerKind != .iptv && $0.providerKind != .mediaShare }
     }
 
     var body: some View {
@@ -45,9 +46,6 @@ struct ServerUserDetailView: View {
             .padding(.vertical, 24)
         }
         .scrollClipDisabled()
-        .task(id: group?.accounts.map(\.id)) {
-            normalizeSelection()
-        }
     }
 
     private func usersPanel(_ group: ServerAccountGroup) -> some View {
@@ -83,7 +81,7 @@ struct ServerUserDetailView: View {
 
     /// Signing in an additional user, from where you'd discover one is missing.
     private func addUserPanel(_ group: ServerAccountGroup) -> some View {
-        SettingsPanel(footer: "Signing in adds the user to this Apple TV. Any profile can then watch as them.") {
+        SettingsPanel {
             Button {
                 if let server = group.accounts.first?.server {
                     scope.onAddUser(server)
@@ -106,24 +104,6 @@ struct ServerUserDetailView: View {
             scope.onSetAccountIncluded(account.id, account.id == chosen.id)
         }
         revision += 1
-    }
-
-    /// Exactly one login represents a profile on a Jellyfin/Emby server.
-    ///
-    /// New profiles initially include the household account set, which may contain
-    /// several logins to one physical server. Raw membership therefore made every
-    /// row look selected until the user tapped one. Collapse that inherited set
-    /// immediately to the first current choice and persist the invariant.
-    private func normalizeSelection() {
-        guard let group else { return }
-        let included = group.accounts.filter {
-            scope.isAccountIncludedInActiveProfile($0.id)
-        }
-        let chosen = included.first ?? group.accounts.first
-        guard let chosen,
-              included.count != 1 || included.first?.id != chosen.id
-        else { return }
-        choose(chosen, in: group)
     }
 
     private func selectedAccountID(in group: ServerAccountGroup) -> String? {

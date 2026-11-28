@@ -4,6 +4,7 @@ import AppRuntime
 import CoreModels
 import CoreUI
 import FeatureSettings
+import TopShelfKit
 #if DEBUG
 import FeaturePlayback
 #endif
@@ -17,6 +18,7 @@ struct PlozzApp: App {
     #endif
 
     init() {
+        TopShelfPublisher.revoke()
         _ = AppInstallation.current
         _launchPrepared = State(initialValue: SyncSetupLaunchPreparation.prepare())
         ProcessSignalPolicy.ignoreBrokenPipe()

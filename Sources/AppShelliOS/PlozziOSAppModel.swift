@@ -111,6 +111,12 @@ final class PlozziOSAppModel {
     var canEnterApp: Bool { admissionContext.canEnterApp }
     var isLiveTVProfileAuthorized: Bool { isActiveProfileAuthorized && !isOfflineMode }
 
+    func permitsSourceSetup(generation: Int) -> Bool {
+        profiles.selectionGeneration == generation && !mustChooseProfile && !activeProfileNeedsUnlock
+            && lockedSwitch == nil && parentalSwitch == nil && !managementRequiresParentalPIN
+            && plexHomeUsers.pendingPlexPINRequest == nil
+    }
+
     var liveTVAdmissionDiagnostic: String { // l10n:content - diagnostic log fields, never display copy.
         guard HandoffDiagnostics.isEnabled else { return "" }
         return "canEnter=\(canEnterApp) chooseProfile=\(mustChooseProfile)"
@@ -296,7 +302,10 @@ final class PlozziOSAppModel {
     lazy var providerCredentialSync = ProviderCredentialSync(
         accounts: accountStore,
         enabled: { SyncSetupFeatureFlag().allowsAutomaticSync && !OfflineMode.shared.isEnabled },
-        canRestore: { [weak self] in self?.managementRequiresParentalPIN == false },
+        canRestore: { [weak self] in
+            guard let self, !managementRequiresParentalPIN else { return false }
+            return (try? accountsProviders.prepareSourceRegistration()) != nil
+        },
         didRestore: { [weak self] in
             guard let self else { return }
             reloadAccountsAndCrashContext()
@@ -311,7 +320,10 @@ final class PlozziOSAppModel {
 
     /// Servers synced from other devices that this device isn't signed into yet — shown
     /// so the user can sign in / pair to use them here (parity with tvOS).
-    var pendingSyncedServers: [SyncedAccountDescriptor] = []
+    var pendingSyncedServerCandidates: [SyncedAccountDescriptor] = []
+    var pendingSyncedServers: [SyncedAccountDescriptor] {
+        accountsProviders.scopedSetupDescriptors(pendingSyncedServerCandidates)
+    }
 
     /// A newly-synced server from another device, queued for a one-time "set it up
     /// here?" prompt (nil = nothing to prompt). Nudged only once per server; drives the
@@ -406,6 +418,7 @@ final class PlozziOSAppModel {
                 let account = Account(id: desc.id, server: server, userID: desc.userID, userName: desc.userName,
                                       avatarURL: desc.avatarURL, deviceID: secret.deviceID)
                 do {
+                    try accountsProviders.prepareSourceRegistration()
                     try accountStore.add(account, token: secret.token)
                     added += 1
                 } catch {
@@ -437,6 +450,7 @@ final class PlozziOSAppModel {
                 let account = Account(id: desc.id, server: server, userID: desc.userID, userName: desc.userName,
                                       avatarURL: desc.avatarURL, deviceID: accountStore.deviceID())
                 do {
+                    try accountsProviders.prepareSourceRegistration()
                     try accountStore.addMediaShare(account, credential: envelope, generatedPrivateKey: nil)
                     added += 1
                 } catch {
@@ -469,16 +483,7 @@ final class PlozziOSAppModel {
             guard profiles.profiles.contains(where: { $0.id == pid }) else { continue }
             if pid == ProfileStore.defaultProfileID, receiverWasConfigured { continue }
             let usable = ids.filter { receivedAccountIDs.contains($0) }
-            // Storing an EMPTY set would read as "this profile chose to watch
-            // nothing" and blank its Home. An empty result here just means the
-            // sender's servers didn't all come across, which is not a choice the
-            // user made — clear the membership instead, which means "watches
-            // whatever the household has".
-            if usable.isEmpty, !ids.isEmpty {
-                profiles.clearActiveAccountIDs(for: pid)
-            } else {
-                profiles.setActiveAccountIDs(usable, for: pid)
-            }
+            profiles.setActiveAccountIDs(usable, for: pid)
         }
         // Mirror the tvOS receiver: complete first-run so the app never bounces
         // back to onboarding, refresh providers + identity index, and republish
@@ -692,6 +697,7 @@ final class PlozziOSAppModel {
     @ObservationIgnored
     private var queuedPlexUserSelection: PlexHomeUsersModel.PendingPlexUserSelection?
     @ObservationIgnored private var queuedLibraryAccountIDs: [String]?
+    @ObservationIgnored private var queuedLibraryProfileGeneration: Int?
     @ObservationIgnored private var queuedLibrarySelectionBeginsFirstRun = false
     @ObservationIgnored private var postAddPresentationGeneration: UInt64 = 0
     @ObservationIgnored private var watchReconcilers: [String: WatchStateReconciler] = [:]
@@ -806,8 +812,7 @@ final class PlozziOSAppModel {
         let profiles = ProfilesModel(
             store: profileStore ?? ProfileStore(
                 secureStore: KeychainStore(service: "com.plozz.app.household")
-            ),
-            defaultActiveAccountIDs: accountStore.activeAccountIDs()
+            )
         )
         // Forced when the profile we'd restore is locked, so its content never
         // renders behind the PIN prompt — the unlock then runs through the
@@ -992,47 +997,7 @@ final class PlozziOSAppModel {
             return try await self.plexHomeUsers.resolveCloudToken(for: account, expectedRevision: revision)
         }
         accountsProviders.configureAuthenticatedArtwork()
-        authenticatedHTTPResolver.configure { [weak accountsProviders] locator in
-            guard let accountsProviders,
-                  let account = accountsProviders.accounts.first(where: {
-                      $0.id == locator.accountID
-                  }),
-                  account.server.provider == locator.provider,
-                  accountsProviders.credentialRevision(account) == locator.credentialRevision,
-                  let token = accountsProviders.tokenResolver(account.id),
-                  !token.isEmpty else {
-                throw MediaTransportError.authentication(
-                    reason: "inactive authenticated HTTP identity"
-                )
-            }
-            let baseURL: URL
-            if account.server.provider == .plex {
-                let provider = try accountsProviders.registry.provider(
-                    for: accountsProviders.providerResolutionContext(
-                        for: account,
-                        token: token
-                    )
-                )
-                guard let originProvider = provider as? AuthenticatedHTTPOriginProviding else {
-                    throw MediaTransportError.unsupportedCapability(
-                        "dynamic authenticated HTTP origin"
-                    )
-                }
-                baseURL = originProvider.authenticatedHTTPOrigin
-            } else {
-                baseURL = account.server.baseURL
-            }
-            return ManagedAuthenticatedHTTPResolver.Context(
-                provider: account.server.provider,
-                accountID: account.id,
-                credentialRevision: accountsProviders.credentialRevision(account),
-                baseURL: baseURL,
-                token: token,
-                resourceResolver: accountsProviders.provider(forAccountID: account.id) as? any ProviderHTTPResourceResolving,
-                originProvider: accountsProviders.provider(forAccountID: account.id) as? any AuthenticatedHTTPOriginProviding,
-                connectionScopeKey: account.connectionScopeKey
-            )
-        }
+        accountsProviders.configureAuthenticatedHTTP(authenticatedHTTPResolver)
         do {
             try accountStore.recoverCredentialMutations()
         } catch {
@@ -1443,7 +1408,7 @@ final class PlozziOSAppModel {
         var removedSynced = RemovedAccountsStore()
         removedSynced.removeAll()
         HouseholdDevicesStore().removeAll()
-        pendingSyncedServers = []
+        pendingSyncedServerCandidates = []
         pendingSyncedServerPrompt = nil
         accountsProviders.reloadAccounts()
         guard accountsProviders.accounts.isEmpty else { return false }
@@ -3049,16 +3014,14 @@ final class PlozziOSAppModel {
                 settingsSheet.pendingProfileCreation = (draft, isKids)
                 return
             }
-            // Created AWAITING SETUP, exactly as on tvOS. A new profile inherits
-            // every server, so importing a watchlist before the user has said
-            // which servers it uses — and who it watches as on them — drops the
-            // household's aggregate watchlist into it. `addAwaitingSetup` gates
-            // the import until `advanceProfileOnboarding` releases it.
             let created = profiles.addAwaitingSetup(
                 draft,
-                isKids: isKids,
-                activeAccountIDs: accounts.map(\.id)
+                isKids: isKids
             )
+            guard (try? profiles.confirmPersistedProfile(created)) != nil else {
+                accountError = String(localized: "Couldn’t save this profile. Try again.")
+                return
+            }
             // Claimed BEFORE the switch: `performSelectProfile` schedules a
             // deferred resume, and this new profile does need setup, so without
             // the claim already in place that resume would take the flow over and
@@ -3172,27 +3135,18 @@ final class PlozziOSAppModel {
         if profiles.activeProfileID == profileID {
             return accountsProviders.activeAccountIDs
         }
-        return Set(
-            profiles.activeAccountIDs(
-                for: profileID,
-                fallback: accountStore.activeAccountIDs()
-            )
-        )
+        return Set(accountsProviders.activeAccountIDs(forProfile: profileID))
     }
 
     func setAccount(_ accountID: String, enabled: Bool, for profileID: String) {
-        let previous = activeAccountIDs(for: profileID)
-        var ids = previous
-        if enabled {
-            ids.insert(accountID)
-        } else {
-            ids.remove(accountID)
+        do {
+            try profiles.updateSourceMemberships(
+                adding: enabled ? [accountID] : [], removing: enabled ? [] : [accountID], for: profileID
+            )
+        } catch {
+            accountError = error.localizedDescription
+            return
         }
-        guard ids != previous
-            || profiles.storedActiveAccountIDs(for: profileID) == nil
-            || profiles.unconfirmedAccountSelectionProfileIDs.contains(profileID)
-        else { return }
-        profiles.setActiveAccountIDs(Array(ids), for: profileID)
         watchReconcilers[profileID] = nil
         // Noted BEFORE the reload below, which schedules a watchlist import: the
         // whole point is that the import waits for the answer, and a note taken
@@ -3224,10 +3178,10 @@ final class PlozziOSAppModel {
 
     @discardableResult
     func persist(_ sessions: [UserSession], activateIPTVAccount: Bool = false) -> Bool {
+        guard let first = sessions.first else { return false }
         do {
-            let existingIDs = Set(accountsProviders.accounts.map(\.id))
-            let isFirstRun = existingIDs.isEmpty
-                && !profiles.firstRunProfileSetupComplete
+            try accountsProviders.beginSourceAuthentication()
+            let isFirstRun = try accountsProviders.beginsFirstRun(adding: first.server.provider)
             var addedAccounts: [Account] = []
             var addedLiveTV = false
             var guideAccountIDs: [String] = []
@@ -3237,12 +3191,16 @@ final class PlozziOSAppModel {
                 // A (re)added server clears any household-removal tombstone for it.
                 clearRemovalTombstone(for: account.id)
                 providerCredentialSync.didAuthenticateLocally(accountID: account.id)
-                if registration.previousAccount == nil || activateIPTVAccount {
-                    try accountsProviders.includeIPTVAccountInActiveProfile(account)
-                    addedLiveTV = addedLiveTV || account.server.provider == .iptv
-                    if account.server.provider == .iptv { guideAccountIDs.append(account.id) }
+                if account.server.provider != .iptv || registration.previousAccount == nil || activateIPTVAccount {
+                    try accountsProviders.connectAuthenticatedSource(account)
+                    if account.server.provider == .iptv {
+                        addedLiveTV = true
+                        guideAccountIDs.append(account.id)
+                    }
                 }
-                if registration.previousAccount == nil {
+                if account.server.provider == .plex {
+                    if try accountsProviders.needsPlexConnectionDecision(for: account.id) { addedAccounts.append(account) }
+                } else {
                     addedAccounts.append(account)
                 }
             }
@@ -3255,10 +3213,10 @@ final class PlozziOSAppModel {
             accountError = nil
             if addedLiveTV { settings.navigation.showsLiveTV = true }
             reloadAccountsAndCrashContext()
-            selectNewlyAddedUserIfNeeded(from: addedAccounts)
+            if completesAdditionalIdentity { pendingAdditionalUser = nil }
             for id in guideAccountIDs { guidePreparation.start(accountID: id) }
             identityIndex.warmIdentityIndex()
-            if isFirstRun, let account = addedAccounts.first {
+            if isFirstRun, let account = addedAccounts.first, account.server.provider != .plex {
                 profiles.seedDefaultProfileIdentity(
                     name: account.userName,
                     avatarImageURL: account.avatarURL?.absoluteString
@@ -3287,56 +3245,36 @@ final class PlozziOSAppModel {
         beginManagedServerPresentation()
     }
 
-    private func selectNewlyAddedUserIfNeeded(from addedAccounts: [Account]) {
-        guard let pendingAdditionalUser,
-              let account = addedAccounts.last(where: {
-                  $0.server.identityKey == pendingAdditionalUser.serverKey
-              })
-        else { return }
-
-        var selected = activeAccountIDs(for: pendingAdditionalUser.profileID)
-        for existing in accountsProviders.accounts
-        where existing.server.identityKey == pendingAdditionalUser.serverKey {
-            selected.remove(existing.id)
+    func useSavedSignIn(_ account: Account, for server: MediaServer) throws {
+        try accountsProviders.confirmSavedSignIn(account, for: server)
+        if pendingAdditionalUser != nil {
+            pendingAdditionalUser = nil
+        } else {
+            scheduleLibrarySelection(accountIDs: [account.id], beginsFirstRun: false)
         }
-        selected.insert(account.id)
-        profiles.setActiveAccountIDs(
-            Array(selected),
-            for: pendingAdditionalUser.profileID
-        )
-        watchReconcilers[pendingAdditionalUser.profileID] = nil
-        reloadAccountsAndCrashContext()
-        self.pendingAdditionalUser = nil
     }
 
-    func selectPlexUserDuringOnboarding(_ user: PlexHomeUser, addAllProfiles: Bool) {
-        guard let pending = plexHomeUsers.pendingPlexUserSelection else { return }
-        guard plexHomeUsers.selectOnboardingUser(user, addAllProfiles: addAllProfiles) else { return }
-        if addAllProfiles, let profileID = plexHomeUsers.importedOnboardingProfileID(for: user) {
-            selectProfileForPlexOnboarding(profileID) { [weak self] in
-                self?.finishPlexUserOnboarding(user, pending: pending, imported: true)
-            }
-            return
+    @discardableResult
+    func selectPlexUserDuringOnboarding(_ user: PlexHomeUser, addAllProfiles: Bool) -> Bool {
+        guard let pending = plexHomeUsers.pendingPlexUserSelection,
+              plexHomeUsers.selectOnboardingUser(user, addAllProfiles: addAllProfiles),
+              let profileID = plexHomeUsers.importedOnboardingProfileID(for: user) else { return false }
+        selectProfileForPlexOnboarding(profileID) { [weak self] in
+            guard let self, plexHomeUsers.pendingPlexUserSelection?.id == pending.id,
+                  plexHomeUsers.importedOnboardingProfileID(for: user) == profiles.activeProfileID else { return }
+            finishPlexUserOnboarding(pending)
         }
-        finishPlexUserOnboarding(user, pending: pending, imported: false)
+        return true
     }
 
     func importPlexHomeProfilesDuringOnboarding() -> PlexHomeProfileImportResult {
         plexHomeUsers.importOnboardingProfiles()
     }
 
-    private func finishPlexUserOnboarding(
-        _ user: PlexHomeUser, pending: PlexHomeUsersModel.PendingPlexUserSelection, imported: Bool
-    ) {
-        if pending.isFirstRun && !imported {
-            profiles.seedDefaultProfileIdentity(
-                name: user.name,
-                avatarImageURL: user.avatarURL?.absoluteString
-            )
-        }
+    private func finishPlexUserOnboarding(_ pending: PlexHomeUsersModel.PendingPlexUserSelection) {
         appliesPlexIdentityAfterLibrarySelection = true
         plexHomeUsers.clearUserSelection()
-        if imported, !pending.isFirstRun, profiles.activeProfile.needsSetup {
+        if !pending.isFirstRun, profiles.activeProfile.needsSetup {
             appliesPlexIdentityAfterLibrarySelection = false
             resumeProfileOnboardingIfNeeded()
             plexHomeUsers.ensurePlexIdentityForActiveProfile()
@@ -3349,15 +3287,13 @@ final class PlozziOSAppModel {
     }
 
     func cancelPlexUserSelectionDuringOnboarding() {
-        guard let pending = plexHomeUsers.pendingPlexUserSelection else { return }
+        guard plexHomeUsers.pendingPlexUserSelection != nil else { return }
         plexHomeUsers.clearUserSelection()
-        scheduleLibrarySelection(
-            accountIDs: pending.applyToAccountIDs,
-            beginsFirstRun: pending.isFirstRun
-        )
+        if pendingFirstRunStep == .plexUser { pendingFirstRunStep = nil }
     }
 
     func beginManagedServerPresentation() {
+        plexHomeUsers.clearUserSelection()
         postAddPresentationGeneration &+= 1
         plexUserSelectionGeneration &+= 1
         queuedPlexUserSelection = nil
@@ -3370,19 +3306,18 @@ final class PlozziOSAppModel {
         isManagedServerPresentationActive = false
         if let selection = queuedPlexUserSelection {
             queuedPlexUserSelection = nil
-            plexHomeUsers.presentUserSelection(selection)
             // Mirrors schedulePlexUserSelection: this drain path bypasses it,
             // so it has to enter the flow itself or the step would present as a
             // bare sheet outside the cover.
-            if selection.isFirstRun { pendingFirstRunStep = .plexUser }
+            if plexHomeUsers.presentPreparedUserSelection(selection), selection.isFirstRun { pendingFirstRunStep = .plexUser }
         } else if let accountIDs = queuedLibraryAccountIDs {
             let beginsFirstRun = queuedLibrarySelectionBeginsFirstRun
             queuedLibraryAccountIDs = nil
             queuedLibrarySelectionBeginsFirstRun = false
-            scheduleLibrarySelection(
-                accountIDs: accountIDs,
-                beginsFirstRun: beginsFirstRun
-            )
+            if queuedLibraryProfileGeneration == profiles.selectionGeneration {
+                scheduleLibrarySelection(accountIDs: accountIDs, beginsFirstRun: beginsFirstRun)
+            }
+            queuedLibraryProfileGeneration = nil
         }
         // A dismissed add-user sheet must not make a later unrelated sign-in
         // auto-select itself for this profile.
@@ -3430,42 +3365,36 @@ final class PlozziOSAppModel {
     ) {
         plexUserSelectionGeneration &+= 1
         let generation = plexUserSelectionGeneration
-        guard let account = accounts.first(where: {
-            $0.server.provider == .plex
-                && profiles.activeProfile.homeUserBinding(
-                    forPlexAccount: $0.id
-                ) == nil
-        }) else {
+        let plexAccounts = accounts.filter { $0.server.provider == .plex }
+        guard let first = plexAccounts.first else {
             scheduleLibrarySelection(
                 accountIDs: accounts.map(\.id),
                 beginsFirstRun: beginsFirstRun
             )
             return
         }
+        let request = plexHomeUsers.beginOnboarding(accountIDs: plexAccounts.map(\.id))
         Task {
-            let users = await plexHomeUsers.plexHomeUsers(
-                forAccountID: account.id
-            )
-            guard generation == plexUserSelectionGeneration else { return }
-            guard users.count >= 2,
-                  accountsProviders.accounts.contains(where: {
-                      $0.id == account.id
-                  }) else {
-                scheduleLibrarySelection(
-                    accountIDs: accounts.map(\.id),
-                    beginsFirstRun: beginsFirstRun
-                )
+            do {
+                let route = try await plexHomeUsers.prepareOnboarding(request, isFirstRun: beginsFirstRun)
+                guard generation == plexUserSelectionGeneration, plexHomeUsers.ownsOnboardingRequest(request) else { return }
+                switch route {
+                case .restored:
+                    plexHomeUsers.ensurePlexIdentityForActiveProfile()
+                case .choose(let selection):
+                    schedulePlexUserSelection(selection)
+                case .libraries(let ids):
+                    if beginsFirstRun {
+                        profiles.seedDefaultProfileIdentity(name: first.userName, avatarImageURL: first.avatarURL?.absoluteString)
+                    }
+                    scheduleLibrarySelection(accountIDs: ids, beginsFirstRun: beginsFirstRun)
+                }
+            } catch is CancellationError {
                 return
+            } catch {
+                guard generation == plexUserSelectionGeneration, plexHomeUsers.ownsOnboardingRequest(request) else { return }
+                accountError = String(localized: (error as? AppError ?? .serverUnreachable).userMessage)
             }
-            schedulePlexUserSelection(
-                PlexHomeUsersModel.PendingPlexUserSelection(
-                    accountID: account.id,
-                    serverName: account.server.name,
-                    users: users,
-                    isFirstRun: beginsFirstRun,
-                    applyToAccountIDs: accounts.map(\.id)
-                )
-            )
         }
     }
 
@@ -3518,7 +3447,7 @@ final class PlozziOSAppModel {
         libraryConfiguration: MediaShareLibraryConfiguration? = nil
     ) -> Bool {
         do {
-            let prepared = try mediaShareConfigurationService.saveNFS(
+            let prepared = try mediaShareConfigurationService.prepareNFS(
                 host: host,
                 port: port,
                 exportPath: exportPath,
@@ -3526,6 +3455,7 @@ final class PlozziOSAppModel {
                 displayName: displayName,
                 libraryConfiguration: libraryConfiguration
             )
+            try accountsProviders.registerMediaShare(prepared, using: mediaShareConfigurationService)
             reloadAccountsAndCrashContext()
             identityIndex.warmIdentityIndex()
             preparePostShareOnboarding(prepared)
@@ -3549,7 +3479,7 @@ final class PlozziOSAppModel {
         libraryConfiguration: MediaShareLibraryConfiguration? = nil
     ) -> Bool {
         do {
-            let prepared = try mediaShareConfigurationService.saveSMB(
+            let prepared = try mediaShareConfigurationService.prepareSMB(
                 host: host,
                 port: port,
                 share: share,
@@ -3559,6 +3489,7 @@ final class PlozziOSAppModel {
                 subpath: subpath,
                 libraryConfiguration: libraryConfiguration
             )
+            try accountsProviders.registerMediaShare(prepared, using: mediaShareConfigurationService)
             reloadAccountsAndCrashContext()
             identityIndex.warmIdentityIndex()
             preparePostShareOnboarding(prepared)
@@ -3579,13 +3510,14 @@ final class PlozziOSAppModel {
         libraryConfiguration: MediaShareLibraryConfiguration? = nil
     ) -> Bool {
         do {
-            let prepared = try mediaShareConfigurationService.saveWebDAV(
+            let prepared = try mediaShareConfigurationService.prepareWebDAV(
                 baseURL: baseURL,
                 auth: auth,
                 trustPin: trustPin,
                 displayName: displayName,
                 libraryConfiguration: libraryConfiguration
             )
+            try accountsProviders.registerMediaShare(prepared, using: mediaShareConfigurationService)
             reloadAccountsAndCrashContext()
             identityIndex.warmIdentityIndex()
             preparePostShareOnboarding(prepared)
@@ -3609,7 +3541,7 @@ final class PlozziOSAppModel {
         libraryConfiguration: MediaShareLibraryConfiguration? = nil
     ) -> Bool {
         do {
-            let prepared = try mediaShareConfigurationService.saveSFTP(
+            let prepared = try mediaShareConfigurationService.prepareSFTP(
                 host: host,
                 port: port,
                 path: path,
@@ -3619,6 +3551,7 @@ final class PlozziOSAppModel {
                 displayName: displayName,
                 libraryConfiguration: libraryConfiguration
             )
+            try accountsProviders.registerMediaShare(prepared, using: mediaShareConfigurationService)
             reloadAccountsAndCrashContext()
             identityIndex.warmIdentityIndex()
             preparePostShareOnboarding(prepared)
@@ -3638,12 +3571,13 @@ final class PlozziOSAppModel {
         libraryConfiguration: MediaShareLibraryConfiguration? = nil
     ) -> Bool {
         do {
-            let prepared = try mediaShareConfigurationService.saveFTP(
+            let prepared = try mediaShareConfigurationService.prepareFTP(
                 baseURL: baseURL,
                 auth: auth,
                 displayName: displayName,
                 libraryConfiguration: libraryConfiguration
             )
+            try accountsProviders.registerMediaShare(prepared, using: mediaShareConfigurationService)
             reloadAccountsAndCrashContext()
             identityIndex.warmIdentityIndex()
             preparePostShareOnboarding(prepared)
@@ -3656,7 +3590,7 @@ final class PlozziOSAppModel {
     }
 
     private func presentLibrarySelection(accountIDs: [String]) {
-        let activeIDs = Set(accountsProviders.accounts.map(\.id))
+        let activeIDs = accountsProviders.activeAccountIDs
         let available = accountIDs.filter(activeIDs.contains)
         guard !available.isEmpty else {
             let wasFirstRun = beginsFirstRunAfterLibrarySelection
@@ -3726,7 +3660,7 @@ final class PlozziOSAppModel {
         if isManagedServerPresentationActive {
             queuedPlexUserSelection = selection
         } else {
-            plexHomeUsers.presentUserSelection(selection)
+            guard plexHomeUsers.presentPreparedUserSelection(selection) else { return }
             // First run renders this step inside the flow cover; the standalone
             // sheet stays for the later add-a-server case.
             if selection.isFirstRun { pendingFirstRunStep = .plexUser }
@@ -3746,14 +3680,16 @@ final class PlozziOSAppModel {
         beginsFirstRunAfterLibrarySelection = beginsFirstRun
         postAddPresentationGeneration &+= 1
         let generation = postAddPresentationGeneration
+        let profileGeneration = profiles.selectionGeneration
         if isManagedServerPresentationActive {
             queuedLibraryAccountIDs = accountIDs
+            queuedLibraryProfileGeneration = profileGeneration
             queuedLibrarySelectionBeginsFirstRun = beginsFirstRun
             return
         }
         Task {
             await Task.yield()
-            guard generation == postAddPresentationGeneration else { return }
+            guard generation == postAddPresentationGeneration, profiles.selectionGeneration == profileGeneration else { return }
             presentLibrarySelection(accountIDs: accountIDs)
         }
     }

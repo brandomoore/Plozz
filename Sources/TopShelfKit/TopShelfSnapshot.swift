@@ -25,6 +25,9 @@ public struct TopShelfSnapshot: Codable, Equatable, Sendable {
     /// When the snapshot was produced. Used purely for debugging/freshness.
     public var generatedAt: Date
     public var usesFullScreen: Bool
+    /// Opaque authorization for this Apple TV user's selected viewer. Legacy snapshots
+    /// have no authorization and must not be presented by the extension.
+    public internal(set) var authorizationID: UUID?
 
     /// Ordered feeds, rendered as separate poster rows or one full-screen carousel.
     public var sections: [Section]
@@ -112,13 +115,14 @@ public struct TopShelfSnapshot: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case generatedAt, usesFullScreen, sections
+        case generatedAt, usesFullScreen, authorizationID, sections
     }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         generatedAt = try values.decode(Date.self, forKey: .generatedAt)
         usesFullScreen = try values.decodeIfPresent(Bool.self, forKey: .usesFullScreen) ?? false
+        authorizationID = try values.decodeIfPresent(UUID.self, forKey: .authorizationID)
         sections = try values.decode([Section].self, forKey: .sections)
     }
 }

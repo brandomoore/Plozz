@@ -341,6 +341,7 @@ struct HomeTab: View {
                         logoLanguage: locale.identifier
                     )
                     await TopShelfPublisher.publish(
+                        for: runtime.scopeKey, publication: runtime.topShelf,
                         continueWatching: continueWatching,
                         latest: latest,
                         locale: locale,

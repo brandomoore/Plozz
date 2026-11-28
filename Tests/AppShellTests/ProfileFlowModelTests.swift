@@ -751,7 +751,7 @@ final class ProfileFlowModelTests: XCTestCase {
         let env = try makeEnv(accounts: [("a", .plex)])
         env.store.setActiveAccountIDs(["a"])
         let fallbackID = env.profiles.activeProfileID          // the default profile
-        let second = env.profiles.add(name: "Second")
+        let second = env.profiles.add(name: "Second", activeAccountIDs: ["a"])
         env.profiles.select(second.id)
         env.hub.reloadAccounts()
 
@@ -793,7 +793,7 @@ final class ProfileFlowModelTests: XCTestCase {
 
         XCTAssertFalse(env.flow.isAccountIncludedInActiveProfile("a"))
         XCTAssertTrue(env.flow.isAccountIncludedInActiveProfile("b"))
-        XCTAssertEqual(env.profiles.storedActiveAccountIDs(for: env.profiles.activeProfileID), ["b"])
+        XCTAssertEqual(env.profiles.storedActiveAccountIDs(for: env.profiles.activeProfileID), ["stale-removed", "b"])
     }
 
     /// switchProfile runs the full re-scope: selects the target, re-points trackers,
@@ -821,8 +821,8 @@ final class ProfileFlowModelTests: XCTestCase {
 
         XCTAssertEqual(env.profiles.activeProfileID, second.id, "target selected")
         XCTAssertFalse(env.flow.isChoosingProfile, "picker dismissed")
-        // ensure ran: the previous profile's override dropped (target has no binding).
-        XCTAssertEqual(env.plex.resolvedToken(for: "a"), "admin-a")
+        // The new profile did not connect this source. It gets neither credential.
+        XCTAssertNil(env.plex.resolvedToken(for: "a"))
 
         await settle()
         XCTAssertEqual(trackerReScopes, trackersBefore + 1, "trackers re-pointed once")

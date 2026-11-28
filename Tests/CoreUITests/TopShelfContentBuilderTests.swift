@@ -6,6 +6,23 @@ import UIKit
 import XCTest
 
 final class TopShelfContentBuilderTests: XCTestCase {
+    func testDifferentViewerGrantsNeverReuseNativeCardIdentity() throws {
+        let item = entry(account: "plex")
+        for fullScreen in [false, true] {
+            func card() throws -> TVTopShelfItem {
+                var published = snapshot(item: item, fullScreen: fullScreen)
+                published.authorizationID = UUID()
+                let content = TopShelfContentBuilder.makeContent(from: published)
+                if let carousel = content as? TVTopShelfCarouselContent { return try XCTUnwrap(carousel.items.first) }
+                return try XCTUnwrap((content as? TVTopShelfSectionedContent)?.sections.first?.items.first)
+            }
+            let first = try card()
+            let next = try card()
+            XCTAssertNotEqual(first.identifier, next.identifier)
+            XCTAssertEqual(first.playAction?.url, next.playAction?.url)
+        }
+    }
+
     func testPosterPresentationKeepsSectionsShapeAndBothExistingActions() throws {
         let item = entry(account: "plex")
         let content = try XCTUnwrap(TopShelfContentBuilder.makeContent(from: snapshot(item: item))

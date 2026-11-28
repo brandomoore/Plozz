@@ -65,7 +65,7 @@ final class TopShelfSettingsHostedTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(400))
         let image = DetailTransitionSnapshot.image(of: window)
         let attachment = XCTAttachment(image: image)
-        attachment.name = "Top Shelf device-wide settings"
+        attachment.name = "Apple TV user’s Top Shelf settings"
         attachment.lifetime = .keepAlways
         add(attachment)
         let page = CGRect(
@@ -80,7 +80,7 @@ final class TopShelfSettingsHostedTests: XCTestCase {
         let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
         for label in [
             "Top Shelf", "Show Top Shelf", "Continue Watching", "Recently Added",
-            "top row", "Apple TV Home Screen", "above the app icons.",
+            "top row", "Home Screen", "current Apple TV user",
             "Posters", "Full Screen"
         ] {
             XCTAssertTrue(text.localizedCaseInsensitiveContains(label), "Missing settings copy \(label): \(text)")

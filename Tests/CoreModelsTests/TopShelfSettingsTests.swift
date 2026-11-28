@@ -23,6 +23,17 @@ final class TopShelfSettingsTests: XCTestCase {
             XCTAssertEqual(TopShelfSettingsModel(defaults: defaults).settings,
                            .init(continueWatchingItems: 7, recentlyAddedItems: 12))
         }
+
+    }
+
+    func testAppleTVUsersChooseIndependentlyOfPlozzProfile() throws {
+        try withDefaults { firstUser in
+            try withDefaults { secondUser in
+                TopShelfSettingsModel(defaults: firstUser).settings.isEnabled = false
+                XCTAssertTrue(TopShelfSettingsModel(defaults: secondUser).settings.isEnabled)
+                XCTAssertFalse(TopShelfSettingsModel(defaults: firstUser).settings.isEnabled)
+            }
+        }
     }
 
     func testCountsRemainIndependentAndSurviveRelaunch() throws {

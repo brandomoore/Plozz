@@ -56,7 +56,7 @@ extension AppState {
     ) -> ProfileLibrariesScope {
         ProfileLibrariesScope(
             presentation: .profileSetup,
-            accounts: accountsProviders.accounts,
+            accounts: accountsProviders.navigationAccounts,
             activeProfile: profilesModel.activeProfile,
             discoveredLibraries: librariesStore.state,
             refreshingLibraryAccountIDs: librariesStore.refreshingAccountIDs,
@@ -73,8 +73,7 @@ extension AppState {
             onSetAccountIncluded: { [weak self] id, included in
                 self?.profileFlow.setAccount(id, includedInActiveProfile: included)
             },
-            // Not offered during setup — see `ProfileLibrariesScope.Presentation`.
-            onAddAccount: {},
+            onAddAccount: { [weak self] in self?.addAccount() },
             onAddUser: { [weak self] server in self?.beginAddingUser(on: server) },
             plexHomeUsersFetcher: { [weak self] accountID in
                 await self?.plexHomeUsers.plexHomeUsers(forAccountID: accountID) ?? []

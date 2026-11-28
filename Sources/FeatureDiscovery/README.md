@@ -20,8 +20,8 @@ in `ProviderPlex`, not LAN UDP.
   that streams discovered servers, supports manual URL entry, validates
   the URL via the appropriate provider, and surfaces clear loading /
   empty / error states.
-- `LastServerStore` — remembers the most-recently-used server so relaunch
-  jumps straight to sign-in instead of re-discovering.
+- Provider setup uses `DiscoveryOnlyServerStore`: no saved household addresses
+  or server logins are shown or probed. A LAN result is verified before sign-in.
 
 ## Invariants
 
@@ -40,8 +40,8 @@ in `ProviderPlex`, not LAN UDP.
   Certificate/client-certificate rejection stops discovery rather than
   downgrading. Cancellation and rejected access stop further attempts.
   Only the verified server address is passed to password/Quick Connect sign-in
-  and remembered. UDP announcements, saved-account routing, Plex and Silo
-  retain their existing address rules; this does not add background polling.
+  after manual entry or selection of a UDP result. This does not add
+  background polling or change Plex address selection.
 - **Setup evidence is explicit-submission only.** Jellyfin/Emby validation records
   each attempted candidate and outcome in `ServerConnectionDiagnostics`, including
   successful fallback. Reports retain HTTP/HTTPS, port/prefix presence, timing,

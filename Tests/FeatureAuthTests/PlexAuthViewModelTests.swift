@@ -4,6 +4,28 @@ import CoreModels
 
 final class PlexAuthViewModelTests: XCTestCase {
     @MainActor
+    func testFreshLinkRequiresExplicitSelectionEvenForOneOwnedServer() async throws {
+        let stub = recoveryStub(userID: "owner")
+        stub.stubSequence(pathSuffix: "/api/v2/resources", jsons: ["""
+        [{"clientIdentifier":"saved","name":"Saved","provides":"server","owned":true,"accessToken":"SERVER-TOKEN",
+          "connections":[{"uri":"https://saved.example","local":true}]}]
+        """])
+        var received: UserSession?
+        let model = PlexAuthViewModel(
+            service: PlexAuthService(deviceID: "device", http: stub, probeHTTP: stub),
+            onAuthenticated: { received = $0 }
+        )
+        defer { model.cancel() }
+        model.start()
+        try await waitForResult(model) { if case .selectingServer = model.phase { return true }; return false }
+        guard case let .selectingServer(candidates) = model.phase else { return XCTFail("Missing server selection") }
+        XCTAssertEqual(candidates.count, 1)
+        XCTAssertNil(received)
+        model.selectServer(try XCTUnwrap(candidates.first))
+        try await waitForResult(model) { received != nil }
+        XCTAssertEqual(received?.server.id, "saved")
+    }
+    @MainActor
     func testRecoveryAutomaticallySelectsOriginalServerAndRejectsWrongLogin() async throws {
         for userID in ["owner", "different-owner"] {
             let stub = recoveryStub(userID: userID)

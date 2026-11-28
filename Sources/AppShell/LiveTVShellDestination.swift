@@ -60,6 +60,8 @@ struct LiveTVShellDestination: View {
     @Environment(GlassPerformanceModel.self) private var glassPerformance: GlassPerformanceModel?
     @Environment(DisplayVeilModel.self) private var displayVeil: DisplayVeilModel?
     @Environment(\.managedProviderSetupRouter) private var providerSetupRouter
+    @Environment(\.profileSourceDestination) private var profileSourceDestination
+    @Environment(\.profileSourceGuideStore) private var profileSourceGuideStore
     @State private var hidesNavigation = false
     @State private var liveOutputGroup = LiveChannelOutputGroup()
     private let preferencesStore: LiveTVPreferencesStore
@@ -119,6 +121,8 @@ struct LiveTVShellDestination: View {
                 .environment(glassPerformance)
                 .environment(displayVeil)
                 .environment(\.managedProviderSetupRouter, providerSetupRouter)
+                .environment(\.profileSourceDestination, profileSourceDestination)
+                .environment(\.profileSourceGuideStore, profileSourceGuideStore)
         }
         .ignoresSafeArea()
     }
@@ -268,36 +272,48 @@ struct LiveTVShellSourcesDestination: View {
     var isPresented = true
     var isProfileAuthorized: @MainActor () -> Bool = { true }
     var settingsPreferences: AnyView? = nil
+    var sourcePresentation: LiveTVSourcesView.Presentation = .settingsPane
     @Environment(ProfilesModel.self) private var profiles
 
     var body: some View {
-        LiveTVCatalogStorageView(load: { try LiveTVCatalogStorage.cache(profileID: profileID) }) { cache in
-            LiveTVLibraryRuntimeView(profileID: profileID, profiles: profiles, accounts: accountsProviders) { library in
-                LiveTVSourcesRuntimeView(
-                    profileID: profileID, namespace: preferencesNamespace,
-                    profiles: profiles, accounts: accountsProviders, cache: cache,
-                    isPresented: isPresented, isProfileAuthorized: isProfileAuthorized
-                ) { runtime in
-                    LiveTVShellSourcesContent(
-                        runtime: runtime, library: library, accounts: accountsProviders,
-                        connectServer: connectServer, didConfigurePlaylist: didConfigurePlaylist,
-                        settingsPreferences: settingsPreferences
-                    )
+        if sourcePresentation.supportsAccount(in: accountsProviders.liveTVServerChoices) {
+            LiveTVCatalogStorageView(load: { try LiveTVCatalogStorage.cache(profileID: profileID) }) { cache in
+                if sourcePresentation.isProfileSection {
+                    sources(cache: cache, library: nil)
+                } else {
+                    LiveTVLibraryRuntimeView(profileID: profileID, profiles: profiles, accounts: accountsProviders) { library in
+                        sources(cache: cache, library: library)
+                    }
                 }
             }
+            .id(preferencesNamespace)
+            .id(profileID)
         }
-        .id(preferencesNamespace)
-        .id(profileID)
+    }
+
+    private func sources(cache: LiveTVIndexedCache, library: LiveTVLibraryRuntime?) -> some View {
+        LiveTVSourcesRuntimeView(
+            profileID: profileID, namespace: preferencesNamespace,
+            profiles: profiles, accounts: accountsProviders, cache: cache,
+            isPresented: isPresented, isProfileAuthorized: isProfileAuthorized
+        ) { runtime in
+            LiveTVShellSourcesContent(
+                runtime: runtime, library: library, accounts: accountsProviders,
+                connectServer: connectServer, didConfigurePlaylist: didConfigurePlaylist,
+                settingsPreferences: settingsPreferences, sourcePresentation: sourcePresentation
+            )
+        }
     }
 }
 
 struct LiveTVShellSourcesContent: View {
     let runtime: LiveTVSourcesRuntime
-    let library: LiveTVLibraryRuntime
+    let library: LiveTVLibraryRuntime?
     let accounts: AccountsProvidersModel
     let connectServer: (() -> Void)?
     let didConfigurePlaylist: () -> Void
     var settingsPreferences: AnyView? = nil
+    var sourcePresentation: LiveTVSourcesView.Presentation = .settingsPane
     @State private var managesChannels = false
     @State private var scansChannels = false
     @State private var scanOfferSourceID: String?
@@ -305,7 +321,11 @@ struct LiveTVShellSourcesContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             LiveTVSourcesView(
-                store: runtime.store, catalog: runtime.catalog, presentation: .settingsPane,
+                store: runtime.store, catalog: runtime.catalog, presentation: sourcePresentation,
+                playlistRecovery: .init(
+                    eligible: accounts.recoverablePlaylistAccountIDs(referencedBy:),
+                    restore: accounts.recoverPlaylistAccount(_:referencedBy:for:)
+                ),
                 serverChoices: accounts.liveTVServerChoices,
                 serverProviderResolver: accounts.liveTVProviderResolver(),
                 connectServer: connectServer, didConfigurePlaylist: didConfigurePlaylist,
@@ -314,8 +334,8 @@ struct LiveTVShellSourcesContent: View {
                 scanCoordinator: runtime.scanBinding.coordinator,
                 didImportPlaylist: { scanOfferSourceID = $0 },
                 settingsPreferences: settingsPreferences,
-                automaticChannels: library.automaticChannelsPresentation,
-                customChannelCount: library.service.visibleDefinitions.filter { !$0.isAutomatic }.count
+                automaticChannels: library?.automaticChannelsPresentation,
+                customChannelCount: library?.service.visibleDefinitions.filter { !$0.isAutomatic }.count ?? 0
             )
             if let scanOfferSourceID, runtime.isPresentationCurrent {
                 LiveTVScanImportOffer(
@@ -325,7 +345,7 @@ struct LiveTVShellSourcesContent: View {
             }
         }
         .settingsPageDestination(isPresented: $managesChannels) {
-            LiveTVShellLibraryChannelsDestination(runtime: runtime, library: library)
+            if let library { LiveTVShellLibraryChannelsDestination(runtime: runtime, library: library) }
         }
         .settingsPageDestination(isPresented: $scansChannels) {
             LiveTVSourcesScanView(runtime: runtime) {

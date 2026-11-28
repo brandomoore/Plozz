@@ -29,7 +29,7 @@ struct AddServerView: View {
     private let http: any HTTPClient
     private let initialIPTVPlaylist: LiveTVPlaylistSource?
     private let initialIPTVAccount: Account?
-    private let initialProfileID: String
+    @State private var initialGeneration: Int
     private let initialIPTVMode: IPTVCredential.Mode
 
     init(
@@ -37,7 +37,9 @@ struct AddServerView: View {
         initialIPTVPlaylist: LiveTVPlaylistSource? = nil, initialIPTVAccount: Account? = nil,
         initialIPTVMode: IPTVCredential.Mode = .playlist,
         http: any HTTPClient = URLSessionHTTPClient(),
-        discoveryModel: @MainActor (ProviderKind) -> ServerPickerViewModel = { ServerPickerViewModel(provider: $0) }
+        discoveryModel: @MainActor (ProviderKind) -> ServerPickerViewModel = {
+            ServerPickerViewModel(provider: $0, store: DiscoveryOnlyServerStore())
+        }
     ) {
         self.appModel = appModel
         self.http = http
@@ -47,7 +49,7 @@ struct AddServerView: View {
         self.initialProvider = initialProvider
         self.initialIPTVPlaylist = initialIPTVPlaylist
         self.initialIPTVAccount = initialIPTVAccount
-        initialProfileID = appModel.profiles.activeProfileID
+        _initialGeneration = State(initialValue: appModel.profiles.selectionGeneration)
         self.initialIPTVMode = initialIPTVMode
         // Pre-fill the address when adopting a server synced from another device, so
         // the user only has to sign in. Plex is account-based (no address field).
@@ -56,7 +58,9 @@ struct AddServerView: View {
 
     var body: some View {
         NavigationStack {
-            if let initialProvider {
+            if !appModel.permitsSourceSetup(generation: initialGeneration) {
+                ContentUnavailableView("Source unavailable", systemImage: "lock")
+            } else if let initialProvider {
                 connectionContent(for: initialProvider)
             } else {
                 ServerOnboardingPage(provider: nil, title: Text(SettingsCopy.addSource)) {
@@ -79,8 +83,8 @@ struct AddServerView: View {
                 }
             }
         }
-        .onChange(of: appModel.profiles.activeProfileID) { _, profileID in
-            if profileID != initialProfileID { dismiss() }
+        .onChange(of: appModel.profiles.activeProfileID) {
+            dismiss()
         }
         .guidePreparationOverlay(
             model: appModel.guidePreparation, presenter: appModel.transientStatusPresenter,
@@ -96,12 +100,15 @@ struct AddServerView: View {
                 SubsonicSignInView(
                     deviceID: appModel.deviceID, address: address, showsCancelButton: false,
                     onAuthenticated: {
-                        guard appModel.profiles.activeProfileID == initialProfileID else { throw AppError.cancelled }
+                        guard appModel.permitsSourceSetup(generation: initialGeneration) else { throw AppError.cancelled }
                         guard appModel.persist([$0]) else { throw AppError.invalidResponse }
                         dismiss()
                     },
                     onCancel: { dismiss() }
                 )
+            } else if provider == .iptv, let initialIPTVAccount,
+                      !appModel.accountsProviders.navigationAccounts.contains(initialIPTVAccount) {
+                ContentUnavailableView("Source unavailable", systemImage: "lock")
             } else if provider == .iptv {
                 IPTVSignInView(
                     deviceID: appModel.deviceID,
@@ -115,9 +122,9 @@ struct AddServerView: View {
                     initialMode: initialIPTVMode,
                     showsCancelButton: false,
                     onAuthenticated: {
-                        guard appModel.profiles.activeProfileID == initialProfileID,
+                        guard appModel.permitsSourceSetup(generation: initialGeneration),
                               initialIPTVAccount.map({ previous in
-                                  appModel.accounts.contains {
+                                  appModel.accountsProviders.navigationAccounts.contains {
                                       $0.id == previous.id && $0.credentialRevision == previous.credentialRevision
                                   }
                               }) != false else { throw IPTVAuthViewModel.CompletionError.persistence }
@@ -187,18 +194,12 @@ struct AddServerView: View {
                 }
                 .navigationDestination(item: $server) { server in
                     ManagedServerSignInView(
-                        server: server, appModel: appModel,
+                        server: server, appModel: appModel, offersSavedSignIns: true, sourceGeneration: initialGeneration,
                         onComplete: { dismiss() }, http: http
                     )
                 }
                 .task(id: provider) {
                     let model = discoveryModel(for: provider)
-                    let accounts = appModel.accounts.filter { $0.server.provider == provider }
-                    let grouped = Dictionary(grouping: accounts, by: { $0.server.identityKey })
-                    model.setSignedInServers(grouped.values.compactMap { accounts in
-                        guard let first = accounts.first else { return nil }
-                        return SignedInServer(server: first.server, userNames: accounts.map(\.userName))
-                    }.sorted { $0.server.name.localizedStandardCompare($1.server.name) == .orderedAscending })
                     model.startScan()
                     defer { model.stopScan() }
                     try? await Task.sleep(for: .seconds(86_400))
@@ -230,7 +231,7 @@ struct AddServerView: View {
             let validated = await model.submitManualURL()
             guard !Task.isCancelled, (initialProvider ?? chosenProvider) == provider else { return }
             isValidating = false
-            guard appModel.profiles.activeProfileID == initialProfileID else { return }
+            guard appModel.permitsSourceSetup(generation: initialGeneration) else { return }
             if let validated { server = validated }
             else if case let .error(message) = model.phase { validationMessage = message }
         }
@@ -245,11 +246,10 @@ struct AddServerView: View {
     }
 
     private func selectDiscoveredServer(_ selectedServer: MediaServer, provider: ProviderKind) {
-        guard !isValidating, appModel.profiles.activeProfileID == initialProfileID else { return }
+        guard !isValidating, appModel.permitsSourceSetup(generation: initialGeneration) else { return }
         address = selectedServer.baseURL.absoluteString
         validationMessage = nil
-        discoveryModel(for: provider).select(selectedServer)
-        server = selectedServer
+        continueSignIn(provider: provider)
     }
 
 }
@@ -289,7 +289,7 @@ struct ManagedServerDiscoverySection: View {
     }
 
     private var discoveryServers: [MediaServer] {
-        model.signedInServers.map(\.server) + model.recentServers + model.discoveredServers
+        model.discoveredServers
     }
 }
 
@@ -300,12 +300,17 @@ struct ManagedServerSignInView: View {
     let appModel: PlozziOSAppModel
     let onAuthenticated: (UserSession) throws -> Void
     let verificationOnly: Bool
+    let offersSavedSignIns: Bool
+    let useSaved: (Account) throws -> Void
+    let setupGeneration: Int
     let onCancel: (() -> Void)?
     private let http: any HTTPClient
 
     init(
         server: MediaServer,
         appModel: PlozziOSAppModel,
+        offersSavedSignIns: Bool = false,
+        sourceGeneration: Int? = nil,
         onComplete: @escaping () -> Void,
         verificationOnly: Bool = false,
         onCancel: (() -> Void)? = nil,
@@ -314,12 +319,19 @@ struct ManagedServerSignInView: View {
     ) {
         self.server = server
         self.appModel = appModel
+        self.offersSavedSignIns = offersSavedSignIns
         self.verificationOnly = verificationOnly
         self.onCancel = onCancel
         self.http = http
-        let profileID = appModel.profiles.activeProfileID
+        let generation = sourceGeneration ?? appModel.profiles.selectionGeneration
+        setupGeneration = generation
+        useSaved = { account in
+            guard appModel.permitsSourceSetup(generation: generation) else { throw AppError.cancelled }
+            try appModel.useSavedSignIn(account, for: server)
+            onComplete()
+        }
         self.onAuthenticated = onAuthenticated ?? {
-            guard appModel.profiles.activeProfileID == profileID else { throw AppError.cancelled }
+            guard appModel.permitsSourceSetup(generation: generation) else { throw AppError.cancelled }
             guard appModel.persist([$0]) else { throw AppError.unknown("") }
             onComplete()
         }
@@ -327,7 +339,11 @@ struct ManagedServerSignInView: View {
     }
 
     var body: some View {
-        signInContent
+        SavedServerSignInChoices(
+            accounts: offersSavedSignIns && appModel.permitsSourceSetup(generation: setupGeneration)
+                ? appModel.accountsProviders.savedSignIns(for: server) : [],
+            use: useSaved
+        ) { signInContent }
             .navigationBarBackButtonHidden(onCancel == nil)
             .toolbar {
                 if onCancel == nil {
@@ -350,8 +366,6 @@ struct ManagedServerSignInView: View {
                     verificationOnly: verificationOnly,
                     onAuthenticated: { session in
                         try onAuthenticated(session)
-                        var store = UserDefaultsLastServerStore()
-                        store.remember(session.server)
                     }
                 ),
                 server: server, showsCancelButton: false,
@@ -553,7 +567,6 @@ struct PlexServerSignInView: View {
     @Environment(\.openURL) private var openURL
     @State private var viewModel: PlexAuthViewModel
     @State private var selectedServerIDs = Set<String>()
-    @State private var didSeedSelection = false
     @State private var showCancelConfirm = false
     @State private var browserOpenFailed = false
     private let isNavigationRoot: Bool
@@ -562,17 +575,17 @@ struct PlexServerSignInView: View {
          isNavigationRoot: Bool = true,
          onComplete: @escaping () -> Void) {
         self.isNavigationRoot = isNavigationRoot
-        let profileID = appModel.profiles.activeProfileID
+        let generation = appModel.profiles.selectionGeneration
         _viewModel = State(
             initialValue: PlexAuthViewModel(
                 service: PlexAuthService(deviceID: appModel.deviceID, http: http),
                 onAuthenticated: {
-                    guard appModel.profiles.activeProfileID == profileID else { throw AppError.cancelled }
+                    guard appModel.permitsSourceSetup(generation: generation) else { throw AppError.cancelled }
                     guard appModel.persist([$0]) else { throw AppError.unknown("") }
                     onComplete()
                 },
                 onAuthenticatedMany: {
-                    guard appModel.profiles.activeProfileID == profileID else { throw AppError.cancelled }
+                    guard appModel.permitsSourceSetup(generation: generation) else { throw AppError.cancelled }
                     guard appModel.persist($0) else { throw AppError.unknown("") }
                     onComplete()
                 }
@@ -641,7 +654,7 @@ struct PlexServerSignInView: View {
                     Text(message)
                 } actions: {
                     Button {
-                        didSeedSelection = false
+                        selectedServerIDs.removeAll()
                         viewModel.retry()
                     } label: {
                         Text("Try Again").plozzPageActionLabel()
@@ -671,12 +684,6 @@ struct PlexServerSignInView: View {
             }
         }
         .interactiveDismissDisabled(isChoosingServers)
-        .onChange(of: viewModel.phase, initial: true) { _, phase in
-            if case let .selectingServer(servers) = phase, !didSeedSelection {
-                didSeedSelection = true
-                selectedServerIDs = Set(servers.filter(\.isOwned).map(\.id))
-            }
-        }
         .task { viewModel.startIfNeeded() }
         .onDisappear { viewModel.cancel() }
     }
@@ -706,6 +713,7 @@ struct PlozziOSAccountReauthenticationView: View {
                 account: account,
                 isAuthorized: {
                     appModel.isActiveProfileAuthorized && !appModel.managementRequiresParentalPIN
+                        && appModel.accountsProviders.activeAccountIDs.contains(account.id)
                 },
                 onComplete: {
                     dismiss()

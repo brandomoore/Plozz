@@ -68,13 +68,15 @@ struct PlozziOSSettingsView: View {
         }
         .environment(appModel.profiles)
         .environment(appModel.settings.themeMusic)
+        .modifier(MobileProfileSourceRoutes(appModel: appModel, onAdd: showAddServer, onAddUser: showAddUser(on:)))
         .environment(\.managedProviderSetupRouter, providerSetupRouter)
         .plozzSheet(item: $providerSetupRouter.addressAccount) { account in
             let profileID = appModel.profiles.activeProfileID
             ServerAddressesView(
                 account: account, store: appModel.accountStore,
                 isAuthorized: {
-                    appModel.profiles.activeProfileID == profileID && !appModel.managementRequiresParentalPIN
+                    appModel.profiles.activeProfileID == profileID && appModel.isActiveProfileAuthorized
+                        && !appModel.managementRequiresParentalPIN && appModel.accountsProviders.activeAccountIDs.contains(account.id)
                 },
                 onChanged: { appModel.accountsProviders.reloadAccounts(updatingServerAddressesFor: account.id) }
             )
@@ -170,7 +172,8 @@ struct PlozziOSSettingsView: View {
             appModel.transientStatusPresenter.present(icon: "wifi.slash", text: "Unavailable in Offline Mode.")
             return
         }
-        appModel.beginManagedServerPresentation()
+        if let addUserServer { appModel.beginAddingUser(on: addUserServer) }
+        else { appModel.beginManagedServerPresentation() }
         showingAddServer = true
     }
 
@@ -410,7 +413,8 @@ private struct PlozziOSProfileSettingsPage: View {
             .id(appModel.profiles.activeProfile.id)
         case .libraries:
             PlozziOSMyLibrariesSettingsView(
-                appModel: appModel, onAddServer: onAddServer, onAddUser: onAddUser
+                appModel: appModel, onAddServer: onAddServer, onAddUser: onAddUser,
+                parentalAccess: { canManageProviders }
             )
         case .downloads:
             PlozziOSDownloadSettingsView(model: appModel.downloads, appModel: appModel)
@@ -548,7 +552,7 @@ private struct PlozziOSSettingsSplitView: View {
                         SettingsSectionGroup(KidsProfileCopy.parentalControls) {
                             sealableRow(
                                 .myLibraries,
-                                title: SettingsCopy.libraries,
+                                title: SettingsCopy.sources,
                                 systemImage: "rectangle.stack"
                             )
                             sealableRow(
@@ -570,11 +574,6 @@ private struct PlozziOSSettingsSplitView: View {
                     // shared section needs no caption. See the tvOS twin.
                     if !appModel.profiles.activeProfile.isKids {
                         SettingsSectionGroup(deviceSettingsTitle) {
-                            settingsRow(
-                                .servers,
-                                title: SettingsCopy.sources,
-                                systemImage: "externaldrive.connected.to.line.below"
-                            )
                             Button {
                                 selection = .profiles
                             } label: {
@@ -804,7 +803,7 @@ private struct PlozziOSSettingsSplitView: View {
         case .profiles:
             PlozziOSProfilesView(appModel: appModel, onClose: onClose, onSwitchTo: onSwitchTo)
         case .servers:
-            PlozziOSServersSettingsView(
+            PlozziOSMyLibrariesSettingsView(
                 appModel: appModel,
                 onAddServer: onAddServer
             )
@@ -835,7 +834,7 @@ private struct PlozziOSSettingsSplitView: View {
             PlozziOSMyLibrariesSettingsView(
                 appModel: appModel,
                 onAddServer: onAddServer,
-                onAddUser: onAddUser
+                onAddUser: onAddUser, parentalAccess: { !isParentalSealed }
             )
         case .profile(let category):
             PlozziOSProfileSettingsPage(
@@ -1099,7 +1098,7 @@ private struct PlozziOSSettingsCompactMenu: View {
                                 PlozziOSMyLibrariesSettingsView(
                                     appModel: appModel,
                                     onAddServer: onAddServer,
-                                    onAddUser: onAddUser
+                                    onAddUser: onAddUser, parentalAccess: { !isParentalSealed }
                                 )
                             }
                         } label: {
@@ -1143,19 +1142,6 @@ private struct PlozziOSSettingsCompactMenu: View {
                 // everything).
                 if !appModel.profiles.activeProfile.isKids {
                     SettingsSectionGroup(deviceSettingsTitle) {
-                        SettingsPageLink {
-                            PlozziOSServersSettingsView(
-                                appModel: appModel,
-                                onAddServer: onAddServer
-                            )
-                        } label: {
-                            Label {
-                                Text(SettingsCopy.sources)
-                            } icon: {
-                                Image(systemName: "externaldrive.connected.to.line.below")
-                            }
-                        }
-                        .settingsActionRow()
                         SettingsPageLink {
                             PlozziOSProfilesView(
                                 appModel: appModel,

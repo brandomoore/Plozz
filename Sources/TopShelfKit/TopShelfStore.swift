@@ -123,10 +123,6 @@ public enum TopShelfStore {
             .appendingPathComponent("Caches", isDirectory: true)
     }
 
-    private static var snapshotURL: URL? {
-        snapshotDirectoryURL?.appendingPathComponent(TopShelf.snapshotFileName)
-    }
-
     /// Directory holding composited Continue-Watching posters (poster art with
     /// the progress bar burned in — see `TopShelfPosterComposer`). Lives beside
     /// the snapshot under the writable `Library/Caches` subtree so both the app
@@ -151,53 +147,57 @@ public enum TopShelfStore {
         }
     }
 
-    /// Persists the snapshot into the shared App Group container.
-    ///
-    /// The container directory is created on demand first: the system hands back
-    /// a valid container URL even before the directory itself exists on disk, so
-    /// a plain atomic write can fail with a "no permission" / "no such file"
-    /// error. Creating the directory (and falling back to a non-atomic write)
-    /// makes the first publish succeed.
-    @discardableResult
-    public static func save(_ snapshot: TopShelfSnapshot) -> Bool {
-        guard let directory = snapshotDirectoryURL, let url = snapshotURL else {
-            Logger(subsystem: "com.plozz.app", category: "top-shelf")
-                .error("Unable to save the Top Shelf snapshot; App Group storage is unavailable.")
-            return false
-        }
-        do {
-            try FileManager.default.createDirectory(
-                at: directory,
-                withIntermediateDirectories: true
-            )
+    static var files: SnapshotFiles? { snapshotDirectoryURL.map(SnapshotFiles.init) }
 
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(snapshot)
+    /// The extension never falls back to another user, an unowned legacy snapshot,
+    /// or the last readable snapshot when the current viewer's grant is missing.
+    public static func load() -> TopShelfSnapshot? { files?.load() }
 
-            do {
-                try data.write(to: url, options: .atomic)
-            } catch {
-                // Atomic writes stage a temp file + rename, which can be denied
-                // in some sandboxed container states; retry with a direct write.
-                try data.write(to: url)
-            }
-            return true
-        } catch {
-            Logger(subsystem: "com.plozz.app", category: "top-shelf")
-                .error("Unable to save the Top Shelf snapshot; keeping the previous shelf.")
-            return false
-        }
+    public static func isAuthorized(_ snapshot: TopShelfSnapshot) -> Bool {
+        files?.isAuthorized(snapshot) == true
     }
 
-    /// Loads the most recent snapshot, or `nil` if none exists yet.
-    public static func load() -> TopShelfSnapshot? {
-        guard let url = snapshotURL,
-              let data = try? Data(contentsOf: url)
-        else { return nil }
+    struct SnapshotFiles {
+        let directory: URL
+        private var snapshotURL: URL { directory.appendingPathComponent(TopShelf.snapshotFileName) }
+        private var grantURL: URL { directory.appendingPathComponent("topshelf-authorization") }
+        private var grant: Data? { try? Data(contentsOf: grantURL) }
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try? decoder.decode(TopShelfSnapshot.self, from: data)
+        func isAuthorized(_ snapshot: TopShelfSnapshot) -> Bool {
+            guard let id = snapshot.authorizationID else { return false }
+            return grant == Data(id.uuidString.utf8)
+        }
+
+        func save(_ snapshot: TopShelfSnapshot) throws {
+            guard let id = snapshot.authorizationID else { throw CocoaError(.fileWriteInvalidFileName) }
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            try encoder.encode(snapshot).write(to: snapshotURL, options: .atomic)
+            let authorization = Data(id.uuidString.utf8)
+            if grant != authorization { try authorization.write(to: grantURL, options: .atomic) }
+        }
+
+        func revoke() {
+            // Either removal is enough to deny a subsequent read. Remove the grant
+            // first so an extension already constructing native content can recheck it.
+            for url in [grantURL, snapshotURL] {
+                do { try FileManager.default.removeItem(at: url) }
+                catch let error as CocoaError where error.code == .fileNoSuchFile { continue }
+                catch {
+                    Logger(subsystem: "com.plozz.app", category: "top-shelf")
+                        .error("Unable to remove a revoked Top Shelf file.")
+                }
+            }
+        }
+
+        func load() -> TopShelfSnapshot? {
+            guard let data = try? Data(contentsOf: snapshotURL) else { return nil }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            guard let snapshot = try? decoder.decode(TopShelfSnapshot.self, from: data),
+                  isAuthorized(snapshot) else { return nil }
+            return snapshot
+        }
     }
 }

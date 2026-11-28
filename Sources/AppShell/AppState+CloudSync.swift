@@ -740,11 +740,10 @@ extension AppState {
         startSyncSetupOfferPolling()
     }
 
-    /// True when this process is an XCTest host. `XCTestConfigurationFilePath` is
-    /// set by the test runner for both app-hosted and library tests, and is absent
-    /// in the shipping app.
+    /// Standalone XCTest bundles also lack the entitlement for CloudKit.
     static var isRunningUnitTests: Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            || NSClassFromString("XCTestCase") != nil
     }
 
     /// Re-arming Observation: fires whenever the roster or account set changes,

@@ -13,7 +13,8 @@ final class PlexHomeSettingsOnboardingTests: XCTestCase {
         add.tap()
         let all = app.buttons["plex-home-add-all"]
         XCTAssertTrue(all.waitForExistence(timeout: 5))
-        all.tap()
+        XCTAssertEqual(all.label, "Connect both profiles")
+        app.buttons["Choose one profile"].tap()
         let locked = app.buttons["plex-home-user-locked"]
         XCTAssertTrue(locked.waitForExistence(timeout: 5))
         locked.tap()

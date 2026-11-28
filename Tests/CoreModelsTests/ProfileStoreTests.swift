@@ -267,9 +267,14 @@ private final class InMemorySecureStoringDouble: SecureStoring, @unchecked Senda
     var failRemovals = false
     var unreadableMembershipIDs: Set<String> = []
     var membershipReadsToFail = 0
+    var failNextMembershipReadback = false
     func setString(_ value: String, for key: String) throws {
         if failWrites || failedWriteKeys.contains(key) { throw CocoaError(.fileWriteUnknown) }
         storage[key] = value
+        if failNextMembershipReadback, key.hasPrefix("com.plozz.profile.activeAccounts.") {
+            membershipReadsToFail += 1
+            failNextMembershipReadback = false
+        }
     }
     func string(for key: String) -> String? {
         reads += 1
@@ -302,6 +307,55 @@ private final class InMemorySecureStoringDouble: SecureStoring, @unchecked Senda
 
 @MainActor
 final class ProfilesModelTests: XCTestCase {
+    func testInterruptedCutoverFreezesLegacyScopeAndPreservesExplicitAndAbsentIDs() throws {
+        let secure = InMemorySecureStoringDouble()
+        let store = ProfileStore(defaults: makeDefaults(), secureStore: secure)
+        let legacy = Profile(id: ProfileStore.defaultProfileID, name: "Original")
+        let explicit = Profile(name: "Explicit")
+        let cleared = Profile(name: "Cleared")
+        store.saveProfiles([legacy, explicit, cleared])
+        store.setActiveAccountIDs(["absent"], forProfile: explicit.id)
+        let model = ProfilesModel(store: store)
+        secure.unreadableMembershipIDs = [explicit.id]
+        XCTAssertThrowsError(try model.prepareSourceMemberships { (["old"], []) })
+        let added = model.add(name: "New")
+        model.clearActiveAccountIDs(for: cleared.id)
+        secure.unreadableMembershipIDs = []
+        let resumed = ProfilesModel(store: store)
+        try resumed.prepareSourceMemberships { XCTFail("Must use the frozen snapshot"); return (["old", "new"], []) }
+        XCTAssertEqual(try resumed.confirmedSourceMembership(for: legacy.id), ["old"])
+        XCTAssertEqual(try resumed.confirmedSourceMembership(for: explicit.id), ["absent"])
+        XCTAssertEqual(try resumed.confirmedSourceMembership(for: cleared.id), [])
+        XCTAssertEqual(try resumed.confirmedSourceMembership(for: added.id), [])
+        try resumed.addSourceMemberships(["new"], for: explicit.id)
+        XCTAssertEqual(try resumed.confirmedSourceMembership(for: explicit.id), ["absent", "new"])
+        XCTAssertEqual(try resumed.confirmedSourceMembership(for: legacy.id), ["old"])
+        XCTAssertEqual(try resumed.confirmedSourceMembership(for: added.id), [])
+        XCTAssertTrue(resumed.legacyPlaylistRecoveryIDs.isEmpty)
+    }
+
+    func testLegacyPlaylistRecoveryRequiresSingleExistingProfileAndExplicitConfirmation() throws {
+        for multiple in [false, true] {
+            let store = ProfileStore(defaults: makeDefaults())
+            let model = ProfilesModel(store: store, defaultActiveAccountIDs: ["kept"])
+            if multiple { _ = model.add(name: "Other") }
+            try model.prepareSourceMemberships { (["kept", "playlist"], ["kept", "playlist", "inactive"]) }
+            let id = model.activeProfileID
+            XCTAssertEqual(try model.confirmedSourceMembership(for: id), ["kept"])
+            if multiple {
+                XCTAssertTrue(model.legacyPlaylistRecoveryIDs.isEmpty)
+                XCTAssertThrowsError(try model.restoreLegacyPlaylistMembership("playlist", for: id))
+            } else {
+                XCTAssertEqual(model.legacyPlaylistRecoveryIDs, ["playlist"])
+                XCTAssertThrowsError(try model.restoreLegacyPlaylistMembership("inactive", for: id))
+                try model.restoreLegacyPlaylistMembership("playlist", for: id)
+                XCTAssertEqual(try model.confirmedSourceMembership(for: id), ["kept", "playlist"])
+                try model.updateSourceMemberships(adding: [], removing: ["playlist"], for: id)
+                XCTAssertThrowsError(try model.restoreLegacyPlaylistMembership("playlist", for: id))
+            }
+        }
+    }
+
     func testSyncErasureReportsSecureStoreFailureWithoutPretendingProfilesWereReset() throws {
         let suite = "ProfileErasure.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -326,7 +380,7 @@ final class ProfilesModelTests: XCTestCase {
         let store = ProfileStore(defaults: makeDefaults(), secureStore: secure)
         let model = ProfilesModel(store: store, defaultActiveAccountIDs: ["account"])
         let id = model.activeProfileID
-        secure.membershipReadsToFail = 1
+        secure.failNextMembershipReadback = true
         model.setActiveAccountIDs([], for: id)
         XCTAssertEqual(try store.readActiveAccountIDs(forProfile: id), [])
         XCTAssertEqual(model.unconfirmedAccountSelectionProfileIDs, [id])
@@ -387,7 +441,7 @@ final class ProfilesModelTests: XCTestCase {
         XCTAssertNil(model.captureAccountMembership(for: id, fallback: fallback))
     }
 
-    func testClearReadbackFailureWaitsForConfirmedAbsenceBeforeInheriting() {
+    func testClearReadbackFailureNeverInherits() {
         let secure = InMemorySecureStoringDouble()
         let store = ProfileStore(defaults: makeDefaults(), secureStore: secure)
         let model = ProfilesModel(store: store, defaultActiveAccountIDs: ["selected"])
@@ -397,7 +451,7 @@ final class ProfilesModelTests: XCTestCase {
         XCTAssertEqual(model.activeAccountIDs(for: id, fallback: ["household"]), [])
         XCTAssertTrue(model.retryUnconfirmedAccountSelections())
         XCTAssertNil(model.storedActiveAccountIDs(for: id))
-        XCTAssertEqual(model.activeAccountIDs(for: id, fallback: ["household"]), ["household"])
+        XCTAssertEqual(model.activeAccountIDs(for: id, fallback: ["household"]), [])
     }
 
     func testRemovingUnreadableProfileDropsItsPendingRecovery() throws {
@@ -432,10 +486,10 @@ final class ProfilesModelTests: XCTestCase {
         XCTAssertEqual(model.storedActiveAccountIDs(for: model.activeProfileID), [])
         model.clearActiveAccountIDs(for: model.activeProfileID)
         XCTAssertNil(model.storedActiveAccountIDs(for: model.activeProfileID))
-        XCTAssertEqual(model.activeAccountIDs(for: model.activeProfileID, fallback: ["fallback"]), ["fallback"])
+        XCTAssertEqual(model.activeAccountIDs(for: model.activeProfileID, fallback: ["fallback"]), [])
     }
 
-    func testFailedMembershipWritesKeepTheDurableSelectionInMemory() {
+    func testFailedMembershipWritesDenyAccessUntilTheRequestedSelectionIsConfirmed() {
         let secure = InMemorySecureStoringDouble()
         let model = ProfilesModel(
             store: ProfileStore(defaults: makeDefaults(), secureStore: secure),
@@ -443,7 +497,12 @@ final class ProfilesModelTests: XCTestCase {
         )
         secure.failWrites = true
         model.setActiveAccountIDs(["unsaved"], for: model.activeProfileID)
-        XCTAssertEqual(model.storedActiveAccountIDs(for: model.activeProfileID), ["account"])
+        XCTAssertEqual(model.storedActiveAccountIDs(for: model.activeProfileID), [])
+        XCTAssertFalse(model.retryUnconfirmedAccountSelections())
+        XCTAssertThrowsError(try model.confirmedSourceMembership(for: model.activeProfileID))
+        secure.failWrites = false
+        model.setActiveAccountIDs(["unsaved"], for: model.activeProfileID)
+        XCTAssertEqual(model.storedActiveAccountIDs(for: model.activeProfileID), ["unsaved"])
     }
 
     func testNewAndImportedProfileSelectionsSurviveModelSnapshots() {
@@ -503,11 +562,10 @@ final class ProfilesModelTests: XCTestCase {
         XCTAssertEqual(model.profiles.count, 1)
     }
 
-    func testActiveAccountIDsFallbackWhenUnset() {
+    func testUnsetSelectionNeverFollowsALiveHouseholdSet() {
         let model = ProfilesModel(store: ProfileStore(defaults: makeDefaults()))
         let id = model.activeProfile.id
-        // No stored subset → fall back to the supplied household default.
-        XCTAssertEqual(model.activeAccountIDs(for: id, fallback: ["g1", "g2"]), ["g1", "g2"])
+        XCTAssertEqual(model.activeAccountIDs(for: id, fallback: ["g1", "g2"]), [])
         model.setActiveAccountIDs(["only"], for: id)
         XCTAssertEqual(model.activeAccountIDs(for: id, fallback: ["g1", "g2"]), ["only"])
     }
@@ -520,7 +578,7 @@ final class ProfilesModelTests: XCTestCase {
     func testStoredActiveAccountIDsDistinguishesUnsetFromExplicitlyEmpty() {
         let model = ProfilesModel(store: ProfileStore(defaults: makeDefaults()))
         let id = model.activeProfile.id
-        // Never chose → nil (caller defaults to the household set).
+        // Never chose → nil (the legacy migration distinguishes this from []).
         XCTAssertNil(model.storedActiveAccountIDs(for: id))
         // Explicitly turned everything off → an empty array, NOT nil.
         model.setActiveAccountIDs([], for: id)

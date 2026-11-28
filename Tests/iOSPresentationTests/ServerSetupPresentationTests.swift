@@ -2,6 +2,7 @@
 import CoreModels
 import CoreUI
 import FeatureAuth
+import FeatureSettings
 import FeatureSyncSetup
 import SwiftUI
 import UIKit
@@ -11,7 +12,7 @@ import XCTest
 
 @MainActor
 final class ServerSetupPresentationTests: XCTestCase {
-    func testSourcesPutAddFirstAndUseTheAvailableWebsiteLogo() async throws {
+    func testSourcesShowOnlyTheViewersConnectionsBeforeAddAndUseTheWebsiteLogo() async throws {
         let artwork = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32)).image { context in
             UIColor(red: 0, green: 1, blue: 0.25, alpha: 1).setFill()
             context.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
@@ -29,16 +30,23 @@ final class ServerSetupPresentationTests: XCTestCase {
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
             let accounts = AccountStore(secureStore: InMemorySecureStore())
+            let profileStore = ProfileStore(defaults: defaults)
+            profileStore.setFirstRunProfileSetupComplete(true)
             try accounts.add(Account(
                 id: "fixture", server: .init(id: "fixture", name: "Example source",
                 baseURL: origin.appendingPathComponent("playlist.m3u"), provider: .iptv),
                 userID: "viewer", userName: "Viewer", deviceID: "fixture"
             ), token: "fixture")
-            accounts.setActiveAccountIDs([])
+            try accounts.add(Account(
+                id: "other", server: .init(id: "other", name: "Private playlist", baseURL: origin, provider: .iptv),
+                userID: "other", userName: "IPTV", deviceID: "fixture"
+            ), token: "fixture")
+            accounts.setActiveAccountIDs(["fixture"])
             let app = PlozziOSAppModel(
                 appAdmissionStore: AppAdmissionStore(defaults: defaults),
-                accountStore: accounts, profileStore: ProfileStore(defaults: defaults)
+                accountStore: accounts, profileStore: profileStore
             )
+            XCTAssertTrue(app.isActiveProfileAuthorized)
             for width in [CGFloat(390), 834] {
                 let image = try await render(
                     NavigationStack {
@@ -52,7 +60,7 @@ final class ServerSetupPresentationTests: XCTestCase {
                 request.recognitionLevel = .accurate
                 request.recognitionLanguages = ["en-US"]
                 try VNImageRequestHandler(cgImage: image).perform([request])
-                attach(image, name: "Sources-add-first-website-logo-\(width)")
+                attach(image, name: "Personal-sources-website-logo-\(width)")
                 let recognized = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
                 let add = try XCTUnwrap(request.results?.first {
                     $0.topCandidates(1).first?.string == "Add Source"
@@ -60,8 +68,8 @@ final class ServerSetupPresentationTests: XCTestCase {
                 let source = try XCTUnwrap(request.results?.first {
                     $0.topCandidates(1).first?.string.localizedCaseInsensitiveContains("Example source") == true
                 }, "\(recognized)")
-                XCTAssertGreaterThan(add.boundingBox.minY, source.boundingBox.maxY,
-                                     "Add Source must appear above the saved sources")
+                XCTAssertGreaterThan(source.boundingBox.minY, add.boundingBox.maxY)
+                XCTAssertFalse(recognized.contains { $0.contains("Private playlist") })
                 let bytes = try rgba(image)
                 let logoPixels = stride(from: 0, to: bytes.count, by: 4).filter {
                     bytes[$0] < 20 && bytes[$0 + 1] > 230 && bytes[$0 + 2] < 100
@@ -74,6 +82,41 @@ final class ServerSetupPresentationTests: XCTestCase {
         } catch {
             await server.stop()
             throw error
+        }
+    }
+
+    func testLiveFormatMenuAppearsForXtreamButNotAPlaylistOnTheSameHost() async throws {
+        let suite = "SourceFormats.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = AccountStore(secureStore: InMemorySecureStore())
+        let profileStore = ProfileStore(defaults: defaults)
+        profileStore.setFirstRunProfileSetupComplete(true)
+        let origin = try XCTUnwrap(URL(string: "https://provider.test"))
+        let sources = [(UUID().uuidString, IPTVCredential.Mode.xtream), (UUID().uuidString, .playlist)]
+        for (id, mode) in sources {
+            let credential = try IPTVCredential(mode: mode, address: origin, username: "viewer", password: "fixture")
+            try store.add(Account(id: id, server: .init(id: id, name: "Test source",
+                                  baseURL: origin, provider: .iptv),
+                                  userID: "viewer", userName: "Viewer", deviceID: "test"), token: try credential.encoded())
+        }
+        store.setActiveAccountIDs(sources.map(\.0))
+        let app = PlozziOSAppModel(appAdmissionStore: AppAdmissionStore(defaults: defaults),
+                                   accountStore: store, profileStore: profileStore)
+        XCTAssertTrue(app.isActiveProfileAuthorized)
+        var scope = app.sourceSettingsScope(onAdd: {}, onAddUser: { _ in })
+        scope.reloadLibraries = {}
+        for (id, mode) in sources {
+            let image = try await render(
+                NavigationStack {
+                    ProfileSourceDetail(profileID: app.profiles.activeProfileID, accountID: id,
+                                        scope: { scope }, isAuthorized: { app.isActiveProfileAuthorized }) { EmptyView() }
+                }.environment(app.profiles), size: CGSize(width: 440, height: 900), light: false
+            )
+            let text = try recognize(image)
+            XCTAssertTrue(text.contains("Rename source"), "\(text)")
+            XCTAssertEqual(text.contains("Live stream format"), mode == .xtream, "\(text)")
+            XCTAssertEqual(text.contains("HLS"), mode == .xtream, "\(text)")
         }
     }
 

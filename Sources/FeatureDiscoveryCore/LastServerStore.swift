@@ -10,6 +10,12 @@ public protocol LastServerStoring: Sendable {
     var recentServers: [MediaServer] { get set }
 }
 
+/// Provider setup must not read or advertise another viewer's address history.
+public struct DiscoveryOnlyServerStore: LastServerStoring {
+    public init() {}
+    public var recentServers: [MediaServer] { get { [] } set {} }
+}
+
 public extension LastServerStoring {
     /// The single most-recently-used server, if any.
     var lastServer: MediaServer? { recentServers.first }

@@ -4,7 +4,7 @@ import CoreModels
 import CoreUI
 import FeatureDiscoveryCore
 
-/// tvOS server picker: discovered servers, last-used reconnect, and manual entry.
+/// tvOS server picker: nearby servers and manual entry, without saved identities.
 ///
 /// Uses native focusable controls (`List`, `Button`, `TextField`) so the focus
 /// engine and Siri Remote work without custom handling.
@@ -33,12 +33,10 @@ public struct ServerPickerView: View {
         viewModel: ServerPickerViewModel? = nil,
         provider: ProviderKind = .jellyfin,
         isPageReady: Bool = true,
-        signedInServers: [SignedInServer] = [],
         onBack: (() -> Void)? = nil,
         onSelect: @escaping (MediaServer) -> Void
     ) {
-        let vm = viewModel ?? ServerPickerViewModel(provider: provider)
-        vm.setSignedInServers(signedInServers)
+        let vm = viewModel ?? ServerPickerViewModel(provider: provider, store: DiscoveryOnlyServerStore())
         _viewModel = State(initialValue: vm)
         self.provider = provider
         self.isPageReady = isPageReady
@@ -62,17 +60,12 @@ public struct ServerPickerView: View {
                     }
                 }
 
-                // One combined card: recently-used servers (reconnect targets,
-                // including manual/Tailscale entries) first, then anything new
-                // found on the network — no more confusing split sections.
                 PickerPanel(title: "Servers", titleAccessory: { scanIndicator }) {
-                    let signedIn = viewModel.signedInServers
-                    let recents = viewModel.recentServers
                     let discovered = viewModel.discoveredServers
                     // Discovery starts after the parent transition; keep later
                     // result insertions instant so only navigation animates.
                     Group {
-                        if signedIn.isEmpty && recents.isEmpty && discovered.isEmpty {
+                        if discovered.isEmpty {
                             emptyServersPlaceholder
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.vertical, 8)
@@ -84,16 +77,8 @@ public struct ServerPickerView: View {
                             // gap lets each row's focus lift breathe and act as its
                             // own separator (matches the Settings pages' row lists).
                             VStack(spacing: 16) {
-                                // Servers you already have accounts on come first —
-                                // tap to add another user to them.
-                                ForEach(signedIn, id: \.server) { entry in
-                                    serverRow(entry.server, role: .signedIn(entry.userNames))
-                                }
-                                ForEach(recents, id: \.self) { server in
-                                    serverRow(server, role: .recent)
-                                }
                                 ForEach(discovered, id: \.self) { server in
-                                    serverRow(server, role: .discovered)
+                                    serverRow(server)
                                 }
                             }
                         }
@@ -201,10 +186,7 @@ public struct ServerPickerView: View {
     }
 
     private var preferredInitialFocus: FocusTarget {
-        if let server = viewModel.signedInServers.first?.server ?? viewModel.recentServers.first {
-            return .server(ServerIdentity.key(for: server))
-        }
-        return onBack == nil ? .rescan : .back
+        onBack == nil ? .rescan : .back
     }
 
     /// Small trailing spinner shown beside the "Servers" card header while a
@@ -244,10 +226,10 @@ public struct ServerPickerView: View {
         }
     }
 
-    private func serverRow(_ server: MediaServer, role: RowRole) -> some View {
+    private func serverRow(_ server: MediaServer) -> some View {
         Button {
-            viewModel.select(server)
-            onSelect(server)
+            viewModel.manualURLText = server.baseURL.absoluteString
+            Task { await connectManually() }
         } label: {
             // Logo top-aligned with the server name so it lines up with the
             // first line when a name/address wraps to two lines.
@@ -262,15 +244,9 @@ public struct ServerPickerView: View {
                     if let host = server.baseURL.host {
                         Text(host).font(.subheadline).settingsRowSecondary()
                     }
-                    // Who's signed in lives here — under the address — so the
-                    // trailing badge can consistently mean "reachable right now".
-                    if case let .signedIn(userNames) = role {
-                        signedInLine(userNames)
-                    }
                 }
                 Spacer(minLength: 12)
-                // Trailing badge always answers "can I connect right now?".
-                statusBadge(for: server, isRecent: role.isRecent)
+                statusText("On your network", systemImage: "wifi")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 16)
@@ -280,61 +256,6 @@ public struct ServerPickerView: View {
         .buttonStyle(SettingsFocusButtonStyle(size: .prominent))
         .disabled(viewModel.phase == .validating)
         .focused($focusedControl, equals: .server(ServerIdentity.key(for: server)))
-    }
-
-    /// Distinguishes the three kinds of rows in the "Servers" card: an account
-    /// you're already signed into, a recent reconnect target, or a freshly
-    /// discovered LAN server.
-    private enum RowRole {
-        case signedIn([String])
-        case recent
-        case discovered
-
-        /// Whether this row is a recent reconnect target (drives the "Recently
-        /// used" fallback badge before a probe resolves).
-        var isRecent: Bool {
-            if case .recent = self { return true }
-            return false
-        }
-    }
-
-    /// The "who's signed in" annotation shown under a signed-in server's
-    /// address. Tapping the row starts sign-in for *another* user. Uses the
-    /// shared theme-/focus-aware status style so it stays legible on the
-    /// inverted focus card (and in every theme) instead of vanishing when the
-    /// accent happens to match the focus fill.
-    private func signedInLine(_ userNames: [String]) -> some View {
-        Label(signedInSummary(userNames), systemImage: "checkmark.circle.fill")
-            .font(.footnote)
-            .settingsRowGreenIndicator()
-    }
-
-    /// Human-readable summary of who's signed in on a server.
-    private func signedInSummary(_ userNames: [String]) -> LocalizedStringResource {
-        switch userNames.count {
-        case 0: return "Signed in"
-        case 1: return "Signed in · \(userNames[0])"
-        case 2: return "Signed in · \(userNames[0]) & \(userNames[1])"
-        default: return "Signed in · \(userNames.count) users"
-        }
-    }
-
-    /// Trailing reachability status for a server row. Discovered servers are
-    /// always on the network; recents and signed-in servers show their live
-    /// probe result, with recents falling back to a "Recently used" tag until a
-    /// probe resolves.
-    @ViewBuilder
-    private func statusBadge(for server: MediaServer, isRecent: Bool) -> some View {
-        switch viewModel.status(for: server) {
-        case .onNetwork:
-            statusText("On your network", systemImage: "wifi")
-        case .online:
-            statusText("Online", systemImage: "checkmark.circle")
-        case .offline:
-            statusText("Offline", systemImage: "exclamationmark.triangle")
-        case .unknown:
-            if isRecent { statusText("Recently used", systemImage: "clock.arrow.circlepath") }
-        }
     }
 
     private func statusText(_ title: LocalizedStringResource, systemImage: String) -> some View {

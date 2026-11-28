@@ -14,7 +14,7 @@ struct TopShelfSettingsView: View {
                     Toggle(isOn: $model.settings.isEnabled) {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Show Top Shelf")
-                            Text("Place Plozz in the top row of your Apple TV Home Screen to see Continue Watching and Recently Added titles above the app icons.")
+                            Text("Place Plozz in the top row of the Home Screen to see the selected Plozz profile’s titles. This setting applies to the current Apple TV user.")
                                 .font(SettingsRowMetrics.helperFont)
                                 .settingsRowSecondary()
                                 .fixedSize(horizontal: false, vertical: true)

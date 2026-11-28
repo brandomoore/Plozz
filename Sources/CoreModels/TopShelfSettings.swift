@@ -52,7 +52,8 @@ public struct TopShelfSettings: Codable, Equatable, Sendable {
     }
 }
 
-/// Device-local preferences shared by Plozz profiles, never included in profile sync.
+/// The current Apple TV system user's preferences: tvOS partitions `.standard`
+/// under the User Management entitlement. Plozz viewers do not own or sync these.
 @MainActor
 @Observable
 public final class TopShelfSettingsModel {

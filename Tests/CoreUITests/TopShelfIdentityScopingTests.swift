@@ -14,7 +14,7 @@ final class TopShelfIdentityScopingTests: XCTestCase {
         XCTAssertNotEqual(plex.shelfIdentifier, jellyfin.shelfIdentifier)
     }
 
-    /// A snapshot written by an older build has no account and must keep working.
+    /// Old deep links still decode; an unowned snapshot is not display authority.
     func testShelfIdentifierFallsBackToTheBareIDWithoutAnAccount() {
         let legacy = TopShelfSnapshot.Item(id: "12345", title: "Dune")
         XCTAssertEqual(legacy.shelfIdentifier, "12345")
@@ -74,5 +74,37 @@ final class TopShelfIdentityScopingTests: XCTestCase {
 
         XCTAssertEqual(snapshot.sections.first?.items.first?.shelfIdentifier, "12345")
         XCTAssertNil(snapshot.sections.first?.items.first?.accountID)
+    }
+
+    func testExtensionRequiresCurrentUsersMatchingGrantEvenIfOldSnapshotSurvives() throws {
+        let caches = try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
+        let root = caches.appendingPathComponent("TopShelfTests-\(UUID())", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let alice = TopShelfStore.SnapshotFiles(directory: root.appendingPathComponent("alice"))
+        let bob = TopShelfStore.SnapshotFiles(directory: root.appendingPathComponent("bob"))
+        var snapshot = TopShelfSnapshot(sections: [.init(
+            id: "latest", title: "Latest", items: [.init(id: "1", accountID: "plex", title: "Alice only")]
+        )])
+        snapshot.authorizationID = UUID()
+        try alice.save(snapshot)
+        XCTAssertEqual(alice.load()?.sections.first?.items.first?.title, "Alice only")
+        XCTAssertNil(bob.load())
+
+        let file = TopShelf.snapshotFileName
+        let bytes = try Data(contentsOf: alice.directory.appendingPathComponent(file))
+        var other = TopShelfSnapshot(sections: [])
+        other.authorizationID = UUID()
+        try bob.save(other)
+        try bytes.write(to: bob.directory.appendingPathComponent(file))
+        XCTAssertNil(bob.load(), "A foreign snapshot must not match this system user's grant")
+        alice.revoke()
+        XCTAssertFalse(alice.isAuthorized(snapshot), "A reader which already loaded it must reject it too")
+        try bytes.write(to: alice.directory.appendingPathComponent(file))
+        XCTAssertNil(alice.load(), "An orphan snapshot is not a grant")
+
+        try bob.save(other)
+        let legacy = Data(#"{"generatedAt":"2025-01-01T00:00:00Z","sections":[]}"#.utf8)
+        try legacy.write(to: bob.directory.appendingPathComponent(file))
+        XCTAssertNil(bob.load(), "Pre-authorization snapshots cannot be displayed after upgrade")
     }
 }

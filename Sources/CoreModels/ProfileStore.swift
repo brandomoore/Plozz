@@ -20,8 +20,11 @@ import OSLog
 public protocol ProfilePersisting: Sendable {
     /// All profiles, in stable (created-at) order.
     func loadProfiles() -> [Profile]
+    func readProfiles() throws -> [Profile]
     /// Replaces the full profile list.
     func saveProfiles(_ profiles: [Profile])
+    func readSourceMigration() throws -> ProfileSourceMigration?
+    func writeSourceMigration(_ migration: ProfileSourceMigration) throws
     /// The selected profile id, if one was persisted.
     func activeProfileID() -> String?
     /// Persists (or clears) the selected profile id.
@@ -92,6 +95,11 @@ public protocol ProfilePersisting: Sendable {
 }
 
 extension ProfilePersisting {
+    public func readProfiles() throws -> [Profile] { loadProfiles() }
+    public func readSourceMigration() throws -> ProfileSourceMigration? { nil }
+    public func writeSourceMigration(_ migration: ProfileSourceMigration) throws {
+        throw ProfilesModel.AccountSelectionError.unavailable
+    }
     // Default no-op implementations so optional stores (tests/previews) do not
     // need to opt into the household-preferences additions to keep compiling.
     public func firstRunProfileSetupComplete() -> Bool { false }
@@ -106,6 +114,13 @@ extension ProfilePersisting {
     public func readActiveAccountIDs(forProfile profileID: String) throws -> [String]? {
         activeAccountIDs(forProfile: profileID)
     }
+}
+
+/// Installation-local cutover evidence. IDs only; never credentials or source URLs.
+public struct ProfileSourceMigration: Codable, Equatable, Sendable {
+    var pending: [String: [String]]
+    var recoveryProfileID: String?
+    var recoveryAccountIDs: Set<String>
 }
 
 public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
@@ -125,6 +140,7 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
     #endif
 
     private let profilesKey = "com.plozz.profiles.v1"
+    private let sourceMigrationKey = "com.plozz.profiles.sourceMembership.v1"
     private let pendingSharedMembershipKeysKey = "com.plozz.profiles.pendingSharedMembershipKeys"
     private let activeProfileIDKey = "com.plozz.profiles.activeID"
     private let perProfileActiveAccountsPrefix = "com.plozz.profile.activeAccounts."
@@ -158,7 +174,7 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
     /// Read-only installation evidence, before bootstrap creates a default.
     public func hasPersistedProfiles() throws -> Bool {
         lock.lock(); defer { lock.unlock() }
-        if defaults.data(forKey: profilesKey) != nil { return true }
+        if try defaultsDataLocked(profilesKey) != nil { return true }
         return try secureStore?.readString(for: profilesKey) != nil
     }
 
@@ -167,9 +183,41 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
         return loadProfilesLocked()
     }
 
+    public func readProfiles() throws -> [Profile] {
+        lock.lock(); defer { lock.unlock() }
+        let data = try readProfileDataLocked(profilesKey)
+        return try data.map { try JSONDecoder().decode([Profile].self, from: $0) } ?? []
+    }
+
     public func saveProfiles(_ profiles: [Profile]) {
         lock.lock(); defer { lock.unlock() }
         saveProfilesLocked(profiles)
+    }
+
+    public func readSourceMigration() throws -> ProfileSourceMigration? {
+        lock.lock(); defer { lock.unlock() }
+        let data: Data?
+        if let secureStore {
+            data = try secureStore.readString(for: sourceMigrationKey).map { Data($0.utf8) }
+        } else {
+            data = try defaultsDataLocked(sourceMigrationKey)
+        }
+        return try data.map { try JSONDecoder().decode(ProfileSourceMigration.self, from: $0) }
+    }
+
+    public func writeSourceMigration(_ migration: ProfileSourceMigration) throws {
+        lock.lock(); defer { lock.unlock() }
+        let data = try JSONEncoder().encode(migration)
+        if let secureStore {
+            // Until the shared roster has committed, the per-user defaults still
+            // own its memberships. Never publish a household-wide cutover then.
+            guard ensureSharedMigratedLocked() == nil, didMigrateShared else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            try secureStore.setString(String(decoding: data, as: UTF8.self), for: sourceMigrationKey)
+        } else {
+            defaults.set(data, forKey: sourceMigrationKey)
+        }
     }
 
     public func activeProfileID() -> String? {
@@ -220,19 +268,24 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
 
     public func readActiveAccountIDs(forProfile profileID: String) throws -> [String]? {
         lock.lock(); defer { lock.unlock() }
-        let data: Data?
-        if let secureStore {
-            if ensureSharedMigratedLocked() != nil {
-                data = defaults.data(forKey: accountsKey(profileID))
-            } else {
-                guard didMigrateShared else { throw CocoaError(.fileReadUnknown) }
-                data = try secureStore.readString(for: accountsKey(profileID)).map { Data($0.utf8) }
-            }
-        } else {
-            data = defaults.data(forKey: accountsKey(profileID))
-        }
-        guard let data else { return nil }
+        guard let data = try readProfileDataLocked(accountsKey(profileID)) else { return nil }
         return try JSONDecoder().decode([String].self, from: data)
+    }
+
+    private func readProfileDataLocked(_ key: String) throws -> Data? {
+        if let secureStore {
+            if ensureSharedMigratedLocked() == nil {
+                guard didMigrateShared else { throw CocoaError(.fileReadUnknown) }
+                return try secureStore.readString(for: key).map { Data($0.utf8) }
+            }
+        }
+        return try defaultsDataLocked(key)
+    }
+
+    private func defaultsDataLocked(_ key: String) throws -> Data? {
+        guard let value = defaults.object(forKey: key) else { return nil }
+        guard let data = value as? Data else { throw CocoaError(.fileReadCorruptFile) }
+        return data
     }
 
     public func setActiveAccountIDs(_ ids: [String], forProfile profileID: String) {
@@ -293,7 +346,7 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
 
     public func resetForDebugging() {
         lock.lock(); defer { lock.unlock() }
-        for key in sharedMigrationMembershipKeys(for: loadProfilesLocked()).union([profilesKey]) {
+        for key in sharedMigrationMembershipKeys(for: loadProfilesLocked()).union([profilesKey, sourceMigrationKey]) {
             removeShared(forKey: key)
             defaults.removeObject(forKey: key)
         }
@@ -311,7 +364,7 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
     public func resetForSyncErasure() throws {
         lock.lock(); defer { lock.unlock() }
         let keys = sharedMigrationMembershipKeys(for: loadProfilesLocked())
-            .union([profilesKey, legacyAskOnStartupKey, legacyProfilesEnabledKey, firstRunSetupKey, parentalPINKey])
+            .union([profilesKey, sourceMigrationKey, legacyAskOnStartupKey, legacyProfilesEnabledKey, firstRunSetupKey, parentalPINKey])
         for key in keys.sorted() {
             if let secureStore { try secureStore.removeValue(for: key) }
             defaults.removeObject(forKey: key)
@@ -378,7 +431,11 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
                 return []
             }
         } else {
-            existing = loadProfilesLocked()
+            do {
+                existing = try defaultsDataLocked(profilesKey).map {
+                    try JSONDecoder().decode([Profile].self, from: $0)
+                } ?? []
+            } catch { return [] }
         }
         guard existing.isEmpty else { return existing.sorted { $0.createdAt < $1.createdAt } }
 
@@ -493,7 +550,7 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
                 didMigrateShared = true
                 return nil
             }
-            guard let data = defaults.data(forKey: profilesKey) else {
+            guard let data = try defaultsDataLocked(profilesKey) else {
                 didMigrateShared = true
                 return nil
             }
@@ -504,7 +561,7 @@ public final class ProfileStore: ProfilePersisting, @unchecked Sendable {
             // of partial writes. Keep the key journal until the roster commits.
             defaults.set(membershipKeys.sorted(), forKey: pendingSharedMembershipKeysKey)
             for key in membershipKeys.sorted() {
-                if let accData = defaults.data(forKey: key) {
+                if let accData = try defaultsDataLocked(key) {
                     _ = try JSONDecoder().decode([String].self, from: accData)
                     try secureStore.setString(String(decoding: accData, as: UTF8.self), for: key)
                 } else {
@@ -546,6 +603,11 @@ public final class ProfilesModel {
         Set(profiles.filter { $0.pendingSyncedDeletion == true }.map(\.id))
     }
     private var accountSelections: [String: [String]] = [:]
+    /// A failed write is not recovered by reading the *old* grant successfully.
+    private var unconfirmedEdits: [String: [String]] = [:]
+    private var unconfirmedClears: Set<String> = []
+    private var sourceMigration: ProfileSourceMigration?
+    public var sourceMembershipsPrepared: Bool { sourceMigration?.pending.isEmpty == true }
     public private(set) var unconfirmedAccountSelectionProfileIDs: Set<String> = []
 
     public enum AccountSelectionError: Error, Equatable, LocalizedError {
@@ -869,17 +931,25 @@ public final class ProfilesModel {
             plexHomeImportIdentity: plexHomeImportIdentity
         )
         profile.isAwaitingSetup = isAwaitingSetup
+        profile.excludesLegacySourceInheritance = true
         // Through the revisioned setter, so a profile is never born with a Kids
         // flag that a stale peer could clear.
         profile.replaceKidsProfile(with: isKidsProfile)
+        // Store even an empty selection before publishing the profile. A new
+        // locally created profile must never be mistaken for an inherited one.
+        setActiveAccountIDs(activeAccountIDs, for: profile.id)
+        guard !unconfirmedAccountSelectionProfileIDs.contains(profile.id) else { return profile }
+        let previousRoster = profiles
         profiles.append(profile)
         profiles.sort { $0.createdAt < $1.createdAt }
+        store.saveProfiles(profiles)
+        guard (try? store.readProfiles()) == profiles else {
+            profiles = previousRoster
+            unconfirmedAccountSelectionProfileIDs.insert(profile.id)
+            return profile
+        }
         if profiles.contains(where: { $0.pendingSyncedDeletion == true }) {
             applySyncedProfileDTOs([:], deletions: [])
-        }
-        store.saveProfiles(profiles)
-        if !activeAccountIDs.isEmpty {
-            setActiveAccountIDs(activeAccountIDs, for: profile.id)
         }
         return profiles.first(where: { $0.id == profile.id }) ?? profile
     }
@@ -934,6 +1004,8 @@ public final class ProfilesModel {
             // child can do, which are resolved by revision so a stale sender
             // can't clear a Profile Lock, a Kids flag, or the Parental PIN.
             var incoming = p
+            incoming.excludesLegacySourceInheritance = byID[p.id]?.excludesLegacySourceInheritance
+            if byID[p.id] == nil { incoming.excludesLegacySourceInheritance = true }
             if let local = byID[p.id] { incoming.resolveSecurityFields(against: local) }
             byID[p.id] = incoming
         }
@@ -959,7 +1031,9 @@ public final class ProfilesModel {
             byID[p.id] = p
         }
         var changed = false
-        for p in incoming {
+        for var p in incoming {
+            p.excludesLegacySourceInheritance = byID[p.id]?.excludesLegacySourceInheritance
+            if byID[p.id] == nil { p.excludesLegacySourceInheritance = true }
             if byID[p.id] != p { changed = true }   // add or update (default included)
             if byID[p.id] == nil { order.append(p.id) }
             byID[p.id] = p
@@ -995,7 +1069,9 @@ public final class ProfilesModel {
                 let merged = dto.merged(into: existing)
                 if merged != existing { byID[id] = merged; changed = true }
             } else {
-                byID[id] = dto.makeProfile(); order.append(id); changed = true
+                var profile = dto.makeProfile()
+                profile.excludesLegacySourceInheritance = true
+                byID[id] = profile; order.append(id); changed = true
             }
         }
         for id in deletions {
@@ -1039,6 +1115,21 @@ public final class ProfilesModel {
         guard let idx = profiles.firstIndex(where: { $0.id == profile.id }) else { return }
         profiles[idx] = profile
         store.saveProfiles(profiles)
+    }
+
+    public func setSourceName(_ name: String, accountID: String, for profileID: String) throws {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard activeProfileID == profileID, !name.isEmpty, name.utf8.count <= 512,
+              let index = profiles.firstIndex(where: { $0.id == profileID }),
+              try confirmedSourceMembership(for: profileID).contains(accountID),
+              try store.readProfiles() == profiles else { throw AccountSelectionError.unavailable }
+        var updated = profiles
+        var names = updated[index].sourceNames ?? [:]
+        names[accountID] = name
+        updated[index].sourceNames = names
+        store.saveProfiles(updated)
+        guard try store.readProfiles() == updated else { throw AccountSelectionError.unavailable }
+        profiles = updated
     }
 
     // MARK: First-run setup
@@ -1097,6 +1188,9 @@ public final class ProfilesModel {
     }
 
     private func reloadPristineDefault() {
+        sourceMigration = nil
+        unconfirmedEdits = [:]
+        unconfirmedClears = []
         let migrated = store.migrateLegacyIfNeeded(defaultName: "Me", defaultActiveAccountIDs: [])
         profiles = migrated
         refreshAccountSelections()
@@ -1137,6 +1231,8 @@ public final class ProfilesModel {
         preserveHouseholdPIN(in: &next)
         profiles = next
         accountSelections[id] = nil
+        unconfirmedEdits[id] = nil
+        unconfirmedClears.remove(id)
         unconfirmedAccountSelectionProfileIDs.remove(id)
         store.saveProfiles(profiles)
         // Keep the persisted former owner's ID as an abandonment marker. Clearing
@@ -1164,17 +1260,16 @@ public final class ProfilesModel {
 
     // MARK: Per-profile active accounts
 
-    /// The account subset for a profile, or `fallback` when it never set one.
+    /// Absence no longer authorizes a live household fallback. Legacy sets are
+    /// frozen once by the account hub before it admits any source mutation.
     public func activeAccountIDs(for profileID: String, fallback: [String]) -> [String] {
-        storedActiveAccountIDs(for: profileID) ?? fallback
+        storedActiveAccountIDs(for: profileID) ?? []
     }
 
     /// The profile's *explicit* stored selection, or `nil` when it never chose
     /// one. Unlike ``activeAccountIDs(for:fallback:)`` this preserves the
-    /// difference between "never chose" (`nil` ⇒ default to all servers) and
-    /// "chose to watch nothing" (`[]`) — the distinction the per-server master
-    /// toggle on Settings → Your Servers & Libraries depends on to be able to
-    /// turn a server (and the last remaining server) off.
+    /// distinction between the absent wire value and an explicit empty list.
+    /// Neither grants access after cutover.
     /// Unreadable selections deny all accounts until a non-rendering retry succeeds;
     /// use `confirmedAccountMemberships()` for transfer instead of serializing that denial.
     public func storedActiveAccountIDs(for profileID: String) -> [String]? {
@@ -1182,15 +1277,181 @@ public final class ProfilesModel {
     }
 
     public func setActiveAccountIDs(_ ids: [String], for profileID: String) {
-        store.setActiveAccountIDs(ids, forProfile: profileID)
+        do {
+            try writeMembership(ids, for: profileID)
+        } catch {
+            unconfirmedAccountSelectionProfileIDs.insert(profileID)
+        }
+    }
+
+    /// A synced deletion represents no source access, not an invitation to
+    /// inherit accounts. Preserve the absent wire value for sync round trips.
+    public func clearActiveAccountIDs(for profileID: String) {
+        // An early synced clear must not be reinterpreted as legacy inheritance
+        // when an interrupted cutover resumes. Mark the existing profile before
+        // removing its wire value; unrecognized incoming profiles never inherit.
+        if sourceMigration?.pending.isEmpty != true,
+           var local = profiles.first(where: { $0.id == profileID }),
+           local.excludesLegacySourceInheritance != true {
+            local.excludesLegacySourceInheritance = true
+            update(local)
+            do { try confirmPersistedProfile(local) } catch {
+                setActiveAccountIDs([], for: profileID)
+                return
+            }
+        }
+        unconfirmedEdits[profileID] = nil
+        unconfirmedClears.insert(profileID)
+        store.clearActiveAccountIDs(forProfile: profileID)
         refreshAccountSelection(for: profileID)
     }
 
-    /// Clear a profile's explicit account selection (a synced membership deletion →
-    /// revert to "watches all servers").
-    public func clearActiveAccountIDs(for profileID: String) {
-        store.clearActiveAccountIDs(forProfile: profileID)
-        refreshAccountSelection(for: profileID)
+    public func confirmPersistedProfile(_ profile: Profile) throws {
+        guard try store.readProfiles().contains(profile), profiles.contains(profile),
+              profile.pendingSyncedDeletion != true else { throw AccountSelectionError.unavailable }
+    }
+
+    public func confirmedSourceRoster() throws -> [Profile] {
+        let durable = try store.readProfiles()
+        let ids = Set(durable.map(\.id))
+        guard !ids.isEmpty, !ids.contains(""), ids.count == durable.count, ids == Set(profiles.map(\.id)) else {
+            throw AccountSelectionError.unavailable
+        }
+        return durable
+    }
+
+    private func writeMembership(_ ids: [String], for id: String) throws {
+        unconfirmedClears.remove(id)
+        do {
+            if try store.readActiveAccountIDs(forProfile: id) != ids {
+                store.setActiveAccountIDs(ids, forProfile: id)
+            }
+            guard try store.readActiveAccountIDs(forProfile: id) == ids else {
+                throw AccountSelectionError.unavailable
+            }
+            accountSelections[id] = ids
+            unconfirmedEdits[id] = nil
+            unconfirmedAccountSelectionProfileIDs.remove(id)
+        } catch {
+            unconfirmedEdits[id] = ids
+            unconfirmedAccountSelectionProfileIDs.insert(id)
+            throw AccountSelectionError.unavailable
+        }
+    }
+
+    /// Receives the complete, pre-mutation legacy household selection, never an
+    /// error-shaped empty array. Persist the plan first: interrupted conversions
+    /// can only retry the original IDs, even if the account roster later grows.
+    public func prepareSourceMemberships(
+        legacy: () throws -> (active: [String], playlists: Set<String>)
+    ) throws {
+        if sourceMigration?.pending.isEmpty == true { return }
+        let roster = try confirmedSourceRoster()
+        var plan: ProfileSourceMigration
+        if let saved = try store.readSourceMigration() {
+            plan = saved
+        } else {
+            let snapshot = try legacy()
+            let eligible = roster.filter { $0.excludesLegacySourceInheritance != true && $0.pendingSyncedDeletion != true }
+            let singleViewer = roster.count == 1 && eligible.count == 1
+            // Freeze the roster and limits BEFORE reading any memberships. An
+            // unreadable peer can delay conversion but never enlarge its scope.
+            plan = ProfileSourceMigration(
+                pending: Dictionary(eligible.map { ($0.id, snapshot.active) }, uniquingKeysWith: { first, _ in first }),
+                recoveryProfileID: singleViewer ? roster[0].id : nil,
+                recoveryAccountIDs: singleViewer ? snapshot.playlists.intersection(snapshot.active) : []
+            )
+            try persistSourcePlan(plan)
+        }
+        if !plan.pending.isEmpty {
+            for profile in roster where plan.pending[profile.id] != nil {
+                let id = profile.id
+                guard profile.excludesLegacySourceInheritance != true, profile.pendingSyncedDeletion != true,
+                      let ids = plan.pending[id] else {
+                    if plan.recoveryProfileID == id { plan.recoveryAccountIDs = [] }
+                    continue
+                }
+                if unconfirmedEdits[id] != nil || unconfirmedClears.contains(id) {
+                    // Retry an interrupted conversion only against its frozen
+                    // target. Never restore an unrelated failed user edit.
+                    guard unconfirmedEdits[id] == ids else { throw AccountSelectionError.unavailable }
+                    try writeMembership(ids, for: id)
+                }
+                if let explicit = try store.readActiveAccountIDs(forProfile: id) {
+                    if plan.recoveryProfileID == id { plan.recoveryAccountIDs.subtract(explicit) }
+                    accountSelections[id] = explicit
+                    unconfirmedAccountSelectionProfileIDs.remove(id)
+                } else {
+                    try writeMembership(ids, for: id)
+                    if plan.recoveryProfileID == id { plan.recoveryAccountIDs = [] }
+                }
+            }
+            plan.pending = [:]
+            try persistSourcePlan(plan)
+        }
+        sourceMigration = plan
+    }
+
+    private func persistSourcePlan(_ plan: ProfileSourceMigration) throws {
+        try store.writeSourceMigration(plan)
+        guard try store.readSourceMigration() == plan else { throw AccountSelectionError.unavailable }
+    }
+
+    /// Verified read/modify/write retains absent IDs saved for reconnection.
+    public func addSourceMemberships(_ ids: [String], for profileID: String) throws {
+        try updateSourceMemberships(adding: ids, removing: [], for: profileID)
+    }
+
+    public func confirmedSourceMembership(for profileID: String) throws -> [String] {
+        do {
+            let saved = try store.readActiveAccountIDs(forProfile: profileID)
+            guard reflectsRequestedMembership(saved, for: profileID) else { throw AccountSelectionError.unavailable }
+            return saved ?? []
+        } catch {
+            unconfirmedAccountSelectionProfileIDs.insert(profileID)
+            throw AccountSelectionError.unavailable
+        }
+    }
+
+    public func updateSourceMemberships(adding: [String], removing: Set<String>, for profileID: String) throws {
+        guard sourceMigration?.pending.isEmpty == true,
+              let profile = profiles.first(where: { $0.id == profileID }) else {
+            throw AccountSelectionError.unavailable
+        }
+        try confirmPersistedProfile(profile)
+        let previous: [String]
+        do {
+            let durable = try store.readActiveAccountIDs(forProfile: profileID) ?? []
+            previous = unconfirmedClears.contains(profileID) ? []
+                : unconfirmedEdits[profileID].map { durable.filter(Set($0).contains) } ?? durable
+        } catch {
+            unconfirmedAccountSelectionProfileIDs.insert(profileID)
+            throw AccountSelectionError.unavailable
+        }
+        var next = previous.filter { !removing.contains($0) }
+        for id in adding where !next.contains(id) { next.append(id) }
+        try writeMembership(next, for: profileID)
+    }
+
+    public var legacyPlaylistRecoveryIDs: Set<String> {
+        guard let plan = sourceMigration, plan.recoveryProfileID == activeProfileID,
+              profiles.count == 1, !activeProfile.isKids, !activeProfile.needsSetup,
+              !unconfirmedAccountSelectionProfileIDs.contains(activeProfileID) else { return [] }
+        return plan.recoveryAccountIDs.subtracting(accountSelections[activeProfileID] ?? [])
+    }
+
+    public func restoreLegacyPlaylistMembership(_ id: String, for profileID: String) throws {
+        guard activeProfileID == profileID, legacyPlaylistRecoveryIDs.contains(id),
+              var plan = try store.readSourceMigration(), plan.recoveryProfileID == profileID,
+              plan.recoveryAccountIDs.contains(id), try store.readProfiles() == profiles else {
+            throw AccountSelectionError.unavailable
+        }
+        // Consume before granting. Even a crash must not keep an old recovery
+        // authorization around after the viewer later removes this source.
+        plan.recoveryAccountIDs.remove(id)
+        try persistSourcePlan(plan)
+        sourceMigration = plan
+        try addSourceMemberships([id], for: profileID)
     }
 
     public func confirmedAccountMemberships() throws -> [String: [String]] {
@@ -1222,12 +1483,18 @@ public final class ProfilesModel {
         let known = Set(profiles.map(\.id))
         accountSelections = accountSelections.filter { known.contains($0.key) }
         unconfirmedAccountSelectionProfileIDs.formIntersection(known)
+        unconfirmedEdits = unconfirmedEdits.filter { known.contains($0.key) }
+        unconfirmedClears.formIntersection(known)
         for profile in profiles { refreshAccountSelection(for: profile.id) }
     }
 
     private func refreshAccountSelection(for profileID: String) {
         do {
-            accountSelections[profileID] = try store.readActiveAccountIDs(forProfile: profileID)
+            let saved = try store.readActiveAccountIDs(forProfile: profileID)
+            guard reflectsRequestedMembership(saved, for: profileID) else { throw AccountSelectionError.unavailable }
+            accountSelections[profileID] = saved
+            unconfirmedEdits[profileID] = nil
+            unconfirmedClears.remove(profileID)
             unconfirmedAccountSelectionProfileIDs.remove(profileID)
         } catch {
             let newlyUnavailable = unconfirmedAccountSelectionProfileIDs.insert(profileID).inserted
@@ -1237,6 +1504,11 @@ public final class ProfilesModel {
             }
             #endif
         }
+    }
+
+    private func reflectsRequestedMembership(_ saved: [String]?, for profileID: String) -> Bool {
+        if let requested = unconfirmedEdits[profileID] { return saved == requested }
+        return !unconfirmedClears.contains(profileID) || saved == nil
     }
 
 }

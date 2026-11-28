@@ -7,11 +7,11 @@ import SwiftUI
 struct SettingsLibrariesRow: View {
     let accounts: [Account]
     let isAccountIncluded: (String) -> Bool
-    var icon = "rectangle.stack"
+    var icon = "externaldrive.connected.to.line.below"
 
     var body: some View {
         SettingsSectionButton(
-            title: Text(SettingsCopy.libraries), icon: icon,
+            title: Text(SettingsCopy.sources), icon: icon,
             subtitleContent: AnyView(SettingsLibrarySourcesSummary(
                 accounts: accounts, isAccountIncluded: isAccountIncluded
             )), route: .myLibraries
@@ -32,6 +32,7 @@ struct SettingsLibrariesRow: View {
 public struct SettingsLibrarySourcesSummary: View {
     private let accounts: [Account]
     private let isAccountIncluded: (String) -> Bool
+    @Environment(ProfilesModel.self) private var profiles: ProfilesModel?
 
     public init(accounts: [Account], isAccountIncluded: @escaping (String) -> Bool) {
         self.accounts = accounts
@@ -39,11 +40,10 @@ public struct SettingsLibrarySourcesSummary: View {
     }
 
     public var body: some View {
-        let groups = Self.watchedServerGroups(in: accounts, isAccountIncluded: isAccountIncluded)
-        if accounts.isEmpty {
-            Text("No servers yet")
-        } else if groups.isEmpty {
-            Text("Choose what to watch")
+        let groups = Self.watchedServerGroups(in: accounts, isAccountIncluded: isAccountIncluded,
+                                              names: profiles?.activeProfile.sourceNames)
+        if groups.isEmpty {
+            Text("No sources yet")
         } else {
             #if os(tvOS)
             HStack(alignment: .center, spacing: 10) {
@@ -89,10 +89,11 @@ public struct SettingsLibrarySourcesSummary: View {
     }
 
     static func watchedServerGroups(
-        in accounts: [Account], isAccountIncluded: (String) -> Bool
+        in accounts: [Account], isAccountIncluded: (String) -> Bool, names: [String: String]? = nil
     ) -> [ServerAccountGroup] {
-        serverGroups(from: accounts).filter { group in
-            group.accounts.contains { isAccountIncluded($0.id) }
+        accounts.filter { isAccountIncluded($0.id) }.map { account in
+            ServerAccountGroup(serverKey: account.id, serverName: names?[account.id] ?? account.server.name,
+                               providerKind: account.server.provider, accounts: [account])
         }
     }
 }
