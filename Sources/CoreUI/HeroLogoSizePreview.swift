@@ -236,9 +236,14 @@ struct HeroPreviewSynopsis: View {
     let scale: CGFloat
     let lines: Int
 
+    static let synopsis = LocalizedStringResource(
+        "A radio operator follows a faint signal to a weather station that closed years ago. Every night it broadcasts the next day’s forecast, in the voice of someone she knows.",
+        comment: "Fictional series synopsis in the text-size preview. The radio operator recognizes the voice on the broadcast."
+    )
+
     var body: some View {
         let style = PlozzTypography.heroDescription.scaled(by: scale)
-        Text("A radio operator follows a signal across the mountains.", comment: "Fictional synopsis in the hero text-size preview.")
+        Text(Self.synopsis)
             .font(.system(size: style.pointSize))
             .foregroundStyle(.white.opacity(0.85))
             .lineSpacing(style.lineSpacing)

@@ -143773,6 +143773,239 @@
         }
       }
     },
+    "A radio operator follows a faint signal to a weather station that closed years ago. Every night it broadcasts the next day’s forecast, in the voice of someone she knows." : {
+      "comment" : "Fictional series synopsis in the text-size preview. The radio operator recognizes the voice on the broadcast.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تتتبّع مشغّلة لاسلكي إشارة ضعيفة حتى تصل إلى محطة أرصاد جوية أُغلقت منذ سنوات. تبث المحطة كل ليلة توقعات الطقس لليوم التالي، بصوت شخص تعرفه مشغّلة اللاسلكي."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Радистка проследява слаб сигнал до метеорологична станция, затворена преди години. Всяка нощ станцията излъчва прогнозата за времето за следващия ден с гласа на човек, когото тя познава."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "একজন নারী রেডিও অপারেটর ক্ষীণ সংকেত অনুসরণ করে এমন এক আবহাওয়া কেন্দ্রে পৌঁছান, যা বছর কয়েক আগে বন্ধ হয়ে গেছে। প্রতি রাতে কেন্দ্রটি তাঁর পরিচিত কারও কণ্ঠে পরের দিনের আবহাওয়ার পূর্বাভাস সম্প্রচার করে।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Una operadora de ràdio segueix un senyal feble fins a una estació meteorològica que va tancar fa anys. Cada nit, l’estació emet la previsió del temps per a l’endemà amb la veu d’algú que ella coneix."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Radistka sleduje slabý signál až k meteorologické stanici, která byla před lety uzavřena. Každou noc stanice vysílá předpověď počasí na následující den hlasem někoho, koho radistka zná."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "En kvindelig radiooperatør følger et svagt signal til en vejrstation, der lukkede for flere år siden. Hver nat udsender stationen vejrudsigten for næste dag med stemmen fra en, hun kender."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Eine Funkerin folgt einem schwachen Signal zu einer Wetterstation, die vor Jahren geschlossen wurde. Jede Nacht sendet die Station die Wettervorhersage für den nächsten Tag – mit der Stimme von jemandem, den die Funkerin kennt."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Μια ασυρματίστρια ακολουθεί ένα αδύναμο σήμα μέχρι έναν μετεωρολογικό σταθμό που έκλεισε πριν από χρόνια. Κάθε βράδυ, ο σταθμός μεταδίδει την πρόγνωση του καιρού για την επόμενη μέρα, με τη φωνή κάποιου που εκείνη γνωρίζει."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Una operadora de radio sigue una señal débil hasta una estación meteorológica que cerró hace años. Cada noche, la estación emite la previsión del tiempo para el día siguiente con la voz de alguien a quien ella conoce."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "یک بی‌سیم‌چی زن رد سیگنالی ضعیف را می‌گیرد و به یک ایستگاه هواشناسی می‌رسد که سال‌ها پیش تعطیل شده است. این ایستگاه هر شب پیش‌بینی هوای روز بعد را با صدای کسی پخش می‌کند که آن زن او را می‌شناسد."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Radionhoitaja seuraa heikkoa signaalia vuosia sitten suljetulle sääasemalle. Asema lähettää joka yö seuraavan päivän sääennusteen radionhoitajalle tutun ihmisen äänellä."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Une opératrice radio suit un faible signal jusqu’à une station météorologique fermée depuis des années. Chaque nuit, la station diffuse les prévisions météo du lendemain avec la voix de quelqu’un que l’opératrice connaît."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "מפעילת קשר עוקבת אחר אות חלש שמוביל אותה לתחנת מזג אוויר שנסגרה לפני שנים. מדי לילה התחנה משדרת את תחזית מזג האוויר ליום המחרת בקול של אדם שהיא מכירה."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "एक रेडियो ऑपरेटर कमज़ोर सिग्नल का पीछा करते हुए एक मौसम केंद्र तक पहुँचती है, जो कई साल पहले बंद हो चुका था। हर रात वहाँ से अगले दिन के मौसम का पूर्वानुमान प्रसारित होता है, किसी ऐसे शख़्स की आवाज़ में जिसे वह जानती है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Radiooperaterka slijedi slab signal do meteorološke postaje koja je zatvorena prije više godina. Svake noći postaja emitira vremensku prognozu za sljedeći dan, glasom osobe koju operaterka poznaje."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Egy rádiókezelő egy gyenge jelet követve eljut egy évekkel ezelőtt bezárt meteorológiai állomásra. Az állomás minden éjjel a másnapi időjárás-előrejelzést sugározza egy olyan ember hangján, akit a nő ismer."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seorang operator radio perempuan mengikuti sinyal lemah hingga tiba di stasiun cuaca yang telah ditutup bertahun-tahun lalu. Setiap malam, stasiun itu menyiarkan prakiraan cuaca untuk keesokan harinya dengan suara seseorang yang dikenal sang operator."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Un'operatrice radio segue un debole segnale fino a una stazione meteorologica chiusa da anni. Ogni notte la stazione trasmette le previsioni del tempo per il giorno dopo, con la voce di una persona che l'operatrice conosce."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "女性の無線通信士がかすかな信号をたどり、何年も前に閉鎖された気象観測所に行き着く。そこでは毎晩、彼女の知る人物の声で翌日の天気予報が放送されている。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "여성 무선통신사가 희미한 신호를 따라 몇 년 전에 폐쇄된 기상 관측소에 다다른다. 그곳에서는 매일 밤 그녀가 아는 누군가의 목소리로 다음 날의 일기 예보가 방송된다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seorang pengendali radio wanita menjejaki isyarat yang lemah hingga ke sebuah stesen kaji cuaca yang telah ditutup bertahun-tahun lalu. Setiap malam, stesen itu menyiarkan ramalan cuaca untuk keesokan hari dengan suara seseorang yang dikenali wanita itu."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "En kvinnelig radiooperatør følger et svakt signal til en værstasjon som ble stengt for flere år siden. Hver natt sender stasjonen neste dags værmelding med stemmen til noen hun kjenner."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Een vrouwelijke radio-operator volgt een zwak signaal naar een weerstation dat jaren geleden is gesloten. Elke nacht zendt het station de weersverwachting voor de volgende dag uit, met de stem van iemand die ze kent."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Operatorka radiostacji podąża za słabym sygnałem do stacji meteorologicznej zamkniętej przed laty. Każdej nocy stacja nadaje prognozę pogody na następny dzień głosem kogoś, kogo operatorka zna."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uma operadora de rádio segue um sinal fraco até uma estação meteorológica fechada há anos. Todas as noites, a estação transmite a previsão do tempo para o dia seguinte com a voz de alguém que ela conhece."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O operatoare radio urmărește un semnal slab până la o stație meteorologică închisă de ani buni. În fiecare noapte, stația transmite prognoza meteo pentru ziua următoare cu vocea unei persoane pe care ea o cunoaște."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Следуя за слабым сигналом, радистка находит метеостанцию, закрытую много лет назад. Каждую ночь станция передаёт прогноз погоды на следующий день голосом знакомого ей человека."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rádiová operátorka sleduje slabý signál až k meteorologickej stanici, ktorú pred rokmi zatvorili. Každú noc stanica vysiela predpoveď počasia na nasledujúci deň hlasom človeka, ktorého operátorka pozná."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Radijska operaterka sledi šibkemu signalu do vremenske postaje, ki so jo zaprli pred leti. Postaja vsako noč oddaja vremensko napoved za naslednji dan z glasom nekoga, ki ga operaterka pozna."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Radio-operaterka prati slab signal do meteorološke stanice koja je zatvorena pre mnogo godina. Svake noći stanica emituje vremensku prognozu za naredni dan glasom nekoga koga operaterka poznaje."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "En radiooperatör följer en svag signal till en väderstation som stängde för flera år sedan. Varje natt sänder stationen nästa dags väderprognos med en röst som tillhör någon hon känner."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เจ้าหน้าที่วิทยุหญิงติดตามสัญญาณแผ่วเบาไปจนถึงสถานีอุตุนิยมวิทยาที่ปิดไปเมื่อหลายปีก่อน ทุกคืน สถานีแห่งนี้ออกอากาศพยากรณ์อากาศของวันรุ่งขึ้นด้วยเสียงของคนที่เธอรู้จัก"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bir kadın telsiz operatörü, zayıf bir sinyalin izini sürerek yıllar önce kapanmış bir meteoroloji istasyonuna ulaşır. İstasyon her gece, onun tanıdığı birinin sesiyle ertesi günün hava tahminini yayınlar."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Слабкий сигнал приводить радистку до метеостанції, яка закрилася багато років тому. Щоночі станція передає прогноз погоди на наступний день голосом людини, яку вона знає."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ایک خاتون ریڈیو آپریٹر ایک مدھم سگنل کا سراغ لگاتے ہوئے ایک ایسے موسمیاتی اسٹیشن تک پہنچتی ہے جو برسوں پہلے بند ہو چکا تھا۔ ہر رات یہ اسٹیشن اگلے دن کے موسم کی پیش گوئی کسی ایسے شخص کی آواز میں نشر کرتا ہے جسے وہ جانتی ہے۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Một nữ nhân viên trực vô tuyến lần theo tín hiệu yếu ớt đến một trạm khí tượng đã đóng cửa từ nhiều năm trước. Mỗi đêm, trạm phát đi bản dự báo thời tiết cho ngày hôm sau bằng giọng của một người cô quen biết."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "一名无线电操作员循着微弱的信号，找到一座多年前就已关闭的气象站。每晚，气象站都会播报第二天的天气预报，而播报的声音属于她认识的某个人。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "一名無線電操作員循著微弱的訊號，找到一座多年前就已關閉的氣象站。每晚，氣象站都會播報隔天的天氣預報，而播報的聲音屬於她認識的某個人。"
+          }
+        }
+      }
+    },
     "A request for the playback stream timed out." : {
       "localizations" : {
         "ar" : {

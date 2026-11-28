@@ -1075,7 +1075,7 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
         live.backgroundColor = .black
         container.view.addSubview(live)
         defer { live.stopContinuousUpdates() }
-        let synopsis = "A radio operator follows a signal across the mountains."
+        let synopsis = String(localized: HeroPreviewSynopsis.synopsis)
         live.apply(HeroForegroundModel(
             itemID: "preview-reference", title: "Northstar", logoURL: nil,
             metadataText: "Adventure", ratingBadgeText: "TV-14", scheduleLine: nil, overview: synopsis,
@@ -1126,6 +1126,44 @@ final class HeroLogoPresentationHostedTests: XCTestCase {
 
         var body: some View {
             HomeLayoutSwatch(style: .carousel, logoSize: .default, textSize: model.textSize)
+        }
+    }
+
+    func testDetailPreviewSynopsisWrapsAtDefaultAndTruncatesAtLargestTextSize() throws {
+        func height(_ native: DynamicTypeSize, local: Int, lines: Int) throws -> CGFloat {
+            let scale = PlozzTypography.scale(local: HeroTextSize(rawValue: local).scale,
+                                              app: MetadataBadgeSpacing.textScale(for: native))
+            let renderer = ImageRenderer(content:
+                HeroPreviewSynopsis(scale: scale, lines: lines)
+                    .frame(width: HeroDescriptionFactsLayout.minimumWidth)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+            )
+            return try XCTUnwrap(renderer.uiImage).size.height
+        }
+
+        let limit = PlozzTypography.detailDescriptionLines
+        let ordinary = try height(.accessibility1, local: 0, lines: limit)
+        XCTAssertGreaterThan(ordinary, try height(.accessibility1, local: 0, lines: 2),
+                             "At Apple TV 5/9 the Default preview should demonstrate a multiline description.")
+        let largest = try height(.accessibility5, local: 5, lines: limit)
+        XCTAssertGreaterThan(largest, try height(.accessibility5, local: 5, lines: limit - 1))
+        XCTAssertGreaterThan(try height(.accessibility5, local: 5, lines: 20), largest,
+                             "At both maxima the preview should demonstrate Detail's real four-line cap.")
+        for (native, local, label): (DynamicTypeSize, Int, String) in [
+            (.accessibility1, 0, "Apple TV 5 of 9 - Plozz Default"),
+            (.accessibility5, 5, "Apple TV 9 of 9 - Plozz Largest")
+        ] {
+            let renderer = ImageRenderer(content:
+                HeroLogoSizePreview(size: .default, surface: .detail, layout: .television,
+                                    textSize: HeroTextSize(rawValue: local))
+                    .frame(width: 960, height: 720)
+                    .environment(\.dynamicTypeSize, native)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+            )
+            let attachment = XCTAttachment(image: try XCTUnwrap(renderer.uiImage))
+            attachment.name = "Detail preview - \(label)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
         }
     }
 
