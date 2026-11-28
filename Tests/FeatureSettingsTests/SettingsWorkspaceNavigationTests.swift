@@ -232,7 +232,7 @@ final class SettingsWorkspaceNavigationTests: XCTestCase {
 
     func testEveryCategoryIsTheFirstPageUntilExplicitReturn() {
         let navigation = SettingsNavigationModel()
-        for route: SettingsRoute in [.playback, .myLibraries, .appearance, .screensNavigation, .subtitles, .liveTV, .metadata, .topShelf, .about] {
+        for route: SettingsRoute in [.playback, .myLibraries, .appearance, .screensNavigation, .subtitles, .liveTV, .metadata, .topShelf, .experimental, .about] {
             navigation.select(route)
             navigation.enterDetail()
             XCTAssertEqual(navigation.path, [route])
@@ -255,7 +255,7 @@ final class SettingsWorkspaceNavigationTests: XCTestCase {
 
     func testHouseholdRoutesRemainUnavailableToKidsEvenAfterUnlock() {
         let routes: [SettingsRoute] = [
-            .servers, .server(key: "server"), .profile, .parentalPIN, .topShelf,
+            .servers, .server(key: "server"), .profile, .parentalPIN, .topShelf, .experimental,
             .metadata, .metadataDiagnostics, .seerr, .seerUserPicker(profileID: "child"),
             .syncSetup, .syncTroubleshooting, .profileSettings(profileID: "adult"),
             .profileAppearance(profileID: "adult"), .profileLockSetup(profileID: "adult")
