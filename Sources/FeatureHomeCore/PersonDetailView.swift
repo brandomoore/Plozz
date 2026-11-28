@@ -385,25 +385,9 @@ public struct PersonDetailView: View {
                                 .frame(width: 240)
                         }
                         .padding(.leading, railInset)
-                    // The same nested horizontal viewport the real rows use. A
-                    // plain HStack reports its full intrinsic width to the outer
-                    // vertical ScrollView even when clipped, which widens the
-                    // page and lets tvOS pan it sideways while the skeleton is
-                    // up — the exact problem documented on the Related row.
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: metrics.cardSpacing) {
-                            ForEach(0..<Self.skeletonCardCount, id: \.self) { _ in
-                                SkeletonCardView(style: .poster)
-                                    .frame(width: metrics.posterWidth)
-                            }
-                        }
-                        .padding(.leading, railInset)
-                        .padding(.trailing, railInset)
-                        .padding(.vertical, metrics.railShadowClearance)
-                    }
-                    .padding(.top, metrics.railTopClearanceOffset)
-                    .padding(.bottom, metrics.railBottomClearanceOffset)
-                    .scrollDisabled(true)
+                    MediaRowView(title: nil, items: [], style: .poster, leadingInset: railInset,
+                                 loadingPlaceholderCount: Self.skeletonCardCount, onSelect: { _ in })
+                        .scrollDisabled(true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

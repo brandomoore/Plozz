@@ -27,19 +27,52 @@ final class DetailInformationInteractionTests: XCTestCase {
     }
 
     func testCastRailKeepsAllPeopleAndNavigationWithoutMore() {
-        launch()
+        verifyCastRail(rtl: false)
+    }
+
+    func testCastRailMirrorsNativeSwipeAndEndpointInRTL() {
+        verifyCastRail(rtl: true)
+    }
+
+    private func verifyCastRail(rtl: Bool) {
+        launch(rtl ? ["--mobile-cast-swipe", "--rail-rtl"] : ["--mobile-cast-swipe"])
         let first = app.buttons["Person 1"].firstMatch
         XCTAssertTrue(first.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.buttons["detail-cast-more"].exists)
         let rail = app.scrollViews["detail-cast-rail"]
         XCTAssertTrue(rail.exists, app.debugDescription)
         let last = app.buttons["Person 40"].firstMatch
-        for _ in 0..<25 where !last.exists || !last.isHittable { rail.swipeLeft() }
+        let fullWidth = first.frame.width
+        let leading = rtl ? first.frame.maxX : first.frame.minX
+        assertCastPeek(rail, fullWidth: fullWidth, leading: leading, rtl: rtl)
+        if rtl { rail.swipeRight(velocity: .slow) } else { rail.swipeLeft(velocity: .slow) }
+        assertCastPeek(rail, fullWidth: fullWidth, leading: leading, rtl: rtl)
+        for _ in 0..<25 {
+            if last.exists, last.isHittable, last.frame.width >= fullWidth - 1,
+               last.frame.minX >= rail.frame.minX - 1, last.frame.maxX <= rail.frame.maxX + 1 { break }
+            if rtl { rail.swipeRight() } else { rail.swipeLeft() }
+        }
         XCTAssertTrue(last.isHittable, app.debugDescription)
+        XCTAssertEqual(last.frame.width, fullWidth, accuracy: 1)
+        XCTAssertGreaterThanOrEqual(last.frame.minX, rail.frame.minX - 1)
+        XCTAssertLessThanOrEqual(last.frame.maxX, rail.frame.maxX + 1)
+        print("RAIL_END rtl=\(rtl) viewport=\(rail.frame) last=\(last.frame)")
         recordMoreScreenshot("complete-cast-rail-mobile")
         last.tap()
         XCTAssertEqual(app.staticTexts["selected-cast-person"].label, "Person 40")
         XCTAssertFalse(app.navigationBars["Cast"].exists)
+    }
+
+    private func assertCastPeek(_ rail: XCUIElement, fullWidth: CGFloat, leading: CGFloat, rtl: Bool) {
+        let frames = rail.buttons.allElementsBoundByIndex.map(\.frame)
+        let starts = frames.map { rtl ? $0.maxX : $0.minX }
+        let edge = rtl ? rail.frame.minX : rail.frame.maxX
+        print("RAIL_REST rtl=\(rtl) edge=\(edge) full=\(fullWidth) starts=\(starts)")
+        XCTAssertTrue(starts.contains { abs($0 - leading) < 1.5 },
+                      "A settled card must start at the original leading inset.")
+        XCTAssertTrue(starts.contains {
+            abs((rtl ? $0 - edge : edge - $0) - fullWidth / 4) < 1.5
+        }, "Exactly a quarter face must remain at the physical trailing edge.")
     }
 
     func testCrewMorePreservesTheLastDirector() {

@@ -3153,7 +3153,9 @@ private struct PlozziOSFeaturedRow: View {
                         )
                     }
                 }
+                .scrollTargetLayout()
             }
+            .scrollTargetBehavior(.viewAligned(limitBehavior: .never))
             .contentMargins(
                 .horizontal,
                 PlozziOSMediaRailLayout.artworkAlignedInset(
@@ -3325,7 +3327,7 @@ struct PlozziOSHomeLibraryPresentationRow: View, Equatable {
         } else if row.isLoading && row.collectionCardStyle != .featured {
             PlozziOSHomeSkeletonRail(
                 title: section.displayName,
-                style: section.style == .landscape ? .landscape : .poster,
+                style: row.cardStyle == .landscape ? .landscape : .poster,
                 showsCaption: appModel.settings.cardStyle.captions.showsLabels(in: .home)
             )
         } else if row.collectionCardStyle == .featured {
@@ -3336,8 +3338,9 @@ struct PlozziOSHomeLibraryPresentationRow: View, Equatable {
         } else {
             PlozziOSHomeMediaRail(
                 title: section.displayName, items: section.items,
-                style: section.style == .landscape ? .landscape : .poster,
-                appModel: appModel, browseItem: row.browseItem, onBrowse: onBrowse,
+                style: row.cardStyle == .landscape ? .landscape : .poster,
+                appModel: appModel, usesPersonalVideoLayout: row.usesPersonalVideoLayout,
+                browseItem: row.browseItem, onBrowse: onBrowse,
                 onNavigationInteraction: viewModel.noteHomeNavigationInteraction
             )
         }
@@ -3382,7 +3385,7 @@ struct PlozziOSHomeRowView: View {
                 )
             } else if row.kind == .libraries, row.loadingPlaceholderCount == 0 {
                 PlozziOSMediaSection(title: row.displayName) {
-                    libraryRow
+                    PlozziOSRailViewport { viewport in libraryRow(viewport: viewport) }
                 }
             } else if row.items.isEmpty {
                 // A row that exists but hasn't resolved its items yet: show the
@@ -3412,6 +3415,7 @@ struct PlozziOSHomeRowView: View {
                     items: row.items,
                     style: cardStyle,
                     appModel: appModel,
+                    usesPersonalVideoLayout: row.kind == .recentlyAdded,
                     interaction: row.playsOnSelect(
                         continueWatchingAction: appModel.settings.homeVisibility.continueWatchingAction
                     ) ? .play : .openDetail,
@@ -3448,7 +3452,7 @@ struct PlozziOSHomeRowView: View {
         )
     }
 
-    private var libraryRow: some View {
+    private func libraryRow(viewport: CGFloat) -> some View {
         ScrollView(.horizontal) {
             LazyHStack(spacing: PlozziOSMediaRailLayout.visibleGap(metrics: metrics)) {
                 ForEach(row.libraries) { library in
@@ -3468,17 +3472,17 @@ struct PlozziOSHomeRowView: View {
                             PlozziOSHomeLibraryCard(
                                 library: library,
                                 artworkSource: viewModel.libraryArtworkSource(for: library),
-                                width: metrics.usesDesktopSizing ? metrics.landscapeWidth : appModel.settings.density.density
-                                    .iOSHomeLibraryWidth(
-                                        horizontalSizeClass: horizontalSizeClass,
-                                        isRunningOnMac: metrics.usesDesktopSizing
-                                    )
+                                width: PlozziOSMediaLayout.libraryWidth(
+                                    in: viewport, metrics: metrics, sizeClass: horizontalSizeClass, cardStyle: artworkStyle
+                                )
                             )
                         }
                         .buttonStyle(.plain)
                     }
                 }
+                .scrollTargetLayout()
             }
+            .scrollTargetBehavior(.viewAligned(limitBehavior: .never))
         }
         .contentMargins(
             .horizontal,
@@ -3549,6 +3553,7 @@ struct PlozziOSHomeMediaRail: View {
     let items: [MediaItem]
     let style: PosterCardView.Style
     let appModel: PlozziOSAppModel
+    var usesPersonalVideoLayout = false
     /// What pressing a card does. Declared by the caller rather than inferred
     /// from the card's shape — a landscape rail is a presentation choice, not a
     /// promise that the row is Continue Watching.
@@ -3613,9 +3618,10 @@ struct PlozziOSHomeMediaRail: View {
                 )) { element in
                     switch element {
                     case .item(let item):
+                        let itemStyle: PosterCardView.Style = usesPersonalVideoLayout && item.isPersonalVideo ? .landscape : style
                         PlozziOSHomeMediaCard(
                             item: item,
-                            isLandscape: style == .landscape,
+                            isLandscape: itemStyle == .landscape,
                             interaction: interaction,
                             showsResumeChip: showsResumeChip,
                             showsSeriesArtwork: showsSeriesArtwork,
@@ -3627,7 +3633,7 @@ struct PlozziOSHomeMediaRail: View {
                         )
                         .frame(
                             width: metrics.cardSlotWidth(
-                                for: style,
+                                for: itemStyle,
                                 cardStyle: cardStyle,
                                 showsSeriesArtwork: showsSeriesArtwork
                             )
@@ -3656,11 +3662,9 @@ struct PlozziOSHomeMediaRail: View {
                 ForEach(liveChannels) { channel in
                     HomeLiveTVCard(
                         channel: channel,
-                        width: metrics.cardSlotWidth(
-                            for: .landscape, cardStyle: cardStyle,
-                            showsSeriesArtwork: showsSeriesArtwork
-                        )
+                        width: metrics.landscapeWidth
                     )
+                    .padding(.horizontal, cardStyle == .framed ? metrics.cardInset : metrics.borderlessCardSideMargin)
                 }
             }
         }
@@ -3958,7 +3962,7 @@ struct PlozziOSHomeMediaCard: View {
             // The chip is requested explicitly rather than riding an implicit
             // "landscape means playable" rule, so presentation and behaviour stay
             // independently controlled.
-            showsResumeChip: item.kind != .collection && (showsResumeChip || isLandscape || interaction == .play),
+            showsResumeChip: item.kind != .collection && (showsResumeChip || (isLandscape && !item.isPersonalVideo) || interaction == .play),
             downloadState: appModel.downloads.cachedRecord(forSelectedVersionOf: item)?.badgeState,
             // No visible "…" while browsing: the actions people actually reach for
             // live on the detail page, which is far more discoverable than a tiny

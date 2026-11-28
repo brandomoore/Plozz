@@ -143773,6 +143773,239 @@
         }
       }
     },
+    "A radio operator follows a faint signal to a weather station that closed years ago. Every night it broadcasts the next day’s forecast, in the voice of someone she knows." : {
+      "comment" : "Fictional series synopsis in the text-size preview. The radio operator recognizes the voice on the broadcast.",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تتتبّع مشغّلة لاسلكي إشارة ضعيفة حتى تصل إلى محطة أرصاد جوية أُغلقت منذ سنوات. تبث المحطة كل ليلة توقعات الطقس لليوم التالي، بصوت شخص تعرفه مشغّلة اللاسلكي."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Радистка проследява слаб сигнал до метеорологична станция, затворена преди години. Всяка нощ станцията излъчва прогнозата за времето за следващия ден с гласа на човек, когото тя познава."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "একজন নারী রেডিও অপারেটর ক্ষীণ সংকেত অনুসরণ করে এমন এক আবহাওয়া কেন্দ্রে পৌঁছান, যা বছর কয়েক আগে বন্ধ হয়ে গেছে। প্রতি রাতে কেন্দ্রটি তাঁর পরিচিত কারও কণ্ঠে পরের দিনের আবহাওয়ার পূর্বাভাস সম্প্রচার করে।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Una operadora de ràdio segueix un senyal feble fins a una estació meteorològica que va tancar fa anys. Cada nit, l’estació emet la previsió del temps per a l’endemà amb la veu d’algú que ella coneix."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Radistka sleduje slabý signál až k meteorologické stanici, která byla před lety uzavřena. Každou noc stanice vysílá předpověď počasí na následující den hlasem někoho, koho radistka zná."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "En kvindelig radiooperatør følger et svagt signal til en vejrstation, der lukkede for flere år siden. Hver nat udsender stationen vejrudsigten for næste dag med stemmen fra en, hun kender."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Eine Funkerin folgt einem schwachen Signal zu einer Wetterstation, die vor Jahren geschlossen wurde. Jede Nacht sendet die Station die Wettervorhersage für den nächsten Tag – mit der Stimme von jemandem, den die Funkerin kennt."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Μια ασυρματίστρια ακολουθεί ένα αδύναμο σήμα μέχρι έναν μετεωρολογικό σταθμό που έκλεισε πριν από χρόνια. Κάθε βράδυ, ο σταθμός μεταδίδει την πρόγνωση του καιρού για την επόμενη μέρα, με τη φωνή κάποιου που εκείνη γνωρίζει."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Una operadora de radio sigue una señal débil hasta una estación meteorológica que cerró hace años. Cada noche, la estación emite la previsión del tiempo para el día siguiente con la voz de alguien a quien ella conoce."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "یک بی‌سیم‌چی زن رد سیگنالی ضعیف را می‌گیرد و به یک ایستگاه هواشناسی می‌رسد که سال‌ها پیش تعطیل شده است. این ایستگاه هر شب پیش‌بینی هوای روز بعد را با صدای کسی پخش می‌کند که آن زن او را می‌شناسد."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Radionhoitaja seuraa heikkoa signaalia vuosia sitten suljetulle sääasemalle. Asema lähettää joka yö seuraavan päivän sääennusteen radionhoitajalle tutun ihmisen äänellä."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Une opératrice radio suit un faible signal jusqu’à une station météorologique fermée depuis des années. Chaque nuit, la station diffuse les prévisions météo du lendemain avec la voix de quelqu’un que l’opératrice connaît."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "מפעילת קשר עוקבת אחר אות חלש שמוביל אותה לתחנת מזג אוויר שנסגרה לפני שנים. מדי לילה התחנה משדרת את תחזית מזג האוויר ליום המחרת בקול של אדם שהיא מכירה."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "एक रेडियो ऑपरेटर कमज़ोर सिग्नल का पीछा करते हुए एक मौसम केंद्र तक पहुँचती है, जो कई साल पहले बंद हो चुका था। हर रात वहाँ से अगले दिन के मौसम का पूर्वानुमान प्रसारित होता है, किसी ऐसे शख़्स की आवाज़ में जिसे वह जानती है।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Radiooperaterka slijedi slab signal do meteorološke postaje koja je zatvorena prije više godina. Svake noći postaja emitira vremensku prognozu za sljedeći dan, glasom osobe koju operaterka poznaje."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Egy rádiókezelő egy gyenge jelet követve eljut egy évekkel ezelőtt bezárt meteorológiai állomásra. Az állomás minden éjjel a másnapi időjárás-előrejelzést sugározza egy olyan ember hangján, akit a nő ismer."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seorang operator radio perempuan mengikuti sinyal lemah hingga tiba di stasiun cuaca yang telah ditutup bertahun-tahun lalu. Setiap malam, stasiun itu menyiarkan prakiraan cuaca untuk keesokan harinya dengan suara seseorang yang dikenal sang operator."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Un'operatrice radio segue un debole segnale fino a una stazione meteorologica chiusa da anni. Ogni notte la stazione trasmette le previsioni del tempo per il giorno dopo, con la voce di una persona che l'operatrice conosce."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "女性の無線通信士がかすかな信号をたどり、何年も前に閉鎖された気象観測所に行き着く。そこでは毎晩、彼女の知る人物の声で翌日の天気予報が放送されている。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "여성 무선통신사가 희미한 신호를 따라 몇 년 전에 폐쇄된 기상 관측소에 다다른다. 그곳에서는 매일 밤 그녀가 아는 누군가의 목소리로 다음 날의 일기 예보가 방송된다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seorang pengendali radio wanita menjejaki isyarat yang lemah hingga ke sebuah stesen kaji cuaca yang telah ditutup bertahun-tahun lalu. Setiap malam, stesen itu menyiarkan ramalan cuaca untuk keesokan hari dengan suara seseorang yang dikenali wanita itu."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "En kvinnelig radiooperatør følger et svakt signal til en værstasjon som ble stengt for flere år siden. Hver natt sender stasjonen neste dags værmelding med stemmen til noen hun kjenner."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Een vrouwelijke radio-operator volgt een zwak signaal naar een weerstation dat jaren geleden is gesloten. Elke nacht zendt het station de weersverwachting voor de volgende dag uit, met de stem van iemand die ze kent."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Operatorka radiostacji podąża za słabym sygnałem do stacji meteorologicznej zamkniętej przed laty. Każdej nocy stacja nadaje prognozę pogody na następny dzień głosem kogoś, kogo operatorka zna."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uma operadora de rádio segue um sinal fraco até uma estação meteorológica fechada há anos. Todas as noites, a estação transmite a previsão do tempo para o dia seguinte com a voz de alguém que ela conhece."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O operatoare radio urmărește un semnal slab până la o stație meteorologică închisă de ani buni. În fiecare noapte, stația transmite prognoza meteo pentru ziua următoare cu vocea unei persoane pe care ea o cunoaște."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Следуя за слабым сигналом, радистка находит метеостанцию, закрытую много лет назад. Каждую ночь станция передаёт прогноз погоды на следующий день голосом знакомого ей человека."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rádiová operátorka sleduje slabý signál až k meteorologickej stanici, ktorú pred rokmi zatvorili. Každú noc stanica vysiela predpoveď počasia na nasledujúci deň hlasom človeka, ktorého operátorka pozná."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Radijska operaterka sledi šibkemu signalu do vremenske postaje, ki so jo zaprli pred leti. Postaja vsako noč oddaja vremensko napoved za naslednji dan z glasom nekoga, ki ga operaterka pozna."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Radio-operaterka prati slab signal do meteorološke stanice koja je zatvorena pre mnogo godina. Svake noći stanica emituje vremensku prognozu za naredni dan glasom nekoga koga operaterka poznaje."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "En radiooperatör följer en svag signal till en väderstation som stängde för flera år sedan. Varje natt sänder stationen nästa dags väderprognos med en röst som tillhör någon hon känner."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "เจ้าหน้าที่วิทยุหญิงติดตามสัญญาณแผ่วเบาไปจนถึงสถานีอุตุนิยมวิทยาที่ปิดไปเมื่อหลายปีก่อน ทุกคืน สถานีแห่งนี้ออกอากาศพยากรณ์อากาศของวันรุ่งขึ้นด้วยเสียงของคนที่เธอรู้จัก"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bir kadın telsiz operatörü, zayıf bir sinyalin izini sürerek yıllar önce kapanmış bir meteoroloji istasyonuna ulaşır. İstasyon her gece, onun tanıdığı birinin sesiyle ertesi günün hava tahminini yayınlar."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Слабкий сигнал приводить радистку до метеостанції, яка закрилася багато років тому. Щоночі станція передає прогноз погоди на наступний день голосом людини, яку вона знає."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ایک خاتون ریڈیو آپریٹر ایک مدھم سگنل کا سراغ لگاتے ہوئے ایک ایسے موسمیاتی اسٹیشن تک پہنچتی ہے جو برسوں پہلے بند ہو چکا تھا۔ ہر رات یہ اسٹیشن اگلے دن کے موسم کی پیش گوئی کسی ایسے شخص کی آواز میں نشر کرتا ہے جسے وہ جانتی ہے۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Một nữ nhân viên trực vô tuyến lần theo tín hiệu yếu ớt đến một trạm khí tượng đã đóng cửa từ nhiều năm trước. Mỗi đêm, trạm phát đi bản dự báo thời tiết cho ngày hôm sau bằng giọng của một người cô quen biết."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "一名无线电操作员循着微弱的信号，找到一座多年前就已关闭的气象站。每晚，气象站都会播报第二天的天气预报，而播报的声音属于她认识的某个人。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "一名無線電操作員循著微弱的訊號，找到一座多年前就已關閉的氣象站。每晚，氣象站都會播報隔天的天氣預報，而播報的聲音屬於她認識的某個人。"
+          }
+        }
+      }
+    },
     "A request for the playback stream timed out." : {
       "localizations" : {
         "ar" : {
@@ -160768,6 +161001,238 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "新增伺服器"
+          }
+        }
+      }
+    },
+    "Add a short description of what happened." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "أضف وصفًا موجزًا لما حدث."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Добавете кратко описание на случилото се."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "কী ঘটেছে তা সংক্ষেপে লিখুন।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Afegiu una breu descripció del que ha passat."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stručně popište, co se stalo."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Beskriv kort, hvad der skete."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Beschreibe kurz, was passiert ist."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Προσθέστε μια σύντομη περιγραφή του τι συνέβη."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Añade una breve descripción de lo ocurrido."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "توضیح کوتاهی دربارهٔ آنچه رخ داد بنویسید."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lisää lyhyt kuvaus siitä, mitä tapahtui."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ajoutez une brève description de ce qui s’est passé."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הוסיפו תיאור קצר של מה שקרה."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "क्या हुआ, इसका संक्षिप्त विवरण लिखें।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dodajte kratak opis onoga što se dogodilo."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Adja meg röviden, mi történt."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tambahkan deskripsi singkat tentang apa yang terjadi."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aggiungi una breve descrizione di ciò che è successo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "何が起きたかを簡潔に説明してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "어떤 일이 있었는지 간단히 설명해 주세요."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Terangkan secara ringkas apa yang berlaku."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Beskriv kort hva som skjedde."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Beschrijf kort wat er is gebeurd."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Krótko opisz, co się stało."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Adicione uma breve descrição do que aconteceu."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Adaugă o scurtă descriere a celor întâmplate."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Добавьте краткое описание произошедшего."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pridajte krátky opis toho, čo sa stalo."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dodajte kratek opis tega, kar se je zgodilo."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dodajte kratak opis onoga što se dogodilo."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lägg till en kort beskrivning av vad som hände."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "กรุณาอธิบายสั้นๆ ว่าเกิดอะไรขึ้น"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ne olduğunu kısaca açıklayın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Коротко опишіть, що сталося."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "مختصراً بتائیں کہ کیا ہوا۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mô tả ngắn gọn những gì đã xảy ra."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "请简要描述发生的情况。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "請簡短描述發生的情況。"
           }
         }
       }
@@ -407129,6 +407594,7 @@
       }
     },
     "Don't include passwords or personal information." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -958730,7 +959196,240 @@
         }
       }
     },
+    "Send recent activity, search, playback and connection diagnostics, and your message to the developer through Sentry." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "أرسل نشاطك الأخير، وبيانات تشخيص البحث والتشغيل والاتصال، ورسالتك إلى المطوّر عبر Sentry."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Изпратете скорошната активност, диагностичните данни за търсенето, възпроизвеждането и връзката и съобщението си на разработчика чрез Sentry."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "সাম্প্রতিক কার্যকলাপের তথ্য, অনুসন্ধান, প্লেব্যাক ও সংযোগ সংক্রান্ত ডায়াগনস্টিক তথ্য এবং আপনার বার্তা Sentry-এর মাধ্যমে ডেভেলপারের কাছে পাঠান।"
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Envieu l’activitat recent, les dades de diagnòstic de la cerca, la reproducció i la connexió, i el vostre missatge al desenvolupador a través de Sentry."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Odešlete nedávnou aktivitu, diagnostické údaje o vyhledávání, přehrávání a připojení a svou zprávu vývojáři prostřednictvím Sentry."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Send den seneste aktivitet, diagnostiske oplysninger om søgning, afspilning og forbindelse samt din besked til udvikleren via Sentry."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sende Daten zu den letzten Aktivitäten, Diagnoseinformationen zur Suche, Wiedergabe und Verbindung sowie deine Nachricht über Sentry an den Entwickler."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Στείλτε στον προγραμματιστή μέσω του Sentry στοιχεία για την πρόσφατη δραστηριότητα, διαγνωστικά δεδομένα για την αναζήτηση, την αναπαραγωγή και τη σύνδεση, καθώς και το μήνυμά σας."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Envía al desarrollador, a través de Sentry, información sobre la actividad reciente, datos de diagnóstico de las búsquedas, la reproducción y las conexiones, junto con tu mensaje."
+          }
+        },
+        "fa" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اطلاعات مربوط به فعالیت‌های اخیر و داده‌های عیب‌یابی جستجو، پخش و اتصال را همراه با پیامتان از طریق Sentry برای توسعه‌دهنده ارسال کنید."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lähetä tiedot viimeaikaisesta toiminnasta, hakujen, toiston ja yhteyksien diagnostiikkatiedot sekä viestisi kehittäjälle Sentry-palvelun kautta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Envoyez au développeur, via Sentry, des informations sur l’activité récente, les données de diagnostic de la recherche, de la lecture et des connexions, ainsi que votre message."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "שלחו למפתח דרך Sentry את הפעילות האחרונה, נתוני האבחון של החיפוש, הניגון והחיבור ואת ההודעה שלכם."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sentry के ज़रिए डेवलपर को हाल की गतिविधि की जानकारी, खोज, प्लेबैक और कनेक्शन से जुड़ा डायग्नोस्टिक डेटा और अपना संदेश भेजें।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pošaljite nedavne aktivnosti, dijagnostičke podatke o pretraživanju, reprodukciji i vezi te svoju poruku razvojnom programeru putem usluge Sentry."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Küldje el a legutóbbi tevékenységeket, a keresés, a lejátszás és a kapcsolat diagnosztikai adatait, valamint az üzenetét a fejlesztőnek a Sentry szolgáltatáson keresztül."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kirim aktivitas terbaru, data diagnostik pencarian, pemutaran, dan koneksi, serta pesan Anda kepada pengembang melalui Sentry."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Invia allo sviluppatore tramite Sentry le attività recenti, i dati diagnostici relativi a ricerca, riproduzione e connessione e il tuo messaggio."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "最近の操作履歴、検索・再生・接続の診断情報、およびメッセージをSentry経由で開発者に送信します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "최근 활동, 검색·재생·연결 진단 정보와 작성한 메시지를 Sentry를 통해 개발자에게 보냅니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hantar aktiviti terkini, maklumat diagnostik carian, main balik dan sambungan, serta mesej anda kepada pembangun melalui Sentry."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Send nylig aktivitet, diagnostikk for søk, avspilling og tilkobling samt meldingen din til utvikleren via Sentry."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Je recente activiteit, diagnostische gegevens over zoeken, afspelen en verbindingen en je bericht worden via Sentry naar de ontwikkelaar gestuurd."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wyślij ostatnią aktywność, dane diagnostyczne wyszukiwania, odtwarzania i połączenia oraz swoją wiadomość do dewelopera za pośrednictwem Sentry."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Envie ao desenvolvedor, pelo Sentry, informações sobre sua atividade recente, diagnósticos de pesquisa, reprodução e conexão e sua mensagem."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Trimite dezvoltatorului, prin Sentry, informații despre activitatea recentă, date de diagnostic pentru căutare, redare și conexiune, precum și mesajul tău."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Отправьте разработчику через Sentry сведения о недавних действиях, диагностические данные о поиске, воспроизведении и подключении, а также своё сообщение."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Odošlite vývojárovi cez Sentry údaje o nedávnej aktivite, diagnostické údaje o vyhľadávaní, prehrávaní a pripojení spolu so svojou správou."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Razvijalcu prek storitve Sentry pošljite podatke o nedavni dejavnosti, diagnostične podatke o iskanju, predvajanju in povezavi ter svoje sporočilo."
+          }
+        },
+        "sr-Latn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pošaljite programeru putem servisa Sentry podatke o nedavnoj aktivnosti, dijagnostičke podatke o pretrazi, reprodukciji i vezi, kao i svoju poruku."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Skicka information om den senaste aktiviteten, diagnostik för sökning, uppspelning och anslutning samt ditt meddelande till utvecklaren via Sentry."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ส่งข้อมูลกิจกรรมล่าสุด ข้อมูลการวินิจฉัยการค้นหา การเล่น และการเชื่อมต่อ รวมถึงข้อความของคุณให้ผู้พัฒนาผ่าน Sentry"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Son etkinlik bilgilerini, arama, oynatma ve bağlantı tanılama verilerini ve mesajınızı Sentry aracılığıyla geliştiriciye gönderin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Надішліть розробнику через Sentry дані про нещодавню активність, діагностичні дані щодо пошуку, відтворення й підключення та своє повідомлення."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "حالیہ سرگرمی کی معلومات، تلاش، پلے بیک اور کنکشن کی تشخیصی معلومات، اور اپنا پیغام Sentry کے ذریعے ڈویلپر کو بھیجیں۔"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gửi thông tin về hoạt động gần đây, dữ liệu chẩn đoán về tìm kiếm, phát nội dung và kết nối, cùng lời nhắn của bạn đến nhà phát triển qua Sentry."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "通过 Sentry 向开发者发送近期活动记录及搜索、播放和连接的诊断信息，并附上你的留言。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "透過 Sentry 向開發者傳送近期活動紀錄及搜尋、播放與連線的診斷資訊，並附上你的留言。"
+          }
+        }
+      }
+    },
     "Send recent activity, search, playback and connection diagnostics, and your message to the developer through Sentry. Don't include passwords or personal information." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -978981,6 +979680,7 @@
       }
     },
     "Sharing is optional and does not change any app features. Sending recent activity logs is a separate action in Settings." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {

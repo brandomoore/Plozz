@@ -240,7 +240,7 @@ struct LiveSubtitleOverlay: View {
 
     var body: some View {
         let style = SystemCaptionStyle.shared.resolved(model.style)
-        SubtitleOverlayView(
+        var overlay = SubtitleOverlayView(
             primary: model.primaryInVideoFrame ? [] : model.primary,
             secondary: model.secondary,
             secondaryActive: model.hasSecondaryTrack,
@@ -251,7 +251,11 @@ struct LiveSubtitleOverlay: View {
             sourceVideoAspectRatio: model.sourceVideoAspectRatio,
             controlsFrames: controls.subtitleLayout.frames
         )
-        .background {
+        #if os(tvOS)
+        overlay.retainsDialogueView = model.rendersPrimary && !model.primaryInVideoFrame
+            && !(scheduledArtwork != nil && model.permitsScheduledASSArtwork)
+        #endif
+        return overlay.background {
             if let scheduledArtwork {
                 GeometryReader { geo in
                     ScheduledASSArtworkSurface(view: scheduledArtwork, layout: .init(

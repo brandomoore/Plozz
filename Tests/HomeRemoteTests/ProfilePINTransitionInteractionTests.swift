@@ -18,6 +18,69 @@ final class ProfilePINTransitionInteractionTests: XCTestCase {
         try verifyHandoff(reduceMotion: false, foregroundLocked: true)
     }
 
+    func testDirectPlexPINCancelReselectAndNativeKeypad() throws {
+        try verifyDirectPlexHandoff(reduceMotion: false)
+    }
+
+    func testDirectPlexPINReducedMotionCancelReselectAndNativeKeypad() throws {
+        try verifyDirectPlexHandoff(reduceMotion: true)
+    }
+
+    private func verifyDirectPlexHandoff(reduceMotion: Bool) throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.thatcube.Plozz.FocusHost")
+        app.launchArguments = ["--profile-pin-transition-fixture", "--direct-plex-pin"]
+        app.launch()
+        addTeardownBlock { app.terminate() }
+        let viewer = app.buttons.matching(NSPredicate(format: "label == %@", "Locked viewer")).firstMatch
+        XCTAssertTrue(viewer.waitForExistence(timeout: 10))
+        try XCTSkipUnless(
+            app.staticTexts["profile-handoff-motion"].label == (reduceMotion ? "Reduced motion" : "Full motion"),
+            "Run with the matching Reduce Motion setting on the owned simulator."
+        )
+        XCUIRemote.shared.press(.right)
+        waitForFocus(viewer)
+        let sourceFrame = viewer.frame
+        capture(app, name: "Direct Plex source, reduced motion \(reduceMotion)")
+        let identity = app.descendants(matching: .any)["profile-pin-name"]
+        let prompt = app.staticTexts["pin-entry-title"]
+        let one = app.buttons["1"]
+
+        for selection in 1...2 {
+            XCUIRemote.shared.press(.select)
+            XCTAssertTrue(prompt.waitForExistence(timeout: 5))
+            XCTAssertEqual(prompt.label, "Enter your Plex PIN")
+            XCTAssertEqual(identity.label, "Locked viewer")
+            XCTAssertFalse(viewer.isHittable)
+            XCTAssertFalse(app.staticTexts["profile-handoff-complete"].exists)
+            capture(app, name: "Direct Plex selection \(selection), reduced motion \(reduceMotion)")
+            waitForFocus(one)
+            XCTAssertTrue(one.isEnabled)
+            XCTAssertTrue(one.isHittable)
+            if selection == 1 {
+                XCUIRemote.shared.press(.menu)
+                waitForFocus(viewer)
+                XCTAssertFalse(identity.exists)
+                XCTAssertFalse(prompt.exists)
+                XCTAssertFalse(app.staticTexts["profile-handoff-complete"].exists)
+                XCTAssertEqual(viewer.frame.midX, sourceFrame.midX, accuracy: 2)
+                XCTAssertEqual(viewer.frame.midY, sourceFrame.midY, accuracy: 2)
+                capture(app, name: "Direct Plex cancelled, reduced motion \(reduceMotion)")
+            }
+        }
+
+        XCUIRemote.shared.press(.right)
+        let two = app.buttons["2"]
+        waitForFocus(two)
+        XCTAssertTrue(two.isEnabled)
+        XCTAssertTrue(two.isHittable)
+        for _ in 0..<4 { XCUIRemote.shared.press(.select) }
+        let complete = app.staticTexts["profile-handoff-complete"]
+        XCTAssertTrue(complete.waitForExistence(timeout: 5))
+        XCTAssertEqual(complete.label, "Opened Locked viewer")
+        capture(app, name: "Direct Plex authorized, reduced motion \(reduceMotion)")
+    }
+
     private func verifyHandoff(
         reduceMotion: Bool, usesPlex: Bool = false, foregroundLocked: Bool = false
     ) throws {

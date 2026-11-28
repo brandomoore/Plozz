@@ -14,7 +14,10 @@ struct DiagnosticsSharingFixture: View {
 
     var body: some View {
         Group {
-            if showsOnboarding {
+            if ProcessInfo.processInfo.arguments.contains("--diagnostics-error-details") {
+                ContentFailureActions(report: .homeSection(.failed(.serverUnreachable), provider: .jellyfin)) {}
+                    .environment(\.diagnosticSubmissionForm, issueForm)
+            } else if showsOnboarding {
                 CrashReportingConsentView { choice in
                     sharingEnabled = choice
                     showsOnboarding = false
@@ -36,6 +39,13 @@ struct DiagnosticsSharingFixture: View {
         .environment(\.colorScheme, isLight ? .light : .dark)
         .environment(\.locale, Locale(identifier: "en_US"))
         .preferredColorScheme(isLight ? .light : .dark)
+    }
+
+    private var issueForm: IssueDiagnosticSubmissionForm {
+        if ProcessInfo.processInfo.arguments.contains("--diagnostics-accept") {
+            return IssueDiagnosticSubmissionForm(sharingEnabled: $sharingEnabled, isConfigured: isConfigured) { _, _ in true }
+        }
+        return IssueDiagnosticSubmissionForm(sharingEnabled: $sharingEnabled, isConfigured: isConfigured)
     }
 }
 

@@ -145,8 +145,14 @@ public struct MediaRowBrowseCard: View {
 
     private var caption: some View {
         VStack(spacing: style == .poster ? 2 : 4) {
-            Text("See all").font(.subheadline.weight(.semibold))
-            Text(verbatim: " ").font(.system(size: 20 * metrics.scale)).accessibilityHidden(true)
+            Text("See all")
+                .font(.system(size: metrics.cardTitleFontSize, weight: .semibold))
+                .minimumScaleFactor(1)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(verbatim: " ")
+                .font(.system(size: metrics.cardSubtitleFontSize))
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity)
     }

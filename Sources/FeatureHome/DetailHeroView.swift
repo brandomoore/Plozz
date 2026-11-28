@@ -88,7 +88,7 @@ struct DetailHeroView: View, Equatable {
     @Environment(HeroBackgroundSettingsModel.self) private var heroBackground
     @Environment(\.detailHeaderSettings) private var detailHeaderSettings
     @Environment(\.discPlaybackDefault) private var discPlaybackDefault
-    @Environment(\.plozzAppTextScale) private var appTextScale
+    @Environment(\.plozzHeroBaseTextScale) private var appTextScale
     @Environment(\.plozzArtworkPolicy) private var artworkPolicy
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.seasonRequestContextID) private var seasonRequestContextID
@@ -444,6 +444,10 @@ struct DetailHeroView: View, Equatable {
         PlozzTypography.scale(local: headerRatingPreferences.textSize.scale, app: appTextScale)
     }
 
+    private var metadataScale: CGFloat {
+        PlozzTypography.heroMetadataScale(local: headerRatingPreferences.textSize.scale, app: appTextScale)
+    }
+
     // MARK: - Visible item actions (discoverability)
 
     /// The subject of watched-state actions: the play target when it differs from
@@ -548,12 +552,12 @@ struct DetailHeroView: View, Equatable {
     /// button: there is nothing to press.
     @ViewBuilder
     private func scheduleBadge(_ text: LocalizedStringResource) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 14 * textScale, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 14 * metadataScale, style: .continuous)
         Text(text)
-            .font(.system(size: PlozzTypography.heroSchedule.scaled(by: textScale).pointSize, weight: .semibold))
+            .font(.system(size: PlozzTypography.heroSchedule.scaled(by: metadataScale).pointSize, weight: .semibold))
             .foregroundStyle(Color.primary)
-            .padding(.horizontal, 18 * textScale)
-            .padding(.vertical, 10 * textScale)
+            .padding(.horizontal, 18 * metadataScale)
+            .padding(.vertical, 10 * metadataScale)
             .background {
                 if #available(tvOS 26.0, *) {
                     shape.fill(.regularMaterial)
@@ -562,7 +566,7 @@ struct DetailHeroView: View, Equatable {
                 }
             }
             .overlay {
-                shape.stroke(Color.primary.opacity(0.16), lineWidth: textScale)
+                shape.stroke(Color.primary.opacity(0.16), lineWidth: metadataScale)
             }
             .padding(.bottom, 6)
             .contentTransition(.opacity)
@@ -914,7 +918,7 @@ struct DetailHeroView: View, Equatable {
                !isYearOnlySubtitle(subtitle),
                item.kind != .episode {
                 Text(subtitle)
-                    .font(.system(size: 26 * textScale, weight: .medium))
+                    .font(.system(size: 26 * metadataScale, weight: .medium))
                     .plozzForeground(.secondary)
                     .lineLimit(1)
                     .contentTransition(.opacity)
@@ -937,19 +941,19 @@ struct DetailHeroView: View, Equatable {
             // subtitle above — an always-present container costs a spacing gap even
             // with nothing in it.
             if heroRatingBadge != nil || !genreParts.isEmpty {
-                HStack(alignment: .center, spacing: 16 * textScale) {
+                HStack(alignment: .center, spacing: 16 * metadataScale) {
                     if let badge = heroRatingBadge {
                         MediaBadgeChip(badge: badge)
                     }
                     if !genreParts.isEmpty {
                         Text(genreParts.joined(separator: "  ·  "))
-                            .font(.system(size: PlozzTypography.heroMetadata.scaled(by: textScale).pointSize, weight: .medium))
+                            .font(.system(size: PlozzTypography.heroMetadata.scaled(by: metadataScale).pointSize, weight: .medium))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                             .contentTransition(.opacity)
                     }
                 }
-                .environment(\.metadataTextScale, textScale)
+                .environment(\.metadataTextScale, metadataScale)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .detailEntranceStage(.metadata)
             }
@@ -981,7 +985,7 @@ struct DetailHeroView: View, Equatable {
                             familyGuidanceAge: heroFamilyGuidanceAge,
                             featureBadges: featureBadges
                         )
-                        .environment(\.metadataTextScale, textScale)
+                        .environment(\.metadataTextScale, metadataScale)
                     }
                 }
                 .detailEntranceStage(.metadata)
@@ -1139,7 +1143,7 @@ struct DetailHeroView: View, Equatable {
         // compositor lift as the left-side hero content.
         .overlay(alignment: .bottomTrailing) {
             if showsCreditColumn {
-                VStack(alignment: .leading, spacing: 8 * textScale) {
+                VStack(alignment: .leading, spacing: 8 * metadataScale) {
                     if !animeStudioValues.isEmpty {
                         DetailHeroCreditLine(
                             label: "Studio",
@@ -1164,7 +1168,7 @@ struct DetailHeroView: View, Equatable {
                         )
                     }
                 }
-                .font(.system(size: PlozzTypography.heroCredit.scaled(by: textScale).pointSize, weight: .semibold))
+                .font(.system(size: PlozzTypography.heroCredit.scaled(by: metadataScale).pointSize, weight: .semibold))
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: Self.creditColumnWidth, alignment: .trailing)
                 .shadow(color: .black.opacity(colorScheme == .light ? 0.22 : 0.55), radius: 5, y: 1)
@@ -1965,7 +1969,7 @@ struct DetailHeroView: View, Equatable {
                     seriesBreadcrumb(show, action: action)
                 } else {
                     Text(show)
-                        .font(.system(size: 30 * textScale, weight: .semibold))
+                        .font(.system(size: 30 * metadataScale, weight: .semibold))
                         .plozzForeground(.secondary)
                         .lineLimit(1)
                 }

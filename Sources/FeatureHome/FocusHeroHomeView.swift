@@ -164,6 +164,17 @@ enum FocusHeroLayout {
     static func availableDetailsHeight(columnOffset: CGFloat, minimumTop: CGFloat) -> CGFloat {
         max(0, lowestSlotTop + columnOffset - columnGap - minimumTop)
     }
+
+    /// Reserve growth for a certificate and two synopsis lines before fitting
+    /// the rail. This budget is independent of which item's metadata has arrived.
+    static func additionalMetadataHeight(scale: CGFloat, metadataScale: CGFloat) -> CGFloat {
+        guard scale > 1 else { return 0 }
+        let style = PlozzTypography.heroDescription
+        let baseline = UIFont.systemFont(ofSize: style.pointSize).lineHeight
+        let enlarged = UIFont.systemFont(ofSize: style.scaled(by: scale).pointSize).lineHeight
+        return 36 * (metadataScale - 1) + style.scaled(by: scale).height(lineHeight: enlarged, lines: 2)
+            - style.height(lineHeight: baseline, lines: 2)
+    }
 }
 
 private struct FocusHeroMinimumDetailsTopKey: EnvironmentKey {
@@ -646,13 +657,14 @@ private struct FocusHeroArtworkPrefetch: View {
 private struct FocusHeroDetailsFootprint: View {
     let logoHeight: CGFloat
     let textScale: CGFloat
+    let metadataScale: CGFloat
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Color.clear
                 .frame(height: logoHeight)
                 .padding(.bottom, 6)
-            Text(verbatim: " ").font(.system(size: PlozzTypography.heroMetadata.scaled(by: textScale).pointSize, weight: .medium))
+            Text(verbatim: " ").font(.system(size: PlozzTypography.heroMetadata.scaled(by: metadataScale).pointSize, weight: .medium))
             Text(verbatim: " \n \n ")
                 .font(.system(size: PlozzTypography.heroDescription.scaled(by: textScale).pointSize))
                 .lineSpacing(PlozzTypography.heroDescription.scaled(by: textScale).lineSpacing)
@@ -1623,17 +1635,18 @@ struct FocusHeroColumn: View {
     @State var schedules = HeroScheduleLines()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
-    @Environment(\.plozzAppTextScale) private var appTextScale
+    @Environment(\.plozzHeroBaseTextScale) private var appTextScale
     @Environment(\.focusHeroMinimumDetailsTop) private var navigationMinimumTop
     @Environment(\.focusHeroVisibleDetailsTop) private var navigationVisibleTop
     private var textScale: CGFloat { PlozzTypography.scale(local: settings.showcaseTextSize.scale, app: appTextScale) }
+    private var metadataScale: CGFloat { PlozzTypography.heroMetadataScale(local: settings.showcaseTextSize.scale, app: appTextScale) }
     private var hasCustomSizing: Bool {
         settings.showcaseLogoSize != .default || settings.showcaseTextSize != .default || appTextScale != 1
     }
 
     var body: some View {
         FocusHeroColumnMotion(
-            content: column.environment(\.metadataTextScale, textScale), model: model,
+            content: column.environment(\.metadataTextScale, metadataScale), model: model,
             fit: hasCustomSizing ? FocusHeroColumnFit(
                 minimumTop: max(FocusHeroLayout.columnTop,
                                 navigationMinimumTop ?? minimumDetailsTop ?? FocusHeroLayout.columnTop(for: navigationStyle)),
@@ -1658,7 +1671,10 @@ struct FocusHeroColumn: View {
 
     @ViewBuilder private var column: some View {
         let navigationTop = hasCustomSizing ? navigationMinimumTop : navigationVisibleTop ?? navigationMinimumTop
-        if let minimumDetailsTop = navigationTop ?? minimumDetailsTop {
+        if appTextScale > 1, model.details?.item != nil {
+            constrainedColumn(minimumTop: navigationVisibleTop ?? navigationTop ?? minimumDetailsTop
+                              ?? FocusHeroLayout.columnTop(for: navigationStyle))
+        } else if let minimumDetailsTop = navigationTop ?? minimumDetailsTop {
             constrainedColumn(minimumTop: minimumDetailsTop)
         } else {
             standardColumn
@@ -1669,7 +1685,7 @@ struct FocusHeroColumn: View {
         let top = FocusHeroLayout.columnTop(for: navigationStyle)
         let reference = FocusHeroLayout.lowestSlotTop
         let badgeHeadroom: CGFloat = model.details?.item.map(HeroScheduleLines.canShowLine(for:)) == true
-            ? 36 * textScale + 16 : 0
+            ? 36 * metadataScale + 16 : 0
         // A block of fixed height just above the pinned row, its content pinned
         // to the block's top: the logo holds one place from title to title, and a
         // longer description only reaches further down.
@@ -1677,7 +1693,7 @@ struct FocusHeroColumn: View {
         // it, so no title can move where the logo sits.
         return FocusHeroDetailsFootprint(
             logoHeight: HeroLogoSizing.box(for: .showcase, size: settings.showcaseLogoSize).height,
-            textScale: textScale
+            textScale: textScale, metadataScale: metadataScale
         )
             .hidden()
             .overlay(alignment: .topLeading) {
@@ -1714,7 +1730,10 @@ struct FocusHeroColumn: View {
                 let item = metadata.item(for: item)
                 let box = HeroLogoSizing.box(for: .showcase, size: settings.showcaseLogoSize)
                 Group {
-                    if hasCustomSizing {
+                    if appTextScale > 1 {
+                        defaultConstrainedColumn(item: item, box: box)
+                            .modifier(FocusHeroContentFit(motion: model.motion))
+                    } else if hasCustomSizing {
                         VStack(alignment: .leading, spacing: 0) {
                             if HeroScheduleLines.canShowLine(for: item) {
                                 HeroScheduleBadge(text: "Upcoming")
@@ -1780,13 +1799,13 @@ struct FocusHeroColumn: View {
         case .liveChannel(let channel):
             VStack(alignment: .leading, spacing: 12) {
                 Label("Live TV", systemImage: "antenna.radiowaves.left.and.right")
-                    .font(.system(size: PlozzTypography.heroMetadata.scaled(by: textScale).pointSize, weight: .semibold))
+                    .font(.system(size: PlozzTypography.heroMetadata.scaled(by: metadataScale).pointSize, weight: .semibold))
                 Text(verbatim: channel.name)
                     .font(.system(size: PlozzTypography.heroFallbackTitle.scaled(by: textScale).pointSize, weight: .bold))
                     .lineLimit(2)
                     .minimumScaleFactor(0.5)
                 Text(verbatim: channel.sourceName)
-                    .font(.system(size: PlozzTypography.heroMetadata.scaled(by: textScale).pointSize, weight: .medium))
+                    .font(.system(size: PlozzTypography.heroMetadata.scaled(by: metadataScale).pointSize, weight: .medium))
                     .foregroundStyle(.secondary)
             }
             .modifier(HeroTextLegibilityShadow(colorScheme: colorScheme))
@@ -1798,7 +1817,7 @@ struct FocusHeroColumn: View {
                     .minimumScaleFactor(0.5)
                 if !library.serverName.isEmpty {
                     Text(verbatim: library.serverName)
-                        .font(.system(size: PlozzTypography.heroMetadata.scaled(by: textScale).pointSize, weight: .medium))
+                        .font(.system(size: PlozzTypography.heroMetadata.scaled(by: metadataScale).pointSize, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
             }

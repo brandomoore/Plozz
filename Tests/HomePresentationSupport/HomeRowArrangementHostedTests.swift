@@ -955,30 +955,98 @@ extension HomeRowArrangementHostedTests {
         }
     }
 
-    func testFeaturedTVLayoutKeepsWholePointFourByFiveGeometry() {
+    func testFeaturedRailRevealsQuarterOfNextCardWithoutFractionalNativeClipBounds() {
         for width: CGFloat in [390, 1024, 1696, 1760.25, 1776, 1920] {
-            let size = FeaturedCardLayout.size(viewportWidth: width, television: true)
-            let unalignedWidth = min(560, max(280, (width - 96) / 3.15))
-            XCTAssertEqual(size.width.truncatingRemainder(dividingBy: 4), 0)
-            XCTAssertEqual(size.height, size.height.rounded())
-            XCTAssertEqual(size.height / size.width, 1.25)
-            XCTAssertGreaterThanOrEqual(size.width, unalignedWidth)
-            XCTAssertLessThan(size.width - unalignedWidth, 4)
-            for scale: CGFloat in [1, 2] {
-                XCTAssertEqual(size.width * scale, (size.width * scale).rounded())
-                XCTAssertEqual(size.height * scale, (size.height * scale).rounded())
+            for television in [true, false] {
+                let (size, spacing) = FeaturedCardLayout.rail(viewportWidth: width, television: television)
+                let available = width - (television ? PlozzTheme.Metrics.screenPadding : 20)
+                let pitch = size.width + spacing
+                let visible = available - floor(available / pitch) * pitch
+                XCTAssertEqual(visible / size.width, 0.25, accuracy: 0.0001)
+                XCTAssertEqual(size.height / size.width, television ? 1.25 : 1.125, accuracy: 0.0001)
+                if television {
+                    XCTAssertEqual(size.width.truncatingRemainder(dividingBy: 4), 0)
+                    XCTAssertEqual(size.height, size.height.rounded())
+                }
             }
         }
-        XCTAssertEqual(
-            FeaturedCardLayout.size(viewportWidth: 1776, television: true),
-            CGSize(width: 536, height: 670),
-            "The pinned-navigation case must not retain a half-point width or distort the aspect ratio."
-        )
-        XCTAssertEqual(
-            FeaturedCardLayout.size(viewportWidth: 393, television: false),
-            CGSize(width: 345, height: 388.125),
-            "TV alignment must not change the mobile layout."
-        )
+    }
+
+    func testDetailCastRailRevealsQuarterOfHeadshotAndFullFinalPerson() async throws {
+        let cache = try XCTUnwrap(ArtworkSession.shared.configuration.urlCache)
+        let base = try XCTUnwrap(URL(string: "https://cast-rail.invalid/\(UUID())/"))
+        let red = base.appendingPathComponent("red.png"), green = base.appendingPathComponent("green.png")
+        defer { for url in [red, green] { cache.removeCachedResponse(for: URLRequest(url: url)) } }
+        for (url, color) in [(red, UIColor.red), (green, UIColor.green)] {
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64)).image { context in
+                color.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+            }
+            try seedArtwork(image, at: url, in: cache)
+            let loaded = await ArtworkImageCache.shared.image(for: .remote(url), variant: .personHeadshot)
+            XCTAssertNotNil(loaded)
+        }
+        let people = (1...30).map {
+            MediaPerson(id: "\($0)", name: "Person \($0)", kind: "Actor", imageURL: $0 == 30 ? green : red)
+        }
+        // Project only the painted portrait pixels onto the horizontal axis.
+        // Names, initials, and focus padding must not contribute to the diameter.
+        func portraitRanges(_ shot: UIImage, channel: Int) throws -> [Range<Int>] {
+            let bitmap = try XCTUnwrap(shot.cgImage)
+            let pixels = try rgba(bitmap)
+            var columns = IndexSet()
+            for y in stride(from: 0, to: bitmap.height, by: 4) {
+                for x in 0..<bitmap.width {
+                    let i = (y * bitmap.width + x) * 4
+                    if pixels[i + channel] > 100, pixels[i + 1 - channel] < 80, pixels[i + 2] < 80 {
+                        columns.insert(x)
+                    }
+                }
+            }
+            return Array(columns.rangeView)
+        }
+        for width: CGFloat in [1120, 1600] {
+            var alignMiddlePerson: (() -> Void)?
+            try await withWindow {
+                ScrollViewReader { proxy in
+                    CastRowView(title: nil, people: people, leadingInset: 64)
+                        .environment(\.plozzCardFocusStyle, .system)
+                        .disabled(true) // Measure resting artwork, not focus projection.
+                        .frame(width: width)
+                        .onAppear { alignMiddlePerson = { proxy.scrollTo(people[10].id, anchor: .leading) } }
+                }
+            } inspect: { window in
+                func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
+                let opening = try await self.snapshot(window, name: "Cast quarter at \(width)")
+                let rail = try XCTUnwrap(descendants(window).compactMap { $0 as? UIScrollView }.first {
+                    $0.contentSize.width > $0.bounds.width
+                })
+                let edge = rail.convert(rail.bounds, to: window).maxX
+                let portraits = try portraitRanges(opening, channel: 0)
+                let diameter = CGFloat(try XCTUnwrap(portraits.first).count)
+                let next = try XCTUnwrap(portraits.last)
+                XCTAssertGreaterThan(portraits.count, 2)
+                for whole in portraits.dropLast() { XCTAssertEqual(CGFloat(whole.count), diameter, accuracy: 1) }
+                XCTAssertEqual(CGFloat(next.upperBound), edge, accuracy: 1)
+                XCTAssertEqual(CGFloat(next.count), diameter / 4, accuracy: 1.5)
+
+                let initialOffset = rail.contentOffset.x
+                try XCTUnwrap(alignMiddlePerson)()
+                let middle = try await self.snapshot(window, name: "Cast aligned middle at \(width)")
+                XCTAssertGreaterThan(rail.contentOffset.x - initialOffset, diameter)
+                let afterMiddle = try XCTUnwrap(try portraitRanges(middle, channel: 0).last)
+                XCTAssertEqual(CGFloat(afterMiddle.upperBound), edge, accuracy: 1)
+                XCTAssertEqual(CGFloat(afterMiddle.count), diameter / 4, accuracy: 1.5)
+
+                rail.setContentOffset(CGPoint(x: rail.contentSize.width - rail.bounds.width + rail.adjustedContentInset.right,
+                                              y: rail.contentOffset.y), animated: false)
+                let end = try await self.snapshot(window, name: "Cast end at \(width)")
+                let finalPortraits = try portraitRanges(end, channel: 1)
+                XCTAssertEqual(finalPortraits.count, 1)
+                let finalPerson = try XCTUnwrap(finalPortraits.first)
+                XCTAssertEqual(CGFloat(finalPerson.count), diameter, accuracy: 1.5)
+            }
+        }
     }
 
     func testFeaturedLabelDefersItsOnlyClipToTheNativeCard() async throws {
@@ -1745,17 +1813,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
             UIColor(white: 0.15, alpha: 1).setFill()
             context.fill(CGRect(x: 0, y: 0, width: 600, height: 338))
         }
-        func seed(_ image: UIImage, at url: URL) throws {
-            let response = try XCTUnwrap(HTTPURLResponse(
-                url: url, statusCode: 200, httpVersion: nil,
-                headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=86400"]
-            ))
-            cache.storeCachedResponse(
-                CachedURLResponse(response: response, data: try XCTUnwrap(image.pngData())),
-                for: URLRequest(url: url)
-            )
-        }
-        try seed(artwork, at: artworkURL)
+        try seedArtwork(artwork, at: artworkURL, in: cache)
         defer { cache.removeCachedResponse(for: URLRequest(url: artworkURL)) }
         let loadedArtwork = await ArtworkImageCache.shared.image(for: .remote(artworkURL), variant: .posterCard)
         XCTAssertNotNil(loadedArtwork)
@@ -1769,7 +1827,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                     .font: UIFont.boldSystemFont(ofSize: 54), .foregroundColor: color
                 ])
             }
-            try seed(image, at: url)
+            try seedArtwork(image, at: url, in: cache)
             defer { cache.removeCachedResponse(for: URLRequest(url: url)) }
             let item = MediaItem(
                 id: UUID().uuidString, title: "Unresolved logo", kind: .movie,
@@ -1810,6 +1868,17 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                 }
             }
         }
+    }
+
+    private func seedArtwork(_ image: UIImage, at url: URL, in cache: URLCache) throws {
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: url, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "image/png", "Cache-Control": "max-age=86400"]
+        ))
+        cache.storeCachedResponse(
+            CachedURLResponse(response: response, data: try XCTUnwrap(image.pngData())),
+            for: URLRequest(url: url)
+        )
     }
 
     private func rgba(_ bitmap: CGImage) throws -> [UInt8] {
@@ -1863,7 +1932,7 @@ final class HomeRowArrangementHostedTests: XCTestCase {
                       productionYear: 2024, officialRating: "PG", genres: ["Adventure"])
         }
         let phone = FeaturedCardLayout.size(viewportWidth: 393, television: false)
-        XCTAssertEqual(phone.width, 345)
+        XCTAssertEqual(393 - 20 - phone.width - 16, phone.width / 4, accuracy: 0.001)
         XCTAssertEqual(phone.height / phone.width, 1.125)
         let tv = FeaturedCardLayout.size(viewportWidth: 1920, television: true)
         XCTAssertEqual(tv.height / tv.width, 1.25)

@@ -860,6 +860,15 @@ final class HeroShowcaseStageTests: XCTestCase {
         }
     }
 
+    func testNativeRowViewportReachesDisplayWithoutMovingItsLeadingKeyline() {
+        let bounds = CGRect(x: 0, y: 24, width: 1640, height: 1000)
+        let window = CGRect(x: -200, y: 0, width: 1920, height: 1080)
+        let ltr = HeroShowcaseStage.Controller.rowFrame(in: bounds, window: window, direction: .leftToRight)
+        let rtl = HeroShowcaseStage.Controller.rowFrame(in: bounds, window: window, direction: .rightToLeft)
+        XCTAssertEqual(ltr, CGRect(x: bounds.minX, y: 24, width: 1720, height: 1000))
+        XCTAssertEqual(rtl, CGRect(x: window.minX, y: 24, width: 1840, height: 1000))
+    }
+
     func testRowsCannotTakeInitialFocusAndBoundaryInputOnlyChangesTheTopEdge() {
         let stage = HeroShowcaseStage.Controller(
             state: HeroShowcaseState(), hero: AnyView(Color.clear),
@@ -899,6 +908,7 @@ final class HeroShowcaseStageTests: XCTestCase {
         root.addChild(stage)
         root.view.addSubview(stage.view)
         stage.didMove(toParent: root)
+        stage.view.semanticContentAttribute = .forceLeftToRight
         for width: CGFloat in [1840, 1760] {
             stage.view.frame = CGRect(x: 80, y: 0, width: width, height: 1080)
             for expanded in [true, false, true] {
@@ -911,8 +921,10 @@ final class HeroShowcaseStageTests: XCTestCase {
                 let showcase = stage.showcase.view.convert(stage.showcase.view.bounds, to: window)
                 XCTAssertEqual(showcase.minX, 80, accuracy: 0.5)
                 XCTAssertEqual(showcase.maxX, window.bounds.maxX, accuracy: 0.5)
-                XCTAssertEqual(stage.rows.view.bounds, stage.view.bounds)
-                XCTAssertEqual(stage.rows.view.center.x, stage.view.bounds.midX, accuracy: 0.5)
+                let rows = stage.rows.view.convert(stage.rows.view.bounds, to: window)
+                XCTAssertEqual(rows.minX, 80, accuracy: 0.5)
+                XCTAssertEqual(rows.maxX, window.bounds.maxX, accuracy: 0.5)
+                XCTAssertEqual(rows.height, stage.view.bounds.height, accuracy: 0.5)
             }
         }
     }

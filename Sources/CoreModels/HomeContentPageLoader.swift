@@ -160,7 +160,7 @@ public enum HomeContentPageLoader {
                     let candidates = visibility.hideWatchedRecentlyAdded
                         ? try await account.provider.recentlyAddedWatchState(fresh) : fresh
                     items += candidates.map { $0.taggingSource(account.account.id) }.filter {
-                        [.movie, .series, .season, .episode].contains($0.kind)
+                        ($0.isPersonalVideo || [.movie, .series, .season, .episode].contains($0.kind))
                             && ($0.libraryID.map { allowedIDs?.contains($0) ?? true } ?? true)
                             && $0.isVisibleOnHome(isLibraryVisible: visibility.isEnabled)
                             && (!visibility.hideWatchedRecentlyAdded || !HomeRecentlyAddedPolicy.isWatched($0))
@@ -261,7 +261,7 @@ public enum HomeContentPageLoader {
             $0.taggingSource(account.account.id).taggingLibrary($0.libraryID ?? source.libraryID)
         }.filter {
             let supported = source.collection != nil ? [.movie, .series] : [MediaItemKind.movie, .series, .season, .episode]
-            return supported.contains($0.kind)
+            return ($0.isPersonalVideo || supported.contains($0.kind))
                 && (isHistory || $0.isVisibleOnHome(isLibraryVisible: visibility.isEnabled))
                 && (!isRecentlyAdded || !visibility.hideWatchedRecentlyAdded || !HomeRecentlyAddedPolicy.isWatched($0))
         }

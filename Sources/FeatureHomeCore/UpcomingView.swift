@@ -300,8 +300,8 @@
 
         private var agendaMetrics: PlozzMetrics {
             guard sizeClass == .compact else { return metrics }
-            return PlozziOSHomeRailLayout<EmptyView>.posterMetrics(
-                in: agendaSize.width,
+            return PlozziOSPosterGridLayout.compactAgendaMetrics(
+                viewport: agendaSize.width,
                 inset: PlozziOSMediaRailLayout.pageInset(for: sizeClass, usesDesktopSizing: metrics.usesDesktopSizing),
                 metrics: metrics, cardStyle: cardStyle
             )

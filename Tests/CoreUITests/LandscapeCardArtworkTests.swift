@@ -206,6 +206,7 @@ final class LandscapeCardArtworkTests: XCTestCase {
                     : titled ? native : preference == .library ? background : online
                 XCTAssertEqual(result?.reference, .remote(expected))
             }
+
         }
         let fallback = await ArtworkFirstPaintResolver.resolve(
             references: [.remote(native), .remote(background)],
@@ -213,6 +214,31 @@ final class LandscapeCardArtworkTests: XCTestCase {
             imageLoader: { reference in reference == .remote(backgroundURL) ? image : nil }
         )
         XCTAssertEqual(fallback?.reference, .remote(background))
+    }
+
+    func testPersonalVideoFrameWinsWhereMoviePostersRejectIt() async {
+        let onlineURL = online
+        let movie = item()
+        let video = MediaItem(id: movie.id, title: movie.title, kind: .movie, isPersonalVideo: true,
+                              posterURL: native, backdropURL: background)
+        let frame = UIGraphicsImageRenderer(size: .init(width: 160, height: 90)).image { _ in }
+        let poster = UIGraphicsImageRenderer(size: .init(width: 90, height: 135)).image { _ in }
+        let library = policy(.library)
+        XCTAssertNotEqual(card.pinIdentity(for: movie), card.pinIdentity(for: video))
+        XCTAssertEqual(card.references(for: video, style: .landscape).first, .remote(native))
+        XCTAssertNil(card.artworkFallback(for: video, style: .poster))
+        for candidate in [video, movie] {
+            let cutoff = PosterCardPresentation.maximumAspectRatio(for: candidate, style: .poster)
+            for available in [false, true] {
+                let result = await ArtworkFirstPaintResolver.resolve(
+                    references: card.references(for: candidate, style: .poster, policy: library),
+                    variant: .posterCard, maxAspectRatio: cutoff, asyncOnlineURL: { available ? onlineURL : nil },
+                    prefersOnlineArtwork: library.prefersOnlineArtwork,
+                    imageLoader: { $0 == .remote(onlineURL) ? poster : frame }
+                )
+                XCTAssertEqual(result?.reference, candidate.isPersonalVideo ? .remote(native) : available ? .remote(onlineURL) : nil)
+            }
+        }
     }
 }
 #endif

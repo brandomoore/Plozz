@@ -35,7 +35,11 @@ struct MediaRowRefreshIndicator: View {
     @Environment(\.mediaRowRefreshStatus) private var status
     @Environment(\.themePalette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var showsDetails = false
+    private struct PresentedFailure: Identifiable {
+        let id = UUID()
+        let report: PlaybackDiagnosticReport
+    }
+    @State private var presentedFailure: PresentedFailure?
 
     var body: some View {
         if let status {
@@ -51,8 +55,10 @@ struct MediaRowRefreshIndicator: View {
                     }
                         .scaleEffect(0.85, anchor: .leading)
                         .accessibilityLabel("Refreshing")
-                } else if status.failure != nil {
-                    Button("Details", systemImage: "exclamationmark.circle") { showsDetails = true }
+                } else if let failure = status.failure {
+                    Button("Details", systemImage: "exclamationmark.circle") {
+                        presentedFailure = PresentedFailure(report: status.report ?? .homeSection(.failed(failure), provider: nil))
+                    }
                         .labelStyle(.iconOnly)
                         .plozzPageActionButton(role: .secondary)
                         .help("Unable to refresh")
@@ -64,16 +70,11 @@ struct MediaRowRefreshIndicator: View {
             .frame(width: Self.size, height: Self.size, alignment: status.isRefreshing ? .leading : .center)
             .tint(palette.primaryText)
             .accessibilityIdentifier("media-row-refresh-status")
-            .plozzSheet(isPresented: $showsDetails) {
-                VStack(alignment: .leading, spacing: 16) {
-                    if let failure = status.failure { Text(failure.userMessage) }
-                    ContentFailureActions(report: status.report) {
-                        showsDetails = false
-                        status.onRetry()
-                    }
+            .plozzSheet(item: $presentedFailure) { failure in
+                PlaybackDiagnosticDetailsSheet(report: failure.report) {
+                    presentedFailure = nil
+                    status.onRetry()
                 }
-                .padding()
-                .tint(palette.primaryText)
             }
         }
     }
@@ -100,12 +101,21 @@ public struct MediaRowScroll<Content: View>: View {
             LazyHStack(spacing: metrics.cardSpacing) {
                 content
             }
+            #if os(iOS)
+            .scrollTargetLayout()
+            #else
             .padding(.leading, leadingInset)
             .padding(.trailing, trailingInset)
+            #endif
             // Callers cancel this clearance with the shared rail offsets in layout,
             // while focused artwork and shadows retain room to draw.
             .padding(.vertical, metrics.railShadowClearance)
         }
+        #if os(iOS)
+        .contentMargins(.leading, leadingInset, for: .scrollContent)
+        .contentMargins(.trailing, trailingInset, for: .scrollContent)
+        .scrollTargetBehavior(.viewAligned(limitBehavior: .never))
+        #endif
         .scrollClipDisabled()
     }
 }

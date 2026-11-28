@@ -68,9 +68,22 @@ with `browsingRow`; existing collection-detail `onSeeAll` headers elsewhere keep
 their behavior. Passing `nil` opts into Home browsing without showing an action
 or falling back to the old header action. Browse actions carry no media identity
 or context-menu actions.
-Pinned-sidebar rail parking clamps both native targets and idle corrections to
-the scrollable content bounds. A partial final slot must not overscroll: UIKit
-would clamp it when returning from a page, then parking would shift it again.
+Horizontal card rails fit a whole number of cards plus one quarter of the next
+visible card. Density and text size select the number of cards; they must not
+scale away the quarter-card preview. On Apple TV, Text Size scales row headings
+and captions; portrait, Libraries, ordinary landscape and Featured rows make
+room for larger labels by fitting fewer cards. Two neighboring text settings
+can therefore have different type sizes but the same card width. Continue
+Watching’s landscape width already accounts for its playback caption; it is
+not enlarged a second time. At the end of the content the last card
+is fully visible instead. Pinned-sidebar parking treats the trailing boundary
+as a valid stop for native targets and idle corrections, even when it lies
+less than half a card beyond the previous whole slot.
+Apple TV Home also fits these rows vertically. Classic leaves room for the next
+Down move; Showcase and Immersive reserve the selected title's area above the
+active row. If the heading, artwork and enabled captions would not fit together,
+the rail adds a whole column rather than shrinking the text or clipping the
+focused card. Placeholders use the same fit as the loaded rows.
 Full-bleed media rows retain the consumed trailing safe area as content padding,
 so the final card's native focus lift fits on screen without overscrolling.
 This changes the scrollable tail, not the viewport or portrait density.
@@ -203,7 +216,11 @@ not presented-frame timing; see [diagnostic interpretation](../../docs/performan
 `PlozzMetrics.desktop` supplies artwork width limits for the iOS-on-Mac shell
 without scaling touch controls, captions, or overlays with the artwork.
 `fittingDesktopRail` resolves those limits against the content viewport, leaving
-a gap-sized preview of the next card at every width. Page containers publish
+a quarter of the next picture at every width. The iPhone and iPad rails
+also choose a whole-card count before fitting the artwork; frame insets
+and gaps do not count toward the preview. Native view alignment keeps the
+same leading inset between swipes and leaves the final card reachable.
+Page containers publish
 the resolved metrics through `plozzDesktopMediaRailLayout`; Featured rows use
 the same fitting policy for their 4:5 cards.
 Poster breakpoints preserve eight full cards plus a ninth-card preview around
@@ -344,7 +361,8 @@ wraps independently, preserving the avatar, native focus treatment, and trailing
 selection indicator without squeezing the name alongside badges.
 
 `PlozzTypography` owns semantic text metrics, including additional line spacing,
-and composes local adjustments with `plozzAppTextScale` once at a surface boundary.
+and composes local adjustments with `plozzHeroBaseTextScale` once at a surface boundary.
+On tvOS that baseline includes the native metadata text scale and `plozzAppTextScale`.
 SwiftUI text and the UIKit Home foreground resolve the same styles; badge children
 receive the resolved `metadataTextScale`, not another multiplier. Episode captions,
 loading placeholders, and the Detail preview use the same episode styles.
@@ -879,7 +897,13 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   of artwork. `metadataTextScale` scales badge fonts, icons, borders, and spacing
   together without changing `mediaBadgeScale`'s existing compact-format styling.
   Scope it to the metadata subtree, not buttons, cards, or whole pages.
-  The default is 1; mobile preserves Dynamic Type in addition to the chosen size.
+  The local default is 1; the TV hero uses native Text Size as its baseline.
+  TV Settings renders a sample certificate, genre, wrapping synopsis and (where
+  applicable) Play label at screen size before shrinking the illustration. The
+  synopsis follows the full profile adjustment; secondary metadata uses the
+  gentler positive adjustment, and Play follows only system text size. Home
+  and library Recommended use the same illustrations as the Home layout cards.
+  Mobile retains its separate Dynamic Type behavior.
 - **Hero scrim coverage** — `heroScrimHeightScale` extends both the analytic gradient
   and cached texture upward from their bottom anchor, within the existing bounds
   and before the backdrop's dissolve mask. Default coverage remains unchanged.
@@ -1697,7 +1721,7 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   This keeps lazy-row estimation out of the expensive rendering path without
   adding another observable loading state to the row.
   Portrait television rows fit six full cards and a quarter of the seventh at
-  standard display size. `PlozzMetrics.portraitRowSlotWidth` uses the actual
+  standard display size and ordinary system text. `PlozzMetrics.portraitRowSlotWidth` uses the actual
   navigation-safe viewport and visible card margins, shared by loaded cards,
   placeholders and pinned-sidebar scroll parking. Only viewport-width changes
   update sizing; scrolling does not invalidate the row. Showcase's row viewport
@@ -1707,8 +1731,8 @@ Density, Dynamic Type, and the minimum height follow the same shared metric.
   they are still visible in the overscan gutter. The trailing viewport is not
   expanded, preserving row density and pinned slot parking. Hosted loaded-artwork
   checks cover both screen edges in both scroll directions and navigation styles.
-  Display-size preferences still adjust density; library Browse
-  grids, landscape/episode card widths and mobile sizing are unchanged.
+  Display-size preferences still adjust density. Library Browse grids and
+  mobile sizing have their own layout rules.
   Native Browse uses the correction for both borderless and framed system-focus
   cells. Debug's `--original-library-posters` opts out of Browse only.
   Browse rasterizes its SwiftUI overlay to concrete pixels on the main actor

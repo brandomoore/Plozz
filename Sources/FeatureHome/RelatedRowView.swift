@@ -29,7 +29,6 @@ struct RelatedRowView: View {
     var onFocusEntered: (() -> Void)?
 
     @Environment(\.plozzMetrics) private var metrics
-    @Environment(\.plozzCardStyle) private var cardStyle
 
     var body: some View {
         Group {
@@ -69,34 +68,10 @@ struct RelatedRowView: View {
 
     /// Same geometry as the loaded row, so filling it shifts nothing.
     private var placeholder: some View {
-        VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
-            Text("Related")
-                .font(.system(size: metrics.sectionHeaderFontSize, weight: .bold))
-                .padding(.leading, leadingInset)
-            // Use the same nested horizontal viewport as MediaRowView. A plain
-            // eight-card HStack reports its ~2,400pt intrinsic width to the outer
-            // vertical ScrollView even when visually clipped, widening the whole
-            // detail column and letting tvOS pan it sideways while the skeleton is
-            // present. The horizontal ScrollView keeps the layout footprint pinned
-            // to the actual viewport, exactly like the loaded Related row.
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: metrics.cardSpacing) {
-                    ForEach(0..<Self.placeholderCount, id: \.self) { _ in
-                        SkeletonCardView(style: .poster)
-                            .frame(width: metrics.posterWidth)
-                    }
-                }
-                .padding(.leading, metrics.cardRowLeadingPadding(leadingInset, cardStyle: cardStyle))
-                .padding(.trailing, PlozzTheme.Metrics.screenPadding)
-                .padding(.vertical, metrics.railShadowClearance)
-            }
-            .padding(.top, metrics.railTopClearanceOffset)
-            .padding(.bottom, metrics.railBottomClearanceOffset)
-            // Non-focusable so the focus engine never anchors on a placeholder and
-            // strands focus where a card is about to be replaced.
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
+        MediaRowView(title: Text("Related"), items: [], style: .poster, leadingInset: leadingInset,
+                     loadingPlaceholderCount: Self.placeholderCount, onSelect: { _ in })
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 

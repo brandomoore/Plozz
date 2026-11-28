@@ -415,7 +415,7 @@ public struct LibraryBrowseView: View {
     private func recommendedCardStyle(_ section: LibrarySection) -> PosterCardView.Style {
         section.id == "continueWatching"
             ? continueWatchingLayout.cardStyle
-            : (section.style == .poster ? .poster : .landscape)
+            : (section.style.forMediaGroup(section.items) == .poster ? .poster : .landscape)
     }
 
     private func recommendedRowArtworkArea(_ section: LibrarySection) -> ArtworkArea {
@@ -432,6 +432,7 @@ public struct LibraryBrowseView: View {
             showsResumeChip: section.id == "continueWatching",
             onSelect: onSelect
         )
+        .adaptingPersonalVideoSlots(section.id != "continueWatching")
         .environment(\.plozzArtworkArea, recommendedRowArtworkArea(section))
         .navigationEntryFocus(.content)
     }
@@ -483,6 +484,7 @@ public struct LibraryBrowseView: View {
                     showsResumeChip: section.id == "continueWatching",
                     onSelect: onSelect
                 )
+                .adaptingPersonalVideoSlots(section.id != "continueWatching")
                 .environment(\.plozzArtworkArea, recommendedRowArtworkArea(section))
                 .navigationEntryFocus(.content)
             }

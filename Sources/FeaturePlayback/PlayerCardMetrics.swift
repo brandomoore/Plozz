@@ -527,6 +527,16 @@ private struct PlayerCardNaturalHeight<Natural: View>: ViewModifier {
     }
 }
 
+extension View {
+    /// Some player rails are inside a panel rather than against the screen.
+    /// Keep the measured trailing boundary while allowing native focus to lift
+    /// above, below and before the first slot. The last slot has its own tail.
+    func playerMediaRailClip(clearance: CGFloat) -> some View {
+        scrollClipDisabled()
+            .mask { Rectangle().padding(.leading, -clearance).padding(.vertical, -clearance) }
+    }
+}
+
 private struct PlayerCardMetricsKey: EnvironmentKey {
     static let defaultValue = PlayerCardMetrics.platformDefault
 }

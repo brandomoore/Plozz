@@ -64,15 +64,19 @@ household multi-user UI on top of `CoreModels.ProfileStore`.
   its parental, local, and Plex authorization steps. Its avatar and name share
   the mobile PIN transition; Plex verification keeps the selected Plozz identity.
   The surrounding picker elements fade and lift away before the identity moves.
-  Animation completion, not a timer, advances that handoff; cancelled or replaced
-  selections cannot advance it. The name and lock keep their picker typography.
+  The forward glide uses a fixed-duration ease rather than a spring so the PIN
+  instruction can rise and fade in as soon as the name lands, without waiting
+  for a spring to settle or delaying keypad focus. With Reduce Motion it appears in
+  place immediately. Animation completion, not a timer, advances the handoff;
+  cancelled or replaced selections cannot advance it. The name and lock keep
+  their picker typography.
   Recency changes do not move the source tile during authorization. The covered
   picker cannot receive input or accessibility focus. Menu cancels authorization
   immediately but retains the PIN identity as a geometry follower until it has
   moved back to the original tile. Only then do the surrounding controls reappear
   and normal visible-layout focus entry resume, without a timed correction.
-  Reduce Motion removes the handoff movement, and TV keys appear immediately so
-  native focus cannot land on an invisible key. Presentation ownership does not
+  Reduce Motion removes the handoff movement. The first key takes native focus
+  when the keypad appears, including after a live Plex check. Presentation ownership does not
   unlock a profile: existing local, parental, and live Plex checks still decide
   access, including cancellation and foreground reauthorization.
 - **Account selections survive removals.** An explicit profile selection only

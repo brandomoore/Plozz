@@ -420,10 +420,35 @@ public struct HomeView: View {
     public var body: some View {
         GeometryReader { geometry in
             screen
+                #if os(tvOS)
+                .environment(\.plozzMetrics, homeRailMetrics(viewportHeight: geometry.size.height))
+                #endif
                 .environment(\.mediaRowHeaderTrailingInset,
                              navigationStyle == .rail ? geometry.safeAreaInsets.trailing : 0)
         }
     }
+
+    #if os(tvOS)
+    @Environment(\.plozzCardFocusStyle) private var railFocusStyle
+    @Environment(\.plozzHeroBaseTextScale) private var heroBaseTextScale
+
+    private func homeRailMetrics(viewportHeight: CGFloat) -> PlozzMetrics {
+        let height: CGFloat
+        if let focusHeroSettings {
+            // The scrolling shelf and the stationary details must fit at the same time.
+            let local = focusHeroSettings.showcaseTextSize.scale
+            let scale = PlozzTypography.scale(local: local, app: heroBaseTextScale)
+            let metadataScale = PlozzTypography.heroMetadataScale(local: local, app: heroBaseTextScale)
+            height = FocusHeroLayout.rowsBottom(rowSpacing: FocusHeroLayout.rowSpacing) - FocusHeroLayout.lowestSlotTop
+                + FocusHeroLayout.rowTitleTightening + FocusHeroLayout.rowBottomTightening - FocusHeroLayout.activeTitleLift
+                - FocusHeroLayout.additionalMetadataHeight(scale: scale, metadataScale: metadataScale)
+        } else {
+            let lift = carouselSettings?.isActive == true ? Self.recedeRowLift : 0
+            height = viewportHeight - lift - metrics.rowSpacing - FocusHeroLayout.nextRowPeek
+        }
+        return metrics.fittingRailHeight(height, focusStyle: railFocusStyle)
+    }
+    #endif
 
     private var screen: some View {
         let _ = PlozzBodyRate.tick("HomeView")
@@ -1493,6 +1518,7 @@ public struct HomeView: View {
                 reservesLoadingFocus: reservesLoadingFocus,
                 onSelect: onSelectItem
             )
+            .adaptingPersonalVideoSlots(true)
             .browsingRow(row.items.isEmpty ? nil : onBrowse)
         case .libraries:
             if row.loadingPlaceholderCount > 0 {
@@ -1568,8 +1594,8 @@ public struct HomeView: View {
                     cardArtwork: row.style == .landscape
                         && !(row.kind == .continueWatching && visibility.continueWatchingLayout == .portrait)
                         ? { PosterCardView.leadingLandscapeArtwork(
-                            for: $0, showsSeriesArtwork: seriesArtwork,
-                            presentationPolicy: artworkPolicy.forArea(.continueWatching)
+                            for: $0, showsSeriesArtwork: row.kind == .continueWatching && seriesArtwork,
+                            presentationPolicy: artworkPolicy.forArea(row.kind == .continueWatching ? .continueWatching : .homeRows)
                         ) }
                         : nil
                 ),
@@ -1600,7 +1626,7 @@ public struct HomeView: View {
                         leadItem: section.items.first, items: section.items,
                         isPlaceholder: row.isLoading,
                         hasFocusableControls: (row.issue != nil || row.failure != nil) && !viewModel.isRefreshing,
-                        cardArtwork: section.style == .landscape
+                        cardArtwork: row.cardStyle == .landscape
                             ? { PosterCardView.leadingLandscapeArtwork(
                                 for: $0, showsSeriesArtwork: false, presentationPolicy: artworkPolicy.forArea(.homeRows)
                             ) }
@@ -1853,6 +1879,7 @@ public struct HomeView: View {
                         reservesLoadingFocus: reservesLoadingFocus,
                         onSelect: onSelectItem
                     )
+                    .adaptingPersonalVideoSlots(true)
                     .browsingRow(row.items.isEmpty ? nil : onBrowse)
                 case .libraries:
                     if row.loadingPlaceholderCount > 0 {
@@ -1909,7 +1936,7 @@ public struct HomeView: View {
                 MediaRowView(
                     title: section.displayName,
                     items: section.items,
-                    style: cardStyle(section.style),
+                    style: cardStyle(row.cardStyle),
                     spoilerSettings: spoilerSettings,
                     onFocusEntered: reporter.entered,
                     onFocusChange: onFocusChange,
@@ -1920,6 +1947,7 @@ public struct HomeView: View {
                     onSeeAll: row.browseItem.map { item in { onSelectItem(item) } },
                     onSelect: playsOnSelect ? onPlayItem : onSelectItem
                 )
+                .adaptingPersonalVideoSlots(row.usesPersonalVideoLayout)
                 .browsingRow(row.isLoading ? nil : onBrowse)
             }
         }
@@ -1978,13 +2006,14 @@ public struct HomeView: View {
                 MediaRowView(
                     title: section.displayName,
                     items: section.items,
-                    style: cardStyle(section.style),
+                    style: cardStyle(row.cardStyle),
                     spoilerSettings: spoilerSettings,
                     loadingPlaceholderCount: row.isLoading ? 8 : 0,
                     playsOnSelect: playsOnSelect,
                     onSeeAll: row.browseItem.map { item in { onSelectItem(item) } },
                     onSelect: playsOnSelect ? onPlayItem : onSelectItem
                 )
+                .adaptingPersonalVideoSlots(row.usesPersonalVideoLayout)
                 .browsingRow(row.isLoading ? nil : onBrowse)
         }
     }
@@ -2441,19 +2470,40 @@ struct HomeLibrariesRow: View {
     @Environment(\.plozzRowTitleTightening) private var titleTightening
     @Environment(\.plozzNavigationContentInset) private var navigationContentInset
     @Environment(\.plozzPinnedSidebarActive) private var pinnedSidebarActive
+    @Environment(\.plozzCardFocusStyle) private var focusStyle
+    @Environment(\.plozzCardCaptionSettings) private var captions
+    @Environment(\.plozzCardCaptionIsShowcase) private var isShowcase
+    @Environment(\.mediaRowHeaderTrailingInset) private var pageTrailingInset
+    @State private var viewportWidth: CGFloat = 0
+
+    private var usesBorderlessSurface: Bool { focusStyle.usesSystemEffect || cardStyle == .borderless }
+    private var leadingInset: CGFloat {
+        metrics.cardRowLeadingPadding(PlozzTheme.Metrics.screenPadding, cardStyle: usesBorderlessSurface ? .borderless : .framed)
+    }
+    private var slotWidth: CGFloat {
+        let style: CardStyle = usesBorderlessSurface ? .borderless : .framed
+        return metrics.fittingLandscapeRow(
+            viewportWidth: viewportWidth, leadingInset: PlozzTheme.Metrics.screenPadding,
+            cardStyle: style, showsSeriesArtwork: false,
+            showsCaption: captions.showsLabels(in: .homeLibraries, isShowcase: isShowcase)
+        ).cardSlotWidth(for: .landscape, cardStyle: style)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing - titleTightening) {
             title
                 .accessibilityIdentifier("media-row-title")
-                .font(.system(size: metrics.sectionHeaderFontSize, weight: .bold))
+                .font(PlozzRailTitle.font(sectionHeaderFontSize: metrics.sectionHeaderFontSize))
+                .minimumScaleFactor(1)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
                 .padding(.leading, PlozzTheme.Metrics.screenPadding + navigationContentInset)
                 .modifier(PlozzRowTitlePosition())
             PinnedSidebarLeadingFade(
                 isActive: pinnedSidebarActive,
                 inset: navigationContentInset,
                 verticalOverhang: metrics.railShadowClearance,
-                cardPitch: metrics.landscapeCardSlotWidth + metrics.cardSpacing
+                cardPitch: slotWidth + metrics.cardSpacing
             ) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: metrics.cardSpacing) {
@@ -2461,6 +2511,7 @@ struct HomeLibrariesRow: View {
                             LibraryCardView(
                                 aggregated: aggregated,
                                 subtitle: HomeView.librarySubtitle(for: aggregated, in: libraries),
+                                railSlotWidth: slotWidth,
                                 action: { onSelectLibrary(aggregated.library) },
                                 onFocusChange: { focused in
                                     if focused { onFocused?(aggregated) }
@@ -2469,13 +2520,15 @@ struct HomeLibrariesRow: View {
                             )
                         }
                     }
-                    .padding(.leading, metrics.cardRowLeadingPadding(PlozzTheme.Metrics.screenPadding, cardStyle: cardStyle))
-                    .padding(.trailing, PlozzTheme.Metrics.screenPadding)
+                    .padding(.leading, leadingInset)
+                    .padding(.trailing, max(pageTrailingInset, metrics.railShadowClearance))
                     // Reserve room *inside* the clip for the focused tile's lift +
                     // shadow. The negative outer padding cancels that room in layout, so
                     // the row's height and spacing are unchanged — only the clip grows.
                     .padding(.vertical, metrics.railShadowClearance)
                 }
+                .ignoresSafeArea(.container, edges: .trailing)
+                .mediaRailViewportWidth($viewportWidth)
                 .scrollClipDisabled()
                 .padding(.top, metrics.railTopClearanceOffset)
                 .padding(.bottom, metrics.railBottomClearanceOffset)
@@ -2487,6 +2540,7 @@ struct HomeLibrariesRow: View {
 struct LibraryCardView: View {
     let aggregated: AggregatedLibrary
     let subtitle: String   // l10n:content — library card subtitle from the server
+    var railSlotWidth: CGFloat?
     /// When `true`, the card wears a subtle corner spinner — this library belongs
     /// to a media share that's currently scanning/enriching, so its contents and
     /// artwork are still filling in. Purely decorative (non-focusable).
@@ -2517,6 +2571,7 @@ struct LibraryCardView: View {
     /// and the caption keeps its resting ink, since the lift's white plate is
     /// what dark text needed to stay legible.
     private var surfaceFocused: Bool { isFocused && focusStyle.drawsFocusOutline }
+    private var slotWidth: CGFloat { railSlotWidth ?? metrics.landscapeCardSlotWidth }
 
     /// Title/subtitle colour, flipped to dark ink over a focused card's opaque
     /// "lift" surface — shared with every other card via `PlozzCardCaption` so the
@@ -2539,7 +2594,7 @@ struct LibraryCardView: View {
         #if os(tvOS)
         if focusStyle.usesSystemEffect {
             NativeArtworkPoster(
-                width: metrics.landscapeCardSlotWidth - metrics.borderlessCardSideMargin * 2,
+                width: max(1, slotWidth - metrics.borderlessCardSideMargin * 2),
                 aspectRatio: 16.0 / 9.0,
                 title: aggregated.library.title,
                 subtitle: subtitle.isEmpty ? nil : subtitle,
@@ -2576,7 +2631,7 @@ struct LibraryCardView: View {
     private var framedCard: some View {
         VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing) {
             artwork
-                .frame(width: metrics.landscapeWidth, height: metrics.landscapeHeight)
+                .frame(width: framedArtworkWidth, height: framedArtworkWidth * metrics.landscapeHeight / metrics.landscapeWidth)
                 // Keep fill-scaled artwork inside its inset rounded bounds.
                 .clipShape(RoundedRectangle(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius, style: .continuous))
                 .plozzMediaEdge(cornerRadius: PlozzTheme.Metrics.mediumMediaCornerRadius)
@@ -2629,8 +2684,10 @@ struct LibraryCardView: View {
             .opacity(subtitle.isEmpty ? 0 : 1)
         }
         .padding(.bottom, metrics.landscapeCaptionInset)
-        .frame(width: metrics.landscapeWidth, alignment: .leading)
+        .frame(width: framedArtworkWidth, alignment: .leading)
     }
+
+    private var framedArtworkWidth: CGFloat { max(1, slotWidth - 2 * metrics.cardInset) }
 
     /// The borderless ("Posters") Libraries tile: the library artwork with no glass
     /// surface, rounded at the outer radius, wearing the shared `plozzFocusHalo`
@@ -2638,7 +2695,7 @@ struct LibraryCardView: View {
     /// Continue Watching / Latest landscape cards, so a Libraries tile stays flush
     /// with them in either card style.
     private var borderlessCard: some View {
-        let width = metrics.landscapeCardSlotWidth - metrics.borderlessCardSideMargin * 2
+        let width = max(1, slotWidth - metrics.borderlessCardSideMargin * 2)
         let push = metrics.focusCaptionPush(for: focusStyle)
         return VStack(alignment: .leading, spacing: metrics.landscapeCaptionTopSpacing + push) {
             Color.clear

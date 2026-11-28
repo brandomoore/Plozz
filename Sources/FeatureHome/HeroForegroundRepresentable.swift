@@ -42,7 +42,7 @@ struct HeroForegroundRepresentable: UIViewRepresentable {
         let view = HeroForegroundUIView()
         view.logoSize = logoSize
         view.textSize = textSize
-        view.appTextScale = context.environment.plozzAppTextScale
+        view.appTextScale = context.environment.plozzHeroBaseTextScale
         view.semanticContentAttribute =
             context.environment.layoutDirection == .rightToLeft
             ? .forceRightToLeft
@@ -61,7 +61,7 @@ struct HeroForegroundRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: HeroForegroundUIView, context: Context) {
         uiView.logoSize = logoSize
         uiView.textSize = textSize
-        uiView.appTextScale = context.environment.plozzAppTextScale
+        uiView.appTextScale = context.environment.plozzHeroBaseTextScale
         uiView.semanticContentAttribute =
             context.environment.layoutDirection == .rightToLeft
             ? .forceRightToLeft

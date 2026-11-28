@@ -23,7 +23,7 @@ struct PlozziOSRelatedSection: View {
     var onSelect: (MediaItem, MediaArtworkZoomSource) -> Void
 
     var body: some View {
-        PlozziOSHomeRailLayout { metrics in
+        PlozziOSHomeRailLayout(pageInset: inset) { metrics in
             section(metrics: metrics)
         }
     }
@@ -49,7 +49,9 @@ struct PlozziOSRelatedSection: View {
                             card(item, width: metrics.cardSlotWidth(for: .poster, cardStyle: cardStyle))
                         }
                     }
+                    .scrollTargetLayout()
                 }
+                .scrollTargetBehavior(.viewAligned(limitBehavior: .never))
                 .contentMargins(
                     .horizontal,
                     PlozziOSMediaRailLayout.artworkAlignedInset(inset, metrics: metrics, cardStyle: cardStyle),

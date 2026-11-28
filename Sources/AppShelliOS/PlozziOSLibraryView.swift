@@ -573,10 +573,7 @@ private struct PlozziOSLibraryContentModeControl: View {
 
 struct PlozziOSLibraryRecommendationRow: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardStyle) private var cardStyle
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ScaledMetric(relativeTo: .headline) private var accessiblePosterWidth: CGFloat = 116
     let section: LibrarySection
     let spoilerSettings: SpoilerSettings
     let showsSeriesArtwork: Bool
@@ -584,13 +581,19 @@ struct PlozziOSLibraryRecommendationRow: View {
     let onSelect: (MediaItem, MediaArtworkZoomSource) -> Void
 
     var body: some View {
+        let style: PosterCardView.Style = section.id == "continueWatching"
+            ? continueWatchingLayout.cardStyle
+            : (section.style.forMediaGroup(section.items) == .poster ? .poster : .landscape)
+        PlozziOSHomeRailLayout(isContinueWatching: style == .landscape && section.id == "continueWatching") { metrics in
+            rail(metrics: metrics, style: style)
+        }
+    }
+
+    private func rail(metrics: PlozzMetrics, style: PosterCardView.Style) -> some View {
         let inset = PlozziOSPageLayout.horizontalInset(
             for: horizontalSizeClass, usesDesktopSizing: metrics.usesDesktopSizing
         )
-        let style: PosterCardView.Style = section.id == "continueWatching"
-            ? continueWatchingLayout.cardStyle
-            : (section.style == .poster ? .poster : .landscape)
-        PlozziOSMediaSection(
+        return PlozziOSMediaSection(
             title: section.displayName,
             artworkInset: cardStyle == .framed ? metrics.cardInset : 0
         ) {
@@ -600,21 +603,26 @@ struct PlozziOSLibraryRecommendationRow: View {
                     spacing: PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
                 ) {
                     ForEach(MediaRowView.uniqued(section.items), id: \.stablePresentationID) { item in
+                        let itemStyle: PosterCardView.Style = section.id != "continueWatching" && item.isPersonalVideo ? .landscape : style
                         MediaArtworkZoomButton(id: item.stablePresentationID) { source in
                             onSelect(item, source)
                         } label: {
                             PlozziOSPosterCard(
-                                item: item, style: style,
+                                item: item, style: itemStyle,
                                 showsSeriesArtwork: showsSeriesArtwork,
                                 spoilerSettings: spoilerSettings,
                                 showsResumeChip: section.id == "continueWatching"
                             )
-                            .frame(width: cardWidth(style: style))
+                            .frame(width: metrics.cardSlotWidth(
+                                for: itemStyle, cardStyle: cardStyle, showsSeriesArtwork: showsSeriesArtwork
+                            ))
                         }
                         .buttonStyle(.plain)
                     }
                 }
+                .scrollTargetLayout()
             }
+            .scrollTargetBehavior(.viewAligned(limitBehavior: .never))
             .contentMargins(.horizontal,
                             PlozziOSMediaRailLayout.artworkAlignedInset(inset, metrics: metrics, cardStyle: cardStyle),
                             for: .scrollContent)
@@ -622,12 +630,6 @@ struct PlozziOSLibraryRecommendationRow: View {
         }
     }
 
-    private func cardWidth(style: PosterCardView.Style) -> CGFloat {
-        let width = metrics.cardSlotWidth(for: style, cardStyle: cardStyle, showsSeriesArtwork: showsSeriesArtwork)
-        return style == .poster && dynamicTypeSize.isAccessibilitySize
-            ? max(width, accessiblePosterWidth)
-            : width
-    }
 }
 
 private struct PlozziOSLibraryItemCell: View {

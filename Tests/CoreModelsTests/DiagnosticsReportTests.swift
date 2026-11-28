@@ -56,4 +56,38 @@ final class DiagnosticsReportTests: XCTestCase {
         XCTAssertEqual(report.recentLogTail.count, 401)
         XCTAssertTrue(report.recentLogTail.hasPrefix("…"))
     }
+
+    func testEpisodeRailCanBeCopiedFromReportQRWithoutPostingOrExportingItemIdentity() throws {
+        var selected = MediaItem(id: "private-id", title: "private-title", kind: .episode,
+                                 seasonNumber: 1, episodeNumber: 6, sourceAccountID: "private-server")
+        selected.scheduledAirDate = Date.distantFuture
+        let selection = EpisodeRailDiagnostic(list: .init(origin: .seasonRequest, returnedEpisodes: 5),
+                                              libraryCards: 5, upcomingCards: 5, selected: selected)
+        let report = DiagnosticsReport(appVersion: "1", appBuild: "2", providers: "Jellyfin",
+                                       repoURL: "https://github.com/example/example",
+                                       recentLogTail: "unrelated log line", episodeRail: selection)
+        let body = try XCTUnwrap(URLComponents(string: report.newIssueURLString)?.queryItems?.first { $0.name == "body" }?.value)
+        XCTAssertTrue(body.contains("list=seasonRequest returned_episodes=5"))
+        XCTAssertTrue(body.contains("cards=10 library=5 upcoming=5"))
+        XCTAssertTrue(body.contains("selected=upcoming season=1 episode=6"))
+        XCTAssertFalse(body.contains("private-"))
+        XCTAssertFalse(body.contains("unrelated log line"))
+        selected.scheduledAirDate = nil
+        let cached = EpisodeRailDiagnostic(list: .snapshot, libraryCards: 10, upcomingCards: 0, selected: selected)
+        XCTAssertTrue(cached.supportText.contains("list=snapshot returned_episodes=unknown"))
+        XCTAssertTrue(cached.supportText.contains("selected=snapshot"))
+    }
+
+    @MainActor
+    func testProfileSwitchInvalidatesEvenARetainedDetailOrSupportForm() {
+        let store = EpisodeRailDiagnosticStore()
+        let selection = EpisodeRailDiagnostic(list: .snapshot, libraryCards: 1, upcomingCards: 0,
+                                              selected: MediaItem(id: "1", title: "", kind: .episode))
+        store.record(selection)
+        XCTAssertEqual(store.lastSelection, selection)
+        store.invalidate()
+        XCTAssertNil(store.lastSelection)
+        store.record(selection)
+        XCTAssertNil(store.lastSelection)
+    }
 }

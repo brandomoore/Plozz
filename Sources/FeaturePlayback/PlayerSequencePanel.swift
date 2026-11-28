@@ -11,6 +11,7 @@ struct PlayerSequenceLayout {
     let cardMetrics: PlozzMetrics
     let contained: Bool
     let hasError: Bool
+    var viewportWidth: CGFloat = 0
 
     var compact: Bool { metrics.contentHeight < 160 }
     var gap: CGFloat { compact ? 6 : 10 }
@@ -32,20 +33,21 @@ struct PlayerSequenceLayout {
     }
     var bottomInset: CGFloat { cardMetrics.cardInset + (contained ? 0 : cardMetrics.landscapeCaptionInset) }
     var captionFocusTravel: CGFloat { cardMetrics.focusCaptionPush(for: .system) / 2 }
-    var imageHeight: CGFloat {
+    private var maximumImageHeight: CGFloat {
         rowHeight - cardMetrics.cardInset - bottomInset
             - cardMetrics.landscapeCaptionTopSpacing - titleHeight
     }
-    var imageWidth: CGFloat { (imageHeight * 16 / 9).rounded() }
+    var imageWidth: CGFloat { max(1, cardWidth - cardMetrics.cardInset * 2) }
+    var imageHeight: CGFloat { viewportWidth > 0 ? min(maximumImageHeight, imageWidth * 9 / 16) : maximumImageHeight }
     var cardWidth: CGFloat {
-        imageWidth + cardMetrics.cardInset * 2
-    }
-    var previousArtworkPeek: CGFloat { 24 }
-    var episodePeekInset: CGFloat {
-        previousArtworkPeek + columnSpacing + cardMetrics.cardInset
+        let inset = cardMetrics.cardInset
+        let preferred = (maximumImageHeight * 16 / 9).rounded() + inset * 2
+        // It's the inset still, not the playlist's surrounding glass, that peeks.
+        return MediaRailViewport(width: viewportWidth, spacing: columnSpacing)
+            .slot(preferred: preferred, sideMargin: inset, rounding: .up)
     }
     func episodeOffset(for index: Int) -> CGFloat {
-        max(0, CGFloat(index) * (cardWidth + columnSpacing) - episodePeekInset)
+        CGFloat(index) * (cardWidth + columnSpacing)
     }
 }
 
@@ -67,6 +69,7 @@ struct PlayerSequencePanel: View {
     @State private var displayedEpisodes: EpisodeRowContent?
     @State private var episodeRowIsScrolling = false
     @State private var nativeEpisodeFocusID: PlayerEpisodeEntry.ID?
+    @State private var viewportWidth: CGFloat = 0
 
     private struct EpisodeRowContent: Equatable {
         let entries: [PlayerEpisodeEntry]
@@ -85,7 +88,8 @@ struct PlayerSequencePanel: View {
             metrics: metrics,
             cardMetrics: cardMetrics,
             contained: source == .episodes,
-            hasError: source == .playlist && player.playlistContext?.loadError != nil
+            hasError: source == .playlist && player.playlistContext?.loadError != nil,
+            viewportWidth: metrics.isVertical ? 0 : viewportWidth
         )
     }
 
@@ -93,11 +97,13 @@ struct PlayerSequencePanel: View {
         Group {
             if source == .episodes {
                 content
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
                     .modifier(PlayerEpisodePanelSurface(layout: layout))
             } else if source == .continueWatching {
                 content.modifier(PlayerCardHeight(metrics: metrics))
             } else {
                 content.frame(height: metrics.cardHeight)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -143,7 +149,7 @@ struct PlayerSequencePanel: View {
         if let error = browser.loadError {
             errorRow(error) { Task { await browser.loadIfNeeded() } }
         } else if browser.isLoading || !browser.hasLoaded {
-            PlayerEpisodeLoadingRow(layout: layout, showsPrevious: browser.initialHasPreviousEpisode)
+            PlayerEpisodeLoadingRow(layout: layout)
             .allowsHitTesting(false)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Loading episodes…")
@@ -186,6 +192,7 @@ struct PlayerSequencePanel: View {
             }
         }
         .frame(height: layout.rowHeight)
+        .playerMediaRailClip(clearance: metrics.contentPadding)
         .focused($focus, equals: nativeEpisodeFocusTarget(browser))
         .task(id: previousEpisodeLoadID) {
             guard previousEpisodeLoadID != nil else { return }
@@ -413,7 +420,8 @@ struct PlayerSequencePanel: View {
                     .padding(.trailing, metrics.contentPadding)
             }
             .frame(height: layout.rowHeight)
-            .scrollClipDisabled()
+            .scrollTargetBehavior(.viewAligned)
+            .playerMediaRailClip(clearance: metrics.contentPadding)
         }
     }
 
@@ -565,7 +573,6 @@ struct PlayerEpisodeArtworkOverlay: View {
 
 struct PlayerEpisodeLoadingRow: View {
     let layout: PlayerSequenceLayout
-    let showsPrevious: Bool
 
     var body: some View {
         GeometryReader { geometry in
@@ -584,11 +591,10 @@ struct PlayerEpisodeLoadingRow: View {
                     }
                     .fixedSize(horizontal: true, vertical: false)
                     .frame(width: geometry.size.width, alignment: .leading)
-                    .offset(x: showsPrevious ? -layout.episodeOffset(for: 1) : 0)
                 }
             }
             .scrollDisabled(true)
-            .scrollClipDisabled()
+            .playerMediaRailClip(clearance: layout.metrics.contentPadding)
         }
         .frame(height: layout.rowHeight)
     }

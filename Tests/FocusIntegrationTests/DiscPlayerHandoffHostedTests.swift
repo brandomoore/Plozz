@@ -141,7 +141,7 @@ final class DiscPlayerHandoffHostedTests: XCTestCase {
 }
 
 @MainActor
-private final class DiscHandoffEngine: VideoEngine {
+final class DiscHandoffEngine: VideoEngine {
     var discMenu: DiscMenuPlaybackState?
     let displayName = "Disc handoff fixture"
     let status: VideoEngineStatus = .ready

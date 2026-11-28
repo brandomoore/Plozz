@@ -338,7 +338,7 @@ public struct PosterCardView: View {
         if showsSeriesArtwork {
             return style == .poster ? .extendedPortrait(blurredReflection: !reduceTransparency) : .extended
         }
-        if PosterCardPresentation.fitsContainerArtwork(for: item.kind) { return .fitted }
+        if PosterCardPresentation.fitsArtwork(for: item) { return .fitted }
         return hideThumbnail && !nativeUsesProtectedArtwork ? .blurred : .original
     }
 
@@ -776,6 +776,9 @@ public struct PosterCardView: View {
         } else if reservesSubtitleSpace {
             Text(verbatim: " ")
                 .font(.system(size: captionSubtitleFontSize))
+                #if os(tvOS)
+                .fixedSize(horizontal: false, vertical: true)
+                #endif
                 .hidden()
         }
     }
@@ -1045,7 +1048,7 @@ public struct PosterCardView: View {
             pinIdentity: artworkPolicy.pinIdentity(for: item),
             content: { image in
                 image.resizable()
-                    .aspectRatio(contentMode: PosterCardPresentation.fitsContainerArtwork(for: item.kind) ? .fit : .fill)
+                    .aspectRatio(contentMode: PosterCardPresentation.fitsArtwork(for: item) ? .fit : .fill)
                     .blur(radius: hideThumbnail && spoilerSettings.mode == .blur ? 28 : 0)
                     .overlay(alignment: .topTrailing) {
                         if PosterCardPresentation.usesFolderArtwork(for: item.kind) {
@@ -1106,10 +1109,8 @@ public struct PosterCardView: View {
         ArtworkRouter.seriesArtworkItem(for: episode)
     }
 
-    /// Media posters reject landscape stills, but a container's curated cover
-    /// may legitimately be landscape or square.
     private var posterAspectGuard: CGFloat? {
-        style == .poster && !PosterCardPresentation.preservesContainerArtwork(for: item.kind) ? 0.9 : nil
+        PosterCardPresentation.maximumAspectRatio(for: item, style: style)
     }
 
     /// Spoiler-safe art for `.placeholder` mode: only ever **series-level** art,
@@ -1493,6 +1494,14 @@ struct ContinueWatchingSeriesLogo: View {
 /// SwiftUI. Folders retain the shared poster footprint/focus mechanics but never
 /// look like playable, unwatched media.
 enum PosterCardPresentation {
+    static func fitsArtwork(for item: MediaItem) -> Bool {
+        item.isPersonalVideo || fitsContainerArtwork(for: item.kind)
+    }
+
+    static func maximumAspectRatio(for item: MediaItem, style: PosterCardView.Style) -> CGFloat? {
+        style == .poster && !item.isPersonalVideo && !preservesContainerArtwork(for: item.kind) ? 0.9 : nil
+    }
+
     static func fitsContainerArtwork(for kind: MediaItemKind) -> Bool {
         kind == .playlist || kind == .folder
     }
@@ -1797,7 +1806,7 @@ public extension MediaItem {
         artworkPolicy: CardArtworkPolicy = .standard,
         policy: ArtworkPresentationPolicy = .init()
     ) -> [URL] {
-        if artworkPolicy == .extra {
+        if artworkPolicy == .extra || isPersonalVideo {
             return artworkPolicy.references(for: self, style: style, policy: policy).compactMap {
                 if case .remote(let url) = $0 { return url }
                 return nil
@@ -1843,7 +1852,7 @@ public extension PosterCardView {
         let ladder = item.kind == .episode
             ? item.seriesArtworkReferences(prefersPortrait: false)
             : policy.references(for: item, style: .landscape, prefersLandscapeKeyArt: false, policy: presentationPolicy)
-        guard presentationPolicy.prefersTextlessArtwork else { return ladder }
+        guard !item.isPersonalVideo, presentationPolicy.prefersTextlessArtwork else { return ladder }
         return PosterCardPresentation.preferringTextless(
             TextlessBackdropStore.shared.backdrop(for: item),
             over: ladder

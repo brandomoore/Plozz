@@ -115,10 +115,20 @@ struct MusicCard: View {
     @Environment(\.plozzMetrics) private var metrics
     @Environment(\.plozzCardStyle) private var cardStyle
     @Environment(\.plozzCardFocusStyle) private var focusStyle
+    @Environment(\.specialtyMediaRailViewport) private var viewport
 
     /// The artwork edge length, scaled by the active UI density so music tiles
     /// grow/shrink in step with the movie/show cards.
-    private var scaledWidth: CGFloat { (width * metrics.scale).rounded() }
+    private var scaledWidth: CGFloat {
+        #if os(tvOS)
+        let borderless = focusStyle.usesSystemEffect || cardStyle == .borderless
+        let inset = borderless ? metrics.borderlessCardSideMargin : metrics.cardInset
+        let preferred = (width * metrics.scale).rounded() + 2 * inset
+        return max(1, viewport.slot(preferred: preferred, sideMargin: inset) - 2 * inset)
+        #else
+        return viewport.slot(preferred: 150)
+        #endif
+    }
 
     init(
         artworkURL: URL?,
@@ -168,13 +178,13 @@ struct MusicCard: View {
         #else
         Button(action: action) {
             VStack(alignment: .leading, spacing: 8) {
-                artwork.frame(width: 150, height: 150)
+                artwork.frame(width: scaledWidth, height: scaledWidth)
                 BorderlessCardCaption(
                     title: Text(verbatim: title), subtitle: subtitle,
                     horizontalInset: 0, usesPosterTypography: true
                 )
             }
-            .frame(width: 150, alignment: .leading)
+            .frame(width: scaledWidth, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -348,30 +358,33 @@ struct ArtistCard: View {
     let action: () -> Void
 
     @Environment(\.plozzMetrics) private var metrics
+    @Environment(\.specialtyMediaRailViewport) private var viewport
 
     var body: some View {
         #if os(iOS)
+        let diameter = viewport.slot(preferred: 150)
         Button(action: action) {
             VStack(spacing: 8) {
                 MusicArtworkImage(
                     url: artist.artworkURL,
                     systemPlaceholder: "music.mic",
-                    cornerRadius: 75,
+                    cornerRadius: diameter / 2,
                     asyncFallbackURL: MusicArtworkFallback.artistImage(name: artist.name),
                     pinIdentity: artist.id
                 )
-                .frame(width: 150, height: 150)
+                .frame(width: diameter, height: diameter)
                 .clipShape(Circle())
                 Text(artist.name)
                     .font(.system(size: metrics.posterTitleFontSize, weight: .semibold))
                     .lineLimit(2)
             }
-            .frame(width: 150)
+            .frame(width: diameter)
         }
         .buttonStyle(.plain)
         #else
-        let diameter = metrics.artistTileDiameter
-        let slot = diameter + metrics.circleFocusPadding * 2
+        let margin = metrics.circleFocusPadding
+        let slot = viewport.slot(preferred: metrics.artistTileDiameter + 2 * margin, sideMargin: margin)
+        let diameter = max(1, slot - 2 * margin)
         CircularFocusTile(
             diameter: diameter,
             focusPadding: metrics.circleFocusPadding,

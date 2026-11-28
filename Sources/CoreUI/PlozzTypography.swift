@@ -40,6 +40,16 @@ public enum PlozzTypography {
         return CGFloat(local) * app
     }
 
+    /// Preserve the system curve. Above the profile default, secondary facts
+    /// take a quarter of the extra boost given to titles and reading text.
+    public static func heroMetadataScale(local: Double, app: CGFloat = 1) -> CGFloat {
+        #if os(tvOS)
+        return scale(local: local > 1 ? 1 + (local - 1) / 4 : local, app: app)
+        #else
+        return scale(local: local, app: app)
+        #endif
+    }
+
     public static func heroScrimScale(textScale: CGFloat, logoSize: HeroLogoSize, lines: Int) -> Double {
         // Existing scrims were authored around three 22pt lines with 2pt spacing.
         let originalHeight: CGFloat = 22 * 3 + 2 * 2
@@ -54,6 +64,16 @@ private struct AppTextScaleKey: EnvironmentKey {
 }
 
 public extension EnvironmentValues {
+    /// Heroes share the native TV metadata curve. The surface adds its own
+    /// profile adjustment; badges must not apply Dynamic Type a second time.
+    var plozzHeroBaseTextScale: CGFloat {
+        #if os(tvOS)
+        plozzAppTextScale * MetadataBadgeSpacing.textScale(for: dynamicTypeSize)
+        #else
+        plozzAppTextScale
+        #endif
+    }
+
     /// Extension point for app-wide sizing. No global preference is exposed yet.
     var plozzAppTextScale: CGFloat {
         get { self[AppTextScaleKey.self] }

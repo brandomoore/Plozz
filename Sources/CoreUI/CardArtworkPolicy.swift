@@ -50,6 +50,7 @@ public enum CardArtworkPolicy: Hashable, Sendable {
     }
 
     func pinIdentity(for item: MediaItem) -> String {
+        if item.isPersonalVideo { return "\(item.stablePresentationID)|personal-video" }
         let identity: String
         if let subject = item.artworkLookupSubject {
             let ids = subject.providerIDs.sorted { $0.key < $1.key }
@@ -70,7 +71,7 @@ public enum CardArtworkPolicy: Hashable, Sendable {
     }
 
     func usesLandscapeKeyArt(for item: MediaItem, style: PosterCardView.Style) -> Bool {
-        self == .standard && style == .landscape && !item.isTrailer
+        self == .standard && style == .landscape && !item.isTrailer && !item.isPersonalVideo
             && (item.kind == .movie || item.kind == .series)
     }
 
@@ -93,7 +94,7 @@ public enum CardArtworkPolicy: Hashable, Sendable {
         for item: MediaItem, style: PosterCardView.Style, prefersLandscapeKeyArt: Bool = true,
         policy: ArtworkPresentationPolicy = .init()
     ) -> [ArtworkReference] {
-        if self == .extra {
+        if self == .extra || item.isPersonalVideo {
             // Primary belongs to this clip; detail/backdrop art can belong to its
             // parent movie. Keep every native fallback, but only after primary.
             let primary = explicit(.poster, for: item)

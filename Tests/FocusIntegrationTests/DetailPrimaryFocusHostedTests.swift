@@ -11,6 +11,69 @@ import XCTest
 
 @MainActor
 final class DetailPrimaryFocusHostedTests: XCTestCase {
+    func testSeriesEpisodeRailReservesItsEnlargedCaptionHeightBelowTheHero() {
+        let series = MediaItem(id: "rail-height", title: "Series", kind: .series, allowsTitleBasedMetadataMatching: false)
+        for cardHeight: CGFloat in [459, 674] {
+            let browser = SeriesEpisodeBrowser(
+                series: series, recedeModel: SeriesHeroRecedeModel(), showsSeasons: false, focusAnchorID: "anchor",
+                seasonContent: { EmptyView() },
+                episodeContent: {
+                    ScrollView(.horizontal) {
+                        LazyHStack { Color.red.frame(width: 529, height: cardHeight) }
+                    }
+                }
+            )
+            let host = UIHostingController(rootView: browser.fixedSize(horizontal: false, vertical: true))
+            let measured = host.sizeThatFits(in: CGSize(width: 1920, height: 1080))
+            XCTAssertEqual(measured.height, SeriesEpisodeBrowserLayout.seasonBarHeight
+                + max(cardHeight, SeriesEpisodeBrowserLayout.episodeRailHeight), accuracy: 1)
+        }
+    }
+
+    func testSelectingRenderedEpisodeCapturesTheListUsedByTheSupportReport() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let model = PrimaryFocusModel(mode: .ready)
+        var provider = PrimaryFocusProvider(kind: .series, gate: model.gate)
+        provider.repeatsEpisode = true
+        let detail = ItemDetailViewModel(provider: provider, itemID: provider.seed.id, initialItem: provider.seed,
+                                         sourceAccountID: "fixture", onlineTrailerResolver: { _ in [] })
+        let store = EpisodeRailDiagnosticStore()
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            detail.suspendEnrichment()
+            previous?.makeKeyAndVisible()
+        }
+        await model.gate.release()
+        await detail.load()
+        var played: String?
+        window.rootViewController = UIHostingController(rootView:
+            ItemDetailView(viewModel: detail, onPlay: { played = $0.id }, onSelectChild: { _ in })
+                .environment(model.trailer)
+                .environment(model.background)
+                .environment(\.episodeRailDiagnostics, store)
+                .environment(\.plozzCardFocusStyle, .system)
+        )
+        window.makeKeyAndVisible()
+        func posters(in view: UIView) -> [NativePosterButton] {
+            if let button = view as? NativePosterButton { return [button] }
+            return view.subviews.flatMap { posters(in: $0) }
+        }
+        try await waitUntil(timeout: .seconds(15)) { !posters(in: window).isEmpty }
+        let buttons = posters(in: window)
+        let button = try XCTUnwrap(buttons.count == 1 ? buttons.first : nil, "The fixture has one episode card.")
+        XCTAssertNil(store.lastSelection)
+        button.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(played, "primary-episode")
+        let selection = try XCTUnwrap(store.lastSelection)
+        XCTAssertEqual(selection.list, .init(origin: .childrenRequest, returnedEpisodes: 2))
+        XCTAssertEqual(selection.displayedCards, 1)
+        XCTAssertEqual(selection.episodeNumber, 1)
+        XCTAssertFalse(selection.selectedUpcoming)
+    }
+
     func testDetailCallbackRefreshDoesNotRebuildEpisodeMenuActions() async throws {
         throw XCTSkip("The hosted runner rebuilds episode menu callbacks between revision updates; the deterministic menu-content tests cover the identity guard.")
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
@@ -639,7 +702,8 @@ private actor PrimaryFocusLoadGate {
     }
 }
 
-private struct PrimaryFocusProvider: MediaProvider {
+private struct PrimaryFocusProvider: EpisodeListingEvidenceProviding {
+    var repeatsEpisode = false
     let mediaKind: MediaItemKind
     let gate: PrimaryFocusLoadGate
     let holdsResume: Bool
@@ -702,6 +766,12 @@ private struct PrimaryFocusProvider: MediaProvider {
             runtime: 1800, ratings: [.init(source: .imdb, value: 2.3, scale: .outOfTen)],
             allowsTitleBasedMetadataMatching: false, sourceAccountID: "fixture"
         )]
+    }
+    func episodeListing(containerID: String, seriesID: String?) async throws -> EpisodeChildListing {
+        var items = try await children(of: containerID)
+        if repeatsEpisode, let first = items.first { items.append(first) }
+        return .init(items: items, evidence: .init(origin: seriesID == nil ? .childrenRequest : .seasonRequest,
+                                                    returnedEpisodes: items.filter { $0.kind == .episode }.count))
     }
     func libraries() async throws -> [MediaLibrary] { [] }
     func continueWatching(limit: Int) async throws -> [MediaItem] {

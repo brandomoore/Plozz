@@ -205,6 +205,132 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
         try await waitUntil { weakClock == nil }
     }
 
+    #if os(tvOS)
+    func testHDRDialogueRetainsFixedTransparentSurfaceAcrossLinesAndGaps() async throws {
+        let scene = try await activeScene()
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let model = LiveSubtitleModel()
+        let controls = PlayerControlsModel()
+        model.style.followsSystemStyle = false
+        model.style.fontFamily = .system
+        model.style.verticalPosition = 0.02
+        model.style.verticalAnchor = .bottom
+        model.style.positionReference = .screen
+        model.style.hdrLuminanceScale = 0.5
+        model.style.textColor = .init(red: 0, green: 1, blue: 0, alpha: 1)
+        model.style.opacity = 1
+        model.isHDR = true
+        let video = window.bounds.insetBy(dx: 0, dy: window.bounds.height * 0.13)
+        model.videoRect = video
+        model.beginLiveFeed()
+        model.updateLiveCues([
+            .init(id: 1, start: 0, end: 2, body: .text(.init("First line"))),
+            .init(id: 2, start: 3, end: 8, body: .text(.init("Second line\ncontinues here")))
+        ])
+        let host = UIHostingController(rootView: LiveSubtitleOverlay(
+            model: model, controls: controls, scheduledArtwork: ScheduledASSArtworkView()
+        ))
+        host.safeAreaRegions = []
+        host.view.backgroundColor = .red
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        func textSurface(_ v: UIView) -> SubtitleLineView? {
+            if let line = v as? SubtitleLineView { return line }
+            return v.subviews.lazy.compactMap { textSurface($0) }.first
+        }
+        func regions() -> (top: CGRect, bottom: CGRect) {
+            self.coloredRegions(in: window, greenThreshold: 90)
+        }
+        let pixel = window.bounds.width / 480
+        model.tick(1)
+        var first = CGRect.null
+        try await waitUntil {
+            let rendered = regions()
+            first = rendered.bottom
+            return !first.isNull && first.minY > video.maxY && abs(rendered.top.maxY - window.bounds.maxY) <= pixel
+        }
+        let line = try XCTUnwrap(textSurface(host.view))
+        let surface = line.convert(line.bounds, to: window)
+        XCTAssertTrue(!line.isOpaque && surface.width == window.bounds.width)
+        XCTAssertEqual(surface.minY, video.maxY, accuracy: 1)
+        model.tick(2.5)
+        try await waitUntil {
+            let rendered = regions()
+            return rendered.bottom.isNull && abs(rendered.top.maxY - window.bounds.maxY) <= pixel
+                && textSurface(host.view) === line && line.convert(line.bounds, to: window) == surface
+        }
+        model.tick(4)
+        var second = CGRect.null
+        try await waitUntil {
+            second = regions().bottom
+            return second.minY > video.maxY && second.height > first.height * 1.5 && !second.isNull
+        }
+        XCTAssertTrue(textSurface(host.view) === line)
+        XCTAssertTrue(line.convert(line.bounds, to: window) == surface)
+        XCTAssertEqual(second.maxY, first.maxY, accuracy: pixel)
+        model.tick(1)
+        try await waitUntil { regions().bottom == first && textSurface(host.view) === line }
+        model.tick(4)
+        try await waitUntil { regions().bottom == second && textSurface(host.view) === line }
+        controls.subtitleLayout.frame = CGRect(x: 0, y: video.maxY - 120, width: window.bounds.width, height: 260)
+        try await waitUntil {
+            let raised = regions().bottom
+            return !raised.isNull && raised.maxY < video.maxY - 120
+        }
+        controls.subtitleLayout.frame = nil
+        try await waitUntil { regions().bottom == second }
+        model.videoRect = window.bounds.insetBy(dx: 0, dy: 5)
+        try await waitUntil {
+            let rendered = regions()
+            return rendered.bottom == second && abs(rendered.top.maxY - window.bounds.maxY) <= pixel
+                && (textSurface(host.view)?.bounds.width ?? window.bounds.width) < window.bounds.width
+        }
+    }
+    #endif
+
+    func testHeldDialogueTracksPictureBottomWithoutFollowingChangingSideBars() async throws {
+        let scene = try await activeScene()
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let model = LiveSubtitleModel()
+        model.style.followsSystemStyle = false
+        model.style.fontFamily = .system
+        model.style.positionReference = .picture
+        model.style.verticalAnchor = .bottom
+        model.style.verticalPosition = 0
+        model.style.horizontalOffset = 0.2
+        let video = window.bounds.insetBy(dx: 0, dy: window.bounds.height * 0.1)
+        model.videoRect = video
+        model.loadPrimary(SubtitleCueParser.parse("WEBVTT\n\n00:00:00.000 --> 00:01:00.000\nHeld dialogue.\n", id: 1))
+        model.tick(1)
+        let host = UIHostingController(rootView: LiveSubtitleOverlay(model: model, controls: PlayerControlsModel()))
+        host.safeAreaRegions = []
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        for (dx, dy) in [(0.0, 0.0), (15.0, 12.0), (-15.0, 24.0)] {
+            let active = video.insetBy(dx: 20, dy: dy).offsetBy(dx: dx, dy: 0)
+            model.activePictureRect = active
+            try await waitUntil {
+                window.layoutIfNeeded()
+                guard let frame = self.frames(in: host.view, relativeTo: window).first else { return false }
+                return abs(frame.maxY - active.maxY) <= 1
+            }
+            let frame = try XCTUnwrap(frames(in: host.view, relativeTo: window).first)
+            XCTAssertEqual(frame.midX, video.midX + 0.05 * video.width, accuracy: 1)
+        }
+    }
+
     func testSeparateControlsHostLiftsAndRestoresRenderedSubtitlesWithoutChangingSavedStyle() async throws {
         let scene = try await activeScene()
         let previous = scene.windows.first(where: \.isKeyWindow)
@@ -545,7 +671,7 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
         return view.subviews.flatMap { frames(in: $0, relativeTo: window) }
     }
 
-    private func coloredRegions(in view: UIView) -> (top: CGRect, bottom: CGRect) {
+    private func coloredRegions(in view: UIView, greenThreshold: UInt8 = 220) -> (top: CGRect, bottom: CGRect) {
         let image = UIGraphicsImageRenderer(bounds: view.bounds).image { _ in
             _ = view.drawHierarchy(in: view.bounds, afterScreenUpdates: true)
         }
@@ -567,7 +693,7 @@ final class SubtitleControlAvoidanceHostedTests: XCTestCase {
                 let offset = (y * width + x) * 4
                 let point = CGRect(x: x, y: y, width: 1, height: 1)
                 if bytes[offset] > 220 && bytes[offset + 1] < 40 { red = red.union(point) }
-                if bytes[offset + 1] > 220 && bytes[offset] < 40 { green = green.union(point) }
+                if bytes[offset + 1] > greenThreshold && bytes[offset] < 40 { green = green.union(point) }
             }
         }
         let transform = CGAffineTransform(scaleX: view.bounds.width / CGFloat(width),

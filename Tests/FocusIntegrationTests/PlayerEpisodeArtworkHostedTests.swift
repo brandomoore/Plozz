@@ -675,7 +675,7 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
         try await assertStablePrepend(direction: .rightToLeft)
     }
 
-    func testOpeningMiddleEpisodeShowsPreviousArtworkAndKeepsTheFocusedCardFullyVisible() async throws {
+    func testOpeningMiddleEpisodeShowsQuarterOfNextStillAndKeepsTheFocusedCardFullyVisible() async throws {
         for direction in [LayoutDirection.leftToRight, .rightToLeft] {
             let playing = EpisodeRowProvider.episode(season: 2, number: 2)
             let player = PlayerViewModel(provider: EpisodeRowProvider(), itemID: playing.id, episodeItem: playing)
@@ -687,15 +687,17 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
                 }
                 try await Task.sleep(for: .milliseconds(200))
                 let collection = try XCTUnwrap(self.scrollView(in: window) as? UICollectionView)
-                let previous = try XCTUnwrap(self.nativePosters(in: window).first { $0.accessibilityLabel == "Season 2 Episode 1" })
                 let viewport = collection.convert(collection.bounds, to: window)
-                let artwork = previous.contentView.convert(previous.contentView.bounds, to: window)
-                XCTAssertEqual(artwork.intersection(viewport).width, 24, accuracy: 1)
                 let current = try XCTUnwrap(self.nativePosters(in: window).first { $0.accessibilityLabel == playing.title })
                 let currentArtwork = current.contentView.convert(current.contentView.bounds, to: window)
-                let gap = direction == .leftToRight
-                    ? currentArtwork.minX - artwork.maxX : artwork.minX - currentArtwork.maxX
-                XCTAssertEqual(gap, 52, accuracy: 1)
+                XCTAssertTrue(viewport.contains(currentArtwork))
+                let partial = self.nativePosters(in: window).map {
+                    $0.contentView.convert($0.contentView.bounds, to: window)
+                }.filter { $0.intersects(viewport) && !viewport.contains($0) }
+                XCTAssertEqual(partial.count, 1)
+                let next = try XCTUnwrap(partial.first)
+                XCTAssertEqual(next.intersection(viewport).width, next.width / 4, accuracy: 1)
+                XCTAssertTrue(direction == .leftToRight ? next.maxX > viewport.maxX : next.minX < viewport.minX)
                 model.target = browser.initialEntryID
                 try await self.waitUntil {
                     (UIFocusSystem.focusSystem(for: window)?.focusedItem as? PlayerEpisodeNativeCell)?
@@ -704,9 +706,6 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
                 try await Task.sleep(for: .milliseconds(300))
                 let focused = try XCTUnwrap(self.nativePosters(in: window).first(where: \.isFocused))
                 XCTAssertTrue(viewport.contains(focused.convert(focused.bounds, to: window)))
-                XCTAssertGreaterThanOrEqual(previous.contentView.convert(previous.contentView.bounds, to: window)
-                    .intersection(viewport).width, 24,
-                    "Native focus may reveal more of the previous card to fit its lift, but must not hide the peek.")
             }
             await player.stop()
         }
@@ -947,7 +946,7 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
         }
     }
 
-    func testLoadingArtworkMatchesResolvedEpisodeFramesIncludingThePreviousPeek() async throws {
+    func testLoadingArtworkMatchesResolvedEpisodeFramesIncludingTheTrailingQuarter() async throws {
         for direction in [LayoutDirection.leftToRight, .rightToLeft] {
             for number in [1, 2] {
                 let provider = EpisodeRowProvider()
@@ -981,13 +980,15 @@ final class PlayerEpisodeArtworkHostedTests: XCTestCase {
                                              "Skeleton must paint the same artwork edges as loaded episode \(number), \(direction): \(artwork)")
                     }
                     if number > 1 {
-                        let previous = try XCTUnwrap(self.nativePosters(in: window).first { $0.accessibilityLabel == "Season 1 Episode 1" })
                         let collection = try XCTUnwrap(self.scrollView(in: window))
                         let viewport = collection.convert(collection.bounds, to: window)
-                        let peek = previous.contentView.convert(previous.contentView.bounds, to: window).intersection(viewport)
-                        XCTAssertEqual(peek.width, 24, accuracy: 1)
+                        let next = try XCTUnwrap(self.nativePosters(in: window).map {
+                            $0.contentView.convert($0.contentView.bounds, to: window)
+                        }.first { $0.intersects(viewport) && !viewport.contains($0) })
+                        let peek = next.intersection(viewport)
+                        XCTAssertEqual(peek.width, next.width / 4, accuracy: 1)
                         let peekInk = try self.brightness(of: skeleton, at: CGPoint(x: peek.midX, y: peek.midY), in: window)
-                        let gap = CGPoint(x: direction == .leftToRight ? peek.maxX + 8 : peek.minX - 8, y: peek.midY)
+                        let gap = CGPoint(x: direction == .leftToRight ? peek.minX - 8 : peek.maxX + 8, y: peek.midY)
                         let gapInk = try self.brightness(of: skeleton, at: gap, in: window)
                         XCTAssertGreaterThan(peekInk - gapInk, 8)
                     }

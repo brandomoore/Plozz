@@ -1740,7 +1740,7 @@ struct PlayerControlsCardStage<Content: View>: View {
     @State private var hasPresented = false
 
     var body: some View {
-        Group {
+        ZStack(alignment: .leading) {
             if hasPresented || isPresented {
                 content().transition(.identity)
             } else {
@@ -1750,6 +1750,9 @@ struct PlayerControlsCardStage<Content: View>: View {
                     .transition(.identity)
             }
         }
+        // Animate the stage, not its leaves. On first Down the newly mounted
+        // content has no parked frame of its own to interpolate from.
+        .geometryGroup()
         .onChange(of: isPresented, initial: true) { _, presented in
             if presented { hasPresented = true }
         }

@@ -12,8 +12,13 @@ catalog across playback states and locale changes on a retained pill.
 
 Home text sizing applies to both SwiftUI and persistent UIKit foregrounds.
 Detail Page, Showcase, and library Recommended have independent profile-scoped sizes.
-Title fallbacks, descriptions, metadata, and badge details scale together;
-artwork sizing and action controls remain independent. On Apple TV, Detail Page
+All tvOS hero text follows the full Apple TV Text Size curve. Above a surface's
+profile default, title fallbacks and descriptions receive the full local increase
+(up to 50%); genres, facts, credits and whole badges receive a quarter of that
+increase (up to 12.5%). Smaller profile sizes still reduce both together.
+Badge lettering, artwork, padding, gaps and borders keep their proportions.
+Home's custom action labels follow system button typography, not the profile
+slider; icon-only controls and wordmark sizing stay independent. On Apple TV, Detail Page
 text sizing also scales the episode titles and three-line synopses below episode
 artwork, including loading placeholders; other row/card labels remain independent.
 Compact mobile detail badges use their natural height when fully visible, with
@@ -21,24 +26,30 @@ Compact mobile detail badges use their natural height when fully visible, with
 Overflow disclosures retain their 44-point tap target.
 Episode synopses use the same font size and line spacing as hero descriptions at
 every adjustment, while episode titles stay larger and semibold.
+In the TV Detail settings preview, the episode row reserves space for its
+wrapped captions before the hero is positioned; the slider never shrinks the
+sample text to make it fit. The preview uses fictional content, not library data.
 TV episode descriptions are visible on every labeled card by default. The
 profile-scoped **Only show descriptions on focus** toggle in the detail-page label settings
 restores the delayed focus-only reveal. Hidden labels and spoiler protection
 still apply; label visibility presets do not reset this independent preference.
-Home's text column can use the same wider budget as an enlarged logo, even at
-default Text size. Smaller logos retain the original reading width; changing
-Text size alone never widens it. Both TV foreground renderers share this rule,
+Home's synopsis can use the same wider budget as an enlarged logo, even at
+default Text size. Smaller logos retain the original reading width. Enlarged
+certificates and genres may use more of the available width and wrap to a
+second line without widening the synopsis. Both TV foreground renderers share this rule,
 and mobile Home remains capped by its available screen width. Apple TV Detail
 descriptions can grow to the live facts/badges row's width, within the shared
 reading-width limit and the space reserved for right-side credits. Showcase
 and Recommended keep their existing column widths.
 Apple TV descriptions default to 24pt with 3pt additional line spacing; the
-slider spans 18–36pt. Detail descriptions stay capped at four lines, while Home
-may gain a fourth line when enlarged. Mobile typography is unchanged. Their scrims
+slider spans 18–36pt at standard system size. Detail descriptions stay capped at
+four lines, while Home may gain a fourth line when enlarged. Mobile typography is unchanged. Their scrims
 extend upward by the larger of the requested logo growth and description-height
 growth, without weakening default coverage or resizing the artwork.
-Showcase and Recommended keep their row positions and description budgets.
-Custom sizes use the actual space above the active row, not a fixed worst-case
+At larger native sizes Home reserves additional room before fitting its rails.
+Showcase and Recommended fit whole badge rows and shorten the synopsis before
+reducing the room for a wordmark. At standard system size,
+custom sizes use the actual space above the active row, not a fixed worst-case
 footprint. They fit the complete logo/metadata block down by one shared factor
 only when that space is insufficient; the requested proportions stay intact.
 Incoming titles use their destination size from the first frame, not a smaller

@@ -578,12 +578,11 @@ final class HomeLoadingLayoutTests: XCTestCase {
                         (resolved.landscapeWidth, metrics.landscapeWidth),
                         (resolved.continueWatchingWidth, metrics.continueWatchingWidth)
                     ] {
-                        let frameInset = style == .framed ? metrics.cardInset : 0
-                        let visibleWidth = artwork + 2 * frameInset
-                        let leading = DesktopMediaRailLayout.pageInset - frameInset
-                        let count = floor((width - leading) / (visibleWidth + metrics.cardSpacing))
-                        let peek = width - leading - count * (visibleWidth + metrics.cardSpacing)
-                        XCTAssertEqual(peek, metrics.cardSpacing, accuracy: 0.001)
+                        let inset = style == .framed ? metrics.cardInset : metrics.borderlessCardSideMargin
+                        let stride = artwork + 2 * inset + PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: style)
+                        let available = width - DesktopMediaRailLayout.pageInset
+                        let count = floor(available / stride)
+                        XCTAssertEqual(available - count * stride, artwork / 4, accuracy: 0.001)
                         XCTAssertLessThanOrEqual(artwork, maximum + 0.001)
                         XCTAssertGreaterThan(artwork, 0)
                     }
@@ -600,12 +599,12 @@ final class HomeLoadingLayoutTests: XCTestCase {
         }
     }
 
-    func testIPadContinueWatchingMatchesPosterPeekAcrossWidthsAndPreferences() {
+    func testTouchRailsKeepQuarterCardPeekAcrossWidthsAndPreferences() {
         for density in UIDensity.allCases {
             for typeSize in [DynamicTypeSize.large, .accessibility3] {
                 let metrics = PlozzMetrics.touch(density: density, dynamicTypeSize: typeSize)
                 for cardStyle in [CardStyle.borderless, .framed] {
-                    for width in stride(from: CGFloat(360), through: 1366, by: 17) {
+                    for width in stride(from: CGFloat(320), through: 1366, by: 17) {
                         let inset: CGFloat = width < 600 ? 22 : 36
                         let posters = PlozziOSHomeRailLayout<EmptyView>.posterMetrics(
                             in: width, inset: inset, metrics: metrics, cardStyle: cardStyle
@@ -616,39 +615,55 @@ final class HomeLoadingLayoutTests: XCTestCase {
                         )
                         XCTAssertEqual(fitted.posterWidth, posters.posterWidth)
                         XCTAssertEqual(fitted.posterHeight, posters.posterHeight)
-                        XCTAssertEqual(posters.landscapeWidth, metrics.landscapeWidth)
-                        XCTAssertEqual(posters.continueWatchingWidth, metrics.continueWatchingWidth)
                         let refitted = PlozziOSHomeRailLayout<EmptyView>.posterMetrics(
                             in: width, inset: inset, metrics: fitted, cardStyle: cardStyle,
                             isContinueWatching: true
                         )
-                        let frameInset = cardStyle == .framed ? metrics.cardInset : 0
-                        let available = width - inset + frameInset
-                        let posterStride = posters.posterWidth + 2 * frameInset + 12
-                        let posterPeek = available.truncatingRemainder(dividingBy: posterStride)
+                        let available = width - inset
+                        let slotInset = cardStyle == .framed ? metrics.cardInset : metrics.borderlessCardSideMargin
+                        let spacing = PlozziOSMediaRailLayout.stackSpacing(metrics: metrics, cardStyle: cardStyle)
+                        for artwork in [posters.posterWidth, posters.landscapeWidth, fitted.continueWatchingWidth] {
+                            let stride = artwork + 2 * slotInset + spacing
+                            let count = floor(available / stride)
+                            XCTAssertGreaterThanOrEqual(count, 1)
+                            XCTAssertEqual(available - count * stride, artwork / 4, accuracy: 0.001)
+                        }
+                        let sizeClass: UserInterfaceSizeClass = width < 600 ? .compact : .regular
+                        let frame = cardStyle == .framed ? metrics.cardInset : 0
+                        for artwork in [
+                            PlozziOSMediaLayout.episodeWidth(
+                                metrics: metrics, sizeClass: sizeClass, viewport: width, cardStyle: cardStyle
+                            ),
+                            PlozziOSMediaLayout.libraryWidth(
+                                in: width, metrics: metrics, sizeClass: sizeClass, cardStyle: cardStyle
+                            )
+                        ] {
+                            // These tiles have no borderless side margin. A touch
+                            // frame starts at the page inset (rather than before it).
+                            let span = available - frame
+                            let pitch = artwork + 2 * frame + PlozziOSMediaRailLayout.visibleSpacing
+                            XCTAssertEqual(span - floor(span / pitch) * pitch, artwork / 4, accuracy: 0.001)
+                        }
                         for seriesArtwork in [false, true] {
                             let artwork = fitted.artworkSize(for: .landscape, showsSeriesArtwork: seriesArtwork)
                             XCTAssertEqual(
                                 refitted.artworkSize(for: .landscape, showsSeriesArtwork: seriesArtwork),
                                 artwork, "Nested row reservations must not resize Continue Watching again."
                             )
-                            let cardStride = artwork.width + 2 * frameInset + 12
-                            let count = floor(available / cardStride + 0.000001)
-                            XCTAssertGreaterThanOrEqual(count, 1)
-                            XCTAssertEqual(available - count * cardStride, posterPeek, accuracy: 0.001)
+                            XCTAssertEqual(artwork.width, fitted.continueWatchingWidth)
                         }
                     }
                 }
             }
         }
-        for (width, expectedCount) in [(CGFloat(600), 2), (768, 2), (900, 3), (1194, 4), (1366, 4)] {
+        for (width, expectedCount) in [(CGFloat(600), 2), (768, 3), (900, 3), (1194, 4), (1366, 4)] {
             for cardStyle in [CardStyle.borderless, .framed] {
                 let base = PlozzMetrics.touch(density: .standard)
                 let fitted = PlozziOSHomeRailLayout<EmptyView>.posterMetrics(
                     in: width, inset: 36, metrics: base, cardStyle: cardStyle, isContinueWatching: true
                 )
                 let frameInset = cardStyle == .framed ? base.cardInset : 0
-                let count = floor((width - 36 + frameInset) / (fitted.continueWatchingWidth + 2 * frameInset + 12))
+                let count = floor((width - 36) / (fitted.continueWatchingWidth + 2 * frameInset + 12))
                 XCTAssertEqual(Int(count), expectedCount, "Viewport \(width), \(cardStyle)")
                 let largerText = PlozziOSHomeRailLayout<EmptyView>.posterMetrics(
                     in: width, inset: 36,
@@ -660,10 +675,7 @@ final class HomeLoadingLayoutTests: XCTestCase {
         }
     }
 
-    func testRenderedIPadContinueWatchingKeepsWholeCardsAndPosterPeek() async throws {
-        guard UIDevice.current.userInterfaceIdiom == .pad else {
-            throw XCTSkip("The iPad-only rail layout requires an iPad simulator.")
-        }
+    func testRenderedTouchContinueWatchingKeepsWholeCardsAndQuarterPeek() async throws {
         let fixture = try Fixture()
         defer { fixture.close() }
         let url = try XCTUnwrap(URL(string: "https://ipad-rail.invalid/\(UUID()).png"))
@@ -685,9 +697,8 @@ final class HomeLoadingLayoutTests: XCTestCase {
             MediaItem(id: "ipad-peek-\($0)", title: "Movie", kind: .movie,
                       posterURL: url, backdropURL: url, allowsTitleBasedMetadataMatching: false)
         }
-        for (width, expectedCount) in [(CGFloat(600), 2), (768, 2), (1194, 4)] {
+        for (width, rtl): (CGFloat, Bool) in [(390, false), (600, false), (768, false), (1194, false), (390, true)] {
             for cardStyle in [CardStyle.borderless, .framed] {
-                var posterPeek: CGFloat?
                 for mode in 0..<3 {
                     fixture.mount(
                         ScrollView {
@@ -697,6 +708,7 @@ final class HomeLoadingLayoutTests: XCTestCase {
                                 showsResumeChip: mode != 0, showsSeriesArtwork: mode == 2
                             )
                         }
+                        .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
                         .environment(\.plozzCardStyle, cardStyle)
                         .environment(\.plozzArtworkSettings, ArtworkSettings(preference: .library))
                         .environment(\.plozziOSHomeViewportWidth, width),
@@ -712,23 +724,21 @@ final class HomeLoadingLayoutTests: XCTestCase {
                         runs = try blueArtworkRuns(in: image, y: 100)
                     }
                     let attachment = XCTAttachment(image: image)
-                    attachment.name = "ipad-peek-\(Int(width))-\(cardStyle)-mode-\(mode)"
+                    attachment.name = "touch-peek-\(Int(width))-\(cardStyle)-mode-\(mode)-rtl-\(rtl)"
                     attachment.lifetime = .keepAlways
                     add(attachment)
-                    let first = try XCTUnwrap(runs.first)
-                    let last = try XCTUnwrap(runs.last)
-                    XCTAssertEqual(first.lowerBound, 36, accuracy: 1.5)
+                    let logical = rtl ? runs.reversed().map { (width - $0.upperBound)..<(width - $0.lowerBound) } : runs
+                    let first = try XCTUnwrap(logical.first)
+                    let last = try XCTUnwrap(logical.last)
+                    XCTAssertEqual(first.lowerBound, width < 600 ? 22 : 36, accuracy: 1.5)
                     XCTAssertEqual(last.upperBound, width, accuracy: 1)
                     let peek = last.upperBound - last.lowerBound
-                    if mode == 0 {
-                        posterPeek = peek
-                    } else {
-                        XCTAssertEqual(runs.count, expectedCount + 1)
-                        XCTAssertEqual(peek, try XCTUnwrap(posterPeek), accuracy: 1.5)
-                        for run in runs.dropLast() {
-                            XCTAssertEqual(run.upperBound - run.lowerBound,
-                                           first.upperBound - first.lowerBound, accuracy: 1.5)
-                        }
+                    print("RAIL_INK viewport=\(width) rtl=\(rtl) style=\(cardStyle) mode=\(mode) n=\(logical.count-1) full=\(first.upperBound-first.lowerBound) peek=\(peek)")
+                    XCTAssertGreaterThanOrEqual(runs.count, 2)
+                    XCTAssertEqual(peek, (first.upperBound - first.lowerBound) / 4, accuracy: 1.5)
+                    for run in logical.dropLast() {
+                        XCTAssertEqual(run.upperBound - run.lowerBound,
+                                       first.upperBound - first.lowerBound, accuracy: 1.5)
                     }
                 }
             }
@@ -736,32 +746,26 @@ final class HomeLoadingLayoutTests: XCTestCase {
     }
 
     func testMacRailsMatchReferenceColumnCountsAndProportions() {
-        // Screenshots have different export scales. Normalize each measured
-        // content width/card width by its leading content inset, not image pixels.
-        let references: [(viewport: CGFloat, inset: CGFloat, landscape: CGFloat, posters: CGFloat?, cast: CGFloat?)] = [
-            (1745, 47, 312, 186, 145),
-            (1621, 65, 350, nil, nil),
-            (1422, 70, 404, 229, nil),
-            (1558, 78, 443, 250, 200)
-        ]
+        // Check the actual desktop window spans, not stale raw widths measured
+        // when the preview was one gap rather than one quarter of a picture.
+        let references: [(viewport: CGFloat, inset: CGFloat)] = [(1745, 47), (1621, 65), (1422, 70), (1558, 78)]
         let metrics = PlozzMetrics.desktop(density: .standard)
         for reference in references {
             let scale = DesktopMediaRailLayout.pageInset / reference.inset
             let resolved = metrics.fittingDesktopRail(in: reference.viewport * scale, cardStyle: .borderless)
-            XCTAssertEqual(resolved.landscapeWidth / scale, reference.landscape, accuracy: 3)
             XCTAssertEqual(resolved.continueWatchingWidth, resolved.landscapeWidth)
-            if let posters = reference.posters {
-                XCTAssertEqual(resolved.posterWidth / scale, posters, accuracy: 3)
-            }
-            if let cast = reference.cast {
-                XCTAssertEqual(resolved.castTileDiameter / scale, cast, accuracy: 3)
-            }
+            XCTAssertEqual(resolved.landscapeHeight / resolved.landscapeWidth, 9.0 / 16, accuracy: 0.001)
+            XCTAssertEqual(resolved.posterHeight / resolved.posterWidth, 1.5, accuracy: 0.001)
+            let available = reference.viewport * scale - DesktopMediaRailLayout.pageInset
+            let pitch = resolved.castTileDiameter + metrics.cardSpacing
+            XCTAssertEqual(available - floor(available / pitch) * pitch, resolved.castTileDiameter / 4, accuracy: 0.001)
         }
         let featured = DesktopMediaRailLayout.featuredSize(in: 1930, metrics: metrics)
         XCTAssertEqual(featured.height / featured.width, 1.25, accuracy: 0.001)
         let count = floor((1930 - DesktopMediaRailLayout.pageInset) / (featured.width + metrics.cardSpacing))
         XCTAssertEqual(count, 4)
-        XCTAssertEqual(1930 - DesktopMediaRailLayout.pageInset - count * (featured.width + metrics.cardSpacing), 26)
+        XCTAssertEqual(1930 - DesktopMediaRailLayout.pageInset - count * (featured.width + metrics.cardSpacing),
+                       featured.width / 4, accuracy: 0.001)
     }
 
     func testMacPostersKeepReferenceColumnsAcrossTheWideWindowBreakpoint() {
@@ -780,7 +784,7 @@ final class HomeLoadingLayoutTests: XCTestCase {
                     / (featured.width + metrics.cardSpacing)), 4)
             }
         }
-        for (width, expectedCount): (CGFloat, CGFloat) in [(1039, 5), (1297, 6), (1930, 8)] {
+        for (width, expectedCount): (CGFloat, CGFloat) in [(1039, 4), (1297, 6), (1930, 8)] {
             let resolved = metrics.fittingDesktopRail(in: width, cardStyle: .borderless)
             XCTAssertEqual(floor((width - DesktopMediaRailLayout.pageInset)
                 / (resolved.posterWidth + metrics.cardSpacing)), expectedCount)
@@ -903,9 +907,9 @@ final class HomeLoadingLayoutTests: XCTestCase {
                 XCTAssertEqual(last.upperBound, width, accuracy: 1)
                 let metrics = PlozzMetrics.desktop(density: .standard)
                     .fittingDesktopRail(in: width, cardStyle: cardStyle)
-                let frameInset = cardStyle == .framed && kind != 2 ? metrics.cardInset : 0
-                XCTAssertEqual(last.upperBound - last.lowerBound, 26 - frameInset, accuracy: 1.5,
-                               "Rendered row \(kind) at width \(width) must show the next card.")
+                XCTAssertEqual(last.upperBound - last.lowerBound,
+                               (first.upperBound - first.lowerBound) / 4, accuracy: 1.5,
+                               "Rendered row \(kind) at width \(width) must show a quarter of the next card.")
                 let expectedWidth = kind == 0 || kind == 4 ? metrics.posterWidth
                     : kind == 2 ? DesktopMediaRailLayout.featuredSize(in: width, metrics: metrics).width
                     : metrics.landscapeWidth
@@ -1698,7 +1702,13 @@ final class HomeLoadingLayoutTests: XCTestCase {
                                 ScrollView(.horizontal) {
                                     HStack(spacing: PlozziOSMediaRailLayout.visibleSpacing) {
                                         ForEach(0..<8, id: \.self) { _ in
-                                            PlozziOSHomeLibraryCard(library: library, artworkSource: nil, width: 220)
+                                            PlozziOSHomeLibraryCard(
+                                                library: library, artworkSource: nil,
+                                                width: PlozziOSMediaLayout.libraryWidth(
+                                                    in: 390, metrics: .touch(density: .standard),
+                                                    sizeClass: .compact, cardStyle: style
+                                                )
+                                            )
                                         }
                                     }
                                 }

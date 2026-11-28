@@ -115,6 +115,85 @@ final class MediaFolderCardLayoutTests: XCTestCase {
 }
 #endif
 
+#if os(tvOS)
+@MainActor
+final class HomeCaptionTypographyTests: XCTestCase {
+    func testMarqueeKeepsItsFullLineHeightUnderACompressedProposal() {
+        let title = Text(verbatim: "A long title that must scroll rather than shrink")
+        for textSize in [DynamicTypeSize.large, .xxxLarge] {
+            let metrics = PlozzMetrics(density: .standard, dynamicTypeSize: textSize)
+            let font = Font.system(size: metrics.cardTitleFontSize, weight: .semibold)
+            let expected = measuredHeight(
+                title.font(font).lineLimit(1).fixedSize(horizontal: false, vertical: true),
+                height: 1_000
+            )
+            for focused in [false, true] {
+                let actual = measuredHeight(
+                    PlozzMarqueeText(
+                        text: title, font: font, color: .white, inset: 0, isFocused: focused
+                    )
+                    .minimumScaleFactor(0.25),
+                    height: 8
+                )
+                XCTAssertEqual(actual, expected, accuracy: 0.5, "\(textSize), focused: \(focused)")
+            }
+        }
+    }
+
+    func testFeaturedFallbackAndMetadataKeepTheirScaledLinesUnderCompression() {
+        let text = Text(verbatim: "Long visible text that occupies all available caption lines")
+        for role in [FeaturedCardCaptionText.Role.title, .metadata] {
+            var heights: [CGFloat] = []
+            for textSize in [DynamicTypeSize.large, .xxxLarge] {
+                let traits = UITraitCollection(preferredContentSizeCategory: textSize.plozzContentSizeCategory)
+                let size = UIFont.preferredFont(
+                    forTextStyle: role == .title ? .title2 : .subheadline, compatibleWith: traits
+                ).pointSize
+                let expected = measuredHeight(
+                    text.font(.system(size: size, weight: role == .title ? .bold : .medium))
+                        .lineLimit(role == .title ? 3 : 2)
+                        .fixedSize(horizontal: false, vertical: true),
+                    height: 1_000
+                )
+                let actual = measuredHeight(
+                    FeaturedCardCaptionText(text: text, role: role)
+                        .environment(\.dynamicTypeSize, textSize)
+                        .minimumScaleFactor(0.25),
+                    height: 8
+                )
+                XCTAssertEqual(actual, expected, accuracy: 0.5)
+                heights.append(actual)
+            }
+            XCTAssertGreaterThan(heights[1], heights[0])
+        }
+    }
+
+    func testRailHeadingKeepsItsScaledHeightUnderCompression() {
+        let title = Text(verbatim: "Recently added movies")
+        for textSize in [DynamicTypeSize.large, .xxxLarge] {
+            let metrics = PlozzMetrics(density: .standard, dynamicTypeSize: textSize)
+            let expected = measuredHeight(
+                title.font(PlozzRailTitle.font(sectionHeaderFontSize: metrics.sectionHeaderFontSize))
+                    .fixedSize(horizontal: false, vertical: true),
+                height: 1_000
+            )
+            let actual = measuredHeight(
+                MediaRowHeader(title: title, leadingInset: 0)
+                    .environment(\.plozzMetrics, metrics)
+                    .minimumScaleFactor(0.25),
+                height: 8
+            )
+            XCTAssertEqual(actual, expected, accuracy: 0.5)
+        }
+    }
+
+    private func measuredHeight<Content: View>(_ content: Content, height: CGFloat) -> CGFloat {
+        UIHostingController(rootView: content)
+            .sizeThatFits(in: CGSize(width: 240, height: height)).height
+    }
+}
+#endif
+
 final class PosterCardPresentationTests: XCTestCase {
     func testHiddenSuppressesOnlyWatchMarks() {
         for kind in [MediaItemKind.movie, .episode, .video, .series, .season] {

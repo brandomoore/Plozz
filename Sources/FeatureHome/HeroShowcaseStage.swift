@@ -519,6 +519,11 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
                         // Browse artwork is right-aligned; keep its edge on the
                         // display without moving the leading details column.
                         frame.size.width = max(frame.width, windowFrame.maxX - frame.minX)
+                    } else {
+                        // These hosts suppress safe-area propagation; a shelf
+                        // cannot extend itself to the display edge from inside.
+                        frame = Self.rowFrame(in: frame, window: windowFrame,
+                                              direction: view.effectiveUserInterfaceLayoutDirection)
                     }
                 }
                 host.view.bounds = CGRect(origin: .zero, size: frame.size)
@@ -538,6 +543,15 @@ struct HeroShowcaseStage: UIViewControllerRepresentable {
             let inset = max(0, bounds.minX - window.minX, window.maxX - bounds.maxX)
             return CGRect(x: window.minX + inset, y: bounds.minY,
                           width: max(0, window.width - 2 * inset), height: bounds.height)
+        }
+
+        static func rowFrame(in bounds: CGRect, window: CGRect, direction: UIUserInterfaceLayoutDirection) -> CGRect {
+            if direction == .rightToLeft {
+                let edge = min(bounds.minX, window.minX)
+                return CGRect(x: edge, y: bounds.minY, width: bounds.maxX - edge, height: bounds.height)
+            }
+            return CGRect(x: bounds.minX, y: bounds.minY, width: max(bounds.maxX, window.maxX) - bounds.minX,
+                          height: bounds.height)
         }
 
         override var preferredFocusEnvironments: [UIFocusEnvironment] {

@@ -1853,7 +1853,9 @@ This lives in the existing profile-scoped subtitle style, including the separate
 Live TV style. Bottom of video uses measured active bounds when available and otherwise
 the displayed video, intersected with the visible viewport. It does not change
 source aspect ratio or resize authored subtitle canvases. Ordinary dialogue and
-dual lanes use that reference; eligible lower bitmap regions move together
+dual lanes use that reference vertically; their horizontal center, offset, and
+wrapping width use the displayed video, not the detected side bars, so a held
+line doesn't slide as a scene changes. Eligible lower bitmap regions move together
 without scaling, while fixed artwork and independently source-positioned text
 retain their authored placement. Font/color controls do not apply to bitmap
 subtitles; their player editor exposes picture positioning instead.
@@ -2180,6 +2182,12 @@ Hiding the controls restores normal placement; style
 editing, previews, and saved position values are unchanged. The normal dialogue
 percentage remains screen-relative. Captions already encoded into video pixels
 cannot be repositioned.
+
+During letterboxed HDR playback on Apple TV, ordinary bottom-of-screen dialogue
+uses a fixed transparent drawing surface when the line fits below the picture.
+It requests a redraw of the old and new text bounds; UIKit can expand that area.
+A gap clears the old text without shaping or drawing glyphs. The renderer does
+not paint black bars or redraw a held line on clock ticks.
 
 Mobile on-demand subtitle settings include the existing subtitle-delay control
 directly, rather than a separate Playback Sync menu entry. Engines that support
@@ -2552,13 +2560,12 @@ collection owns directional focus and realizes cells throughout held Left/Right
 input. Stable episode IDs and layout offset adjustments preserve the focused cell
 and its exact viewport position when earlier seasons or retry rows arrive,
 including during native focus transitions and in RTL. Native scroll targets use
-complete card slots constrained to fully reveal the focused cell, with an initial 24pt
-peek of preceding artwork when available. The first episode retains its normal
-gutter. Entry targets the current/last-focused episode, not the partial previous
-card. Loading uses the same artwork dimensions, spacing, and peek offset, including
+complete card slots constrained to fully reveal the focused cell. A scrollable row
+opens on whole cards plus a quarter of the next still; the end reveals the final
+card fully. Entry targets the current/last-focused episode. Loading uses the same
+artwork dimensions and spacing, including
 right-to-left layout. Episode spacing uses the standard column gap without adding
 panel padding between cards (28pt between tvOS slots, 52pt between resting stills).
-Native focus can reveal more of the preceding card when making room for its lift.
 Mobile SwiftUI
 rows defer leading insertions until scrolling settles.
 tvOS resets artwork content when the row changes enabled state and when focus
@@ -2795,11 +2802,14 @@ the menus, keep measuring from a view in the same layout box — and verify the
 rendered frame rather than reasoning about it, because these boxes do not differ in
 any way you can see.
 
-**2. The bottom cluster is a fixed stage moved by ONE transform.** The Info card is a
-permanent stack member; "closed" is the whole cluster translated down so the card
-clears the screen (`infoCardLift`). Nothing is inserted and nothing reflows, which is
-what makes the reveal read as one object instead of parts arriving separately. The
-consequence: **any change to the cluster's height or margins moves the card**, and
+**2. The bottom cluster is a fixed stage moved by ONE transform.** The card's
+layout slot is permanent; its contents mount on the first opening and stay mounted
+when parked. "Closed" is the whole cluster translated down so the card clears the
+screen (`infoCardLift`). The first card must follow the slot's *in-flight* position,
+not appear immediately at its final position while the tab row passes through it.
+Verify the first Down from hidden controls after opening a video, a second Down
+in the same session, and the first Down after closing and reopening the player.
+The consequence: **any change to the cluster's height or margins moves the card**, and
 because it parks flush against the screen edge, a stray few points shows up as the
 card peeking into view. If the card peeks, something changed the cluster's layout —
 don't look at the card.

@@ -49,7 +49,10 @@ struct ExtrasRowView: View {
                 }
             )
         case .loading where showsLoadingPlaceholders:
-            ExtrasLoadingRow(leadingInset: leadingInset)
+            MediaRowView(title: Text("Extras"), items: [], style: .landscape, leadingInset: leadingInset,
+                         loadingPlaceholderCount: 5, onSelect: { _ in })
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         case .failed(let error):
             ExtrasFailureRow(
                 message: error.userMessage,
@@ -59,39 +62,6 @@ struct ExtrasRowView: View {
         default:
             EmptyView()
         }
-    }
-}
-
-private struct ExtrasLoadingRow: View {
-    let leadingInset: CGFloat
-
-    @Environment(\.plozzMetrics) private var metrics
-    @Environment(\.plozzCardStyle) private var cardStyle
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: metrics.sectionTitleSpacing) {
-            Text("Extras")
-                .font(PlozzRailTitle.font(
-                    sectionHeaderFontSize: metrics.sectionHeaderFontSize
-                ))
-                .padding(.leading, leadingInset)
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: metrics.cardSpacing) {
-                    ForEach(0..<5, id: \.self) { _ in
-                        SkeletonCardView(style: .landscape)
-                            .frame(width: metrics.landscapeWidth)
-                    }
-                }
-                .padding(.leading, metrics.cardRowLeadingPadding(leadingInset, cardStyle: cardStyle))
-                .padding(.trailing, PlozzTheme.Metrics.screenPadding)
-                .padding(.vertical, metrics.railShadowClearance)
-            }
-            .padding(.top, metrics.railTopClearanceOffset)
-            .padding(.bottom, metrics.railBottomClearanceOffset)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

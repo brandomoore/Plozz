@@ -151,6 +151,7 @@ public struct PlexClient: Sendable {
     /// fails over to a reachable one.
     private final class Routing: Sendable {
         let resolver: Mutex<PlexConnectionResolver>
+        let personalVideoSections = Mutex<[String: Bool]?>(nil)
         init(_ resolver: PlexConnectionResolver) { self.resolver = Mutex(resolver) }
     }
     private let routing: Routing
@@ -445,11 +446,11 @@ public struct PlexClient: Sendable {
     /// re-fetch the full Media/Part/Stream per item via `metadata()` — so the lean
     /// fallback costs nothing but those cosmetic badges, while capable servers pay
     /// zero overhead (the first, enriched request simply succeeds).
-    private func decodeStreamEnriched<T: Decodable>(
-        _ type: T.Type,
+    private func decodeStreamEnriched(
+        _ type: PlexMediaContainerResponse.Type,
         path: String,
         query: [URLQueryItem]
-    ) async throws -> T {
+    ) async throws -> PlexMediaContainerResponse {
         let streamParameter = "includeElements"
         let enriched = Endpoint(
             path: path,
@@ -457,23 +458,55 @@ public struct PlexClient: Sendable {
             headers: headers,
             allowsRequestCoalescing: true
         )
+        let response: PlexMediaContainerResponse
         do {
-            return try await decode(T.self, enriched)
+            response = try await decode(type, enriched)
         } catch AppError.invalidResponse {
             PlozzLog.networking.error("Plex rejected \(streamParameter)=Stream on \(path); retrying lean")
             let lean = Endpoint(path: path, queryItems: query, headers: headers, allowsRequestCoalescing: true)
-            return try await decode(T.self, lean)
+            response = try await decode(type, lean)
         }
+        try await prepareVideoSections(for: response.MediaContainer)
+        return response
     }
 
     // MARK: Browsing
+
+    func isPersonalVideoSection(_ id: String?) -> Bool? {
+        id.flatMap { id in routing.personalVideoSections.withLock { $0?[id] } }
+    }
+
+    /// A restored library or Home shelf can load before section discovery.
+    /// Consult the server once for ambiguous movie thumbnails, never once per card.
+    private func prepareVideoSections(for container: PlexMediaContainer) async throws {
+        guard routing.personalVideoSections.withLock({ $0 == nil }) else { return }
+        func needsSection(_ item: PlexMetadata) -> Bool {
+            item.type == "movie" && (item.guid == nil || item.guid?.hasPrefix("local://") == true)
+                && item.Guid?.isEmpty != false && (item.thumb?.isEmpty == false || item.Image?.isEmpty == false)
+        }
+        guard container.Metadata?.contains(where: needsSection) == true
+                || container.Hub?.contains(where: { $0.Metadata?.contains(where: needsSection) == true }) == true
+        else { return }
+        do {
+            _ = try await sections()
+        } catch AppError.notFound, AppError.invalidResponse, AppError.decoding, AppError.serverUnreachable {
+            try Task.checkCancellation()
+            PlozzLog.networking.error("Plex video section metadata unavailable; keeping the listing's own artwork metadata")
+        }
+    }
 
     /// `GET /library/sections` — top-level libraries.
     func sections() async throws -> [PlexDirectory] {
         let endpoint = Endpoint(path: "/library/sections", headers: headers, allowsRequestCoalescing: true)
         do {
-            return try await decode(PlexMediaContainerResponse.self, endpoint)
+            let sections = try await decode(PlexMediaContainerResponse.self, endpoint)
                 .MediaContainer.Directory ?? []
+            var known = [String: Bool]()
+            for section in sections {
+                if let id = section.key { known[id] = section.usesPersonalVideoAgent }
+            }
+            routing.personalVideoSections.withLock { $0 = known }
+            return sections
         } catch AppError.unauthorized {
             guard let serverID else { throw AppError.unauthorized }
             let auth = PlexAuthClient(deviceProfile: deviceProfile, http: http)
@@ -485,6 +518,7 @@ public struct PlexClient: Sendable {
             guard currentCloudToken == cloudToken else { throw CancellationError() }
             guard grant == nil else { throw AppError.unauthorized }
             PlozzLog.auth.info("Plex cloud confirmed no server libraries are shared with the signed-in user")
+            routing.personalVideoSections.withLock { $0 = [:] }
             return []
         }
     }
@@ -623,7 +657,8 @@ public struct PlexClient: Sendable {
         ratingKey: String,
         language: String,
         hearingImpaired: Int = 0,
-        forced: Int = 0
+        forced: Int = 0,
+        title: String? = nil
     ) async throws -> [PlexSubtitleSearchStream] {
         let lang = LanguageMatch.normalized(language) ?? language
         let endpoint = Endpoint(
@@ -632,7 +667,7 @@ public struct PlexClient: Sendable {
                 URLQueryItem(name: "language", value: lang),
                 URLQueryItem(name: "hearingImpaired", value: String(hearingImpaired)),
                 URLQueryItem(name: "forced", value: String(forced))
-            ],
+            ] + (title.map { [URLQueryItem(name: "title", value: $0)] } ?? []),
             headers: headers
         )
         return try await decode(PlexSubtitleSearchResponse.self, endpoint, using: interactiveHTTP)
@@ -750,10 +785,12 @@ public struct PlexClient: Sendable {
         if includeCollections {
             // Even optional Stream enrichment can silently omit collection cards
             // and reduce totalSize in HTTP 200 responses while keeping members hidden.
-            return try await decode(
+            let container = try await decode(
                 PlexMediaContainerResponse.self,
                 Endpoint(path: path, queryItems: query, headers: headers)
             ).MediaContainer
+            try await prepareVideoSections(for: container)
+            return container
         }
         return try await decodeStreamEnriched(
             PlexMediaContainerResponse.self,

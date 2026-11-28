@@ -125,6 +125,9 @@ public protocol MediaProvider: Sendable {
     /// hundreds of items) use `items(in:page:)` instead so the UI can page.
     func children(of itemID: String) async throws -> [MediaItem]
 
+    /// Library episodes for a specific season of a series, in playback order.
+    func episodes(inSeason seasonID: String, ofSeries seriesID: String) async throws -> [MediaItem]
+
     /// A single page of a container's children, for scalable browsing of large
     /// libraries. Implementations request only `page.limit` items starting at
     /// `page.startIndex`, ordered by `page.sort`, and report the container's
@@ -521,6 +524,10 @@ public enum MediaProviderURLIdentity {
 // doubles) inherit safe no-ops, so adding the capability never forces every
 // conformer to implement it.
 public extension MediaProvider {
+    func episodes(inSeason seasonID: String, ofSeries seriesID: String) async throws -> [MediaItem] {
+        try await children(of: seasonID)
+    }
+
     func trackerHistoryItem(id: String) async throws -> MediaItem {
         try await item(id: id)
     }

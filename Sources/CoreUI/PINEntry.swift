@@ -582,6 +582,10 @@ public struct PINDialPad: View {
     public let onDigit: (String) -> Void
     public let onDelete: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if os(tvOS)
+    @Environment(\.pinProfileTransition) private var profileTransition
+    @FocusState private var firstProfileKeyFocused: Bool
+    #endif
 
     public init(
         animatesEntrance: Bool = false,
@@ -598,22 +602,35 @@ public struct PINDialPad: View {
         .system(size: PINMetrics.keyDiameter * 0.34, weight: .semibold, design: .rounded)
     }
 
+    @ViewBuilder
+    private func digitKey(_ digit: String) -> some View {
+        let key = Button { onDigit(digit) } label: {
+            Text(verbatim: digit).font(digitFont)
+        }
+        .buttonStyle(PINKeyStyle(width: PINMetrics.keyDiameter))
+        #if os(tvOS)
+        if digit == "1", profileTransition?.isSource == true {
+            // Plex can confirm the PIN after the picker has already relinquished focus.
+            key.focused($firstProfileKeyFocused)
+                .onAppear { firstProfileKeyFocused = true }
+        } else {
+            key.settingsPageEntryFocus(enabled: digit == "1")
+        }
+        #else
+        key
+        #endif
+    }
+
     public var body: some View {
         VStack(spacing: PINMetrics.keySpacing) {
             ForEach(Array(Self.rows.enumerated()), id: \.offset) { rowIndex, row in
                 HStack(spacing: PINMetrics.keySpacing) {
                     ForEach(Array(row.enumerated()), id: \.element) { columnIndex, digit in
-                        Button { onDigit(digit) } label: {
-                            Text(verbatim: digit).font(digitFont)
-                        }
-                        .buttonStyle(PINKeyStyle(width: PINMetrics.keyDiameter))
-                        #if os(tvOS)
-                        .settingsPageEntryFocus(enabled: digit == "1")
-                        #endif
-                        .modifier(PINKeyEntrance(
-                            enabled: animatesEntrance, position: rowIndex * 3 + columnIndex,
-                            reduceMotion: reduceMotion
-                        ))
+                        digitKey(digit)
+                            .modifier(PINKeyEntrance(
+                                enabled: animatesEntrance, position: rowIndex * 3 + columnIndex,
+                                reduceMotion: reduceMotion
+                            ))
                     }
                 }
             }

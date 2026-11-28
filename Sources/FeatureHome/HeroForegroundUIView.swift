@@ -73,6 +73,7 @@ final class HeroForegroundUIView: UIView {
         }
     }
     private var textScale: CGFloat { PlozzTypography.scale(local: textSize.scale, app: appTextScale) }
+    private var metadataScale: CGFloat { PlozzTypography.heroMetadataScale(local: textSize.scale, app: appTextScale) }
     /// Effect-less host: dots/pill render directly over the hero with no capsule.
     private let dotsContainer = UIVisualEffectView(effect: nil)
     private let useGauge = HeroForegroundConfig.useGauge
@@ -175,8 +176,6 @@ final class HeroForegroundUIView: UIView {
         ratingLabel.lineBreakMode = .byTruncatingTail
         ratingLabel.isHidden = true
 
-        metadataLabel.numberOfLines = 1
-
         // Chrome matched to the flat idle pill rather than the detail hero's
         // material: this renderer exists because live blur re-samples the moving
         // backdrop every transition frame, and a badge that sampled would give back
@@ -213,11 +212,12 @@ final class HeroForegroundUIView: UIView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     private func applyTextSizing() {
-        let scale = textScale
+        let scale = metadataScale
+        metadataLabel.numberOfLines = scale > 1 ? 2 : 1
         overviewLabel.numberOfLines = textSize.descriptionLineLimit(base: 3)
-        titleLabel.font = .systemFont(ofSize: PlozzTypography.heroFallbackTitle.scaled(by: scale).pointSize, weight: .bold)
+        titleLabel.font = .systemFont(ofSize: PlozzTypography.heroFallbackTitle.scaled(by: textScale).pointSize, weight: .bold)
         metadataLabel.font = .systemFont(ofSize: PlozzTypography.heroMetadata.scaled(by: scale).pointSize, weight: .medium)
-        overviewLabel.font = .systemFont(ofSize: PlozzTypography.heroDescription.scaled(by: scale).pointSize)
+        overviewLabel.font = .systemFont(ofSize: PlozzTypography.heroDescription.scaled(by: textScale).pointSize)
         applyOverviewText()
         ratingLabel.font = UIFont(name: "Bungee-Regular", size: 18 * scale)
             ?? .systemFont(ofSize: 18 * scale, weight: .semibold)
@@ -438,6 +438,7 @@ final class HeroForegroundUIView: UIView {
         // Grow the pool as needed; reuse existing views.
         while pillViews.count < model.pills.count {
             let pill = HeroForegroundPillView()
+            pill.onTextSizeChange = { [weak self] in self?.setNeedsLayout() }
             pillViews.append(pill)
             pillsContainer.addSubview(pill)
         }
@@ -647,7 +648,7 @@ final class HeroForegroundUIView: UIView {
             let size = ratingsHost.sizeThatFits(
                 in: CGSize(width: maxWidth, height: .greatestFiniteMagnitude)
             )
-            let h = max(size.height, 36 * textScale)
+            let h = max(size.height, 36 * metadataScale)
             ratingsHost.view!.frame = CGRect(
                 x: leading,
                 y: y - h,
@@ -670,16 +671,21 @@ final class HeroForegroundUIView: UIView {
 
         // Metadata line.
         if !metadataLabel.isHidden || !ratingLabel.isHidden {
-            let h: CGFloat = 36 * textScale
-            var x = leading
+            let scale = metadataScale
+            let rowWidth = min(availableWidth, maxWidth * max(1, scale))
+            let ratingWidth = ratingLabel.isHidden ? 0 : min(ratingLabel.intrinsicContentSize.width, 240 * scale, rowWidth)
+            let textStart = ratingLabel.isHidden ? 0 : ratingWidth + 16 * scale
+            let textWidth = max(0, rowWidth - textStart)
+            let labelHeight = metadataLabel.isHidden ? 0 : metadataLabel.sizeThatFits(
+                CGSize(width: textWidth, height: .greatestFiniteMagnitude)
+            ).height
+            let h = max(36 * scale, ceil(labelHeight))
             if !ratingLabel.isHidden {
-                var rSize = ratingLabel.intrinsicContentSize
-                rSize.width = min(rSize.width, min(240, maxWidth * 0.5))
-                ratingLabel.frame = CGRect(x: x, y: y - h + (h - rSize.height) / 2, width: rSize.width, height: rSize.height)
-                x += rSize.width + 16 * textScale
+                let ratingHeight = ratingLabel.intrinsicContentSize.height
+                ratingLabel.frame = CGRect(x: leading, y: y - (h + ratingHeight) / 2, width: ratingWidth, height: ratingHeight)
             }
             if !metadataLabel.isHidden {
-                metadataLabel.frame = CGRect(x: x, y: y - h, width: maxWidth - (x - leading), height: h)
+                metadataLabel.frame = CGRect(x: leading + textStart, y: y - h, width: textWidth, height: h)
             }
             y -= h + columnSpacing
         }
@@ -733,27 +739,22 @@ final class HeroForegroundUIView: UIView {
             pillsContainer.frame = CGRect(x: leading, y: bottom, width: 0, height: 0)
             return 0
         }
-        var height: CGFloat = 0
-        var widths: [CGFloat] = []
-        for pill in visible {
-            let s = pill.preferredSize()
-            widths.append(s.width)
-            height = max(height, s.height)
-        }
-        let totalWidth = widths.reduce(0, +) + pillSpacing * CGFloat(visible.count - 1)
+        let sizes = visible.map { $0.preferredSize() }
+        let height = sizes.map(\.height).max() ?? 0
+        let totalWidth = sizes.reduce(0) { $0 + $1.width } + pillSpacing * CGFloat(visible.count - 1)
         pillsContainer.frame = CGRect(x: leading, y: bottom - height, width: totalWidth, height: height)
         var x: CGFloat = 0
-        for (i, pill) in visible.enumerated() {
+        for (pill, size) in zip(visible, sizes) {
             // Position via bounds+center, not frame: a selected pill carries a 1.06
             // `transform`, and setting `.frame` on a transformed view back-computes a
             // shrunken bounds (width/1.06) and lays its content out in that smaller box
             // before scaling up — which visibly shifts the glyph/text on focus. bounds
             // and center are transform-independent, so the content stays put and only
             // the uniform scale is applied around the centre.
-            pill.bounds = CGRect(x: 0, y: 0, width: widths[i], height: height)
-            pill.center = CGPoint(x: x + widths[i] / 2, y: height / 2)
+            pill.bounds = CGRect(origin: .zero, size: size)
+            pill.center = CGPoint(x: x + size.width / 2, y: height / 2)
             pill.layoutIfNeeded()
-            x += widths[i] + pillSpacing
+            x += size.width + pillSpacing
         }
         return height
     }

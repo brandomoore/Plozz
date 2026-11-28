@@ -2,6 +2,9 @@
 import XCTest
 import SwiftUI
 import CoreModels
+#if os(tvOS)
+import UIKit
+#endif
 @testable import CoreUI
 
 final class PlozzMetricsTests: XCTestCase {
@@ -75,26 +78,158 @@ final class PlozzMetricsTests: XCTestCase {
     func testPortraitRowsKeepTheSameVisibleFractionWithEitherNavigation() {
         for density in UIDensity.allCases {
             let metrics = PlozzMetrics(density: density)
-            let count = PlozzTheme.Metrics.portraitRowVisibleCards / CGFloat(density.scale)
             for cardStyle in CardStyle.allCases {
                 for viewportWidth: CGFloat in [1536, 1776, 1840] {
                     for leadingInset: CGFloat in [0, 32] {
                         let slot = metrics.portraitRowSlotWidth(
                             viewportWidth: viewportWidth, leadingInset: leadingInset, cardStyle: cardStyle
                         )
-                        let margin = cardStyle == .borderless ? metrics.borderlessCardSideMargin : 0
-                        let lastCardStart = leadingInset + floor(count) * (slot + metrics.cardSpacing)
+                        let margin = cardStyle == .borderless ? metrics.borderlessCardSideMargin : metrics.cardInset
+                        let artworkLeading = leadingInset + (cardStyle == .framed ? metrics.cardInset : 0)
+                        let whole = floor((viewportWidth - artworkLeading) / (slot + metrics.cardSpacing))
+                        if density == .standard { XCTAssertEqual(whole, 6) }
+                        let lastCardStart = artworkLeading + whole * (slot + metrics.cardSpacing)
                         XCTAssertEqual(
                             (viewportWidth - lastCardStart) / (slot - 2 * margin),
-                            count - floor(count), accuracy: 0.0001
+                            0.25, accuracy: 0.0001
                         )
                     }
+
                 }
             }
         }
         XCTAssertEqual(PlozzTheme.Metrics.portraitRowVisibleCards, 6.25)
         XCTAssertEqual(PlozzMetrics.standard.libraryPosterColumns.count, 6)
         XCTAssertEqual(PlozzMetrics.standard.posterWidth, 280)
+    }
+
+    func testLandscapeRowPeekAcrossCombinedDensityAndTextSizes() {
+        for density in UIDensity.allCases {
+            for textSize in [DynamicTypeSize.large, .xxxLarge, .accessibility5] {
+                let base = PlozzMetrics(density: density, dynamicTypeSize: textSize)
+                for style in CardStyle.allCases {
+                    for series in [false, true] {
+                        for width: CGFloat in [1536, 1776, 1840] {
+                            let leading: CGFloat = 32
+                            let metrics = base.fittingLandscapeRow(
+                                viewportWidth: width, leadingInset: leading, cardStyle: style, showsSeriesArtwork: series
+                            )
+                            let slot = metrics.cardSlotWidth(for: .landscape, cardStyle: style, showsSeriesArtwork: series)
+                            let pitch = slot + metrics.cardSpacing
+                            let available = width - leading - (style == .framed ? metrics.cardInset : 0)
+                            let count = floor(available / pitch)
+                            let surface = slot - 2 * (style == .borderless ? metrics.borderlessCardSideMargin : metrics.cardInset)
+                            XCTAssertGreaterThanOrEqual(count, 1)
+                            XCTAssertEqual((available - count * pitch) / surface, 0.25, accuracy: 0.0001)
+                            if series, base.continueWatchingWidth > (base.landscapeWidth * ContinueWatchingCardShape.widthScale).rounded() {
+                                XCTAssertGreaterThanOrEqual(metrics.continueWatchingWidth + 0.001, base.continueWatchingWidth)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func testIncreasingDensityDoesNotShrinkPinnedContinueWatchingArtwork() {
+        let widths = UIDensity.allCases.map {
+            PlozzMetrics(density: $0).fittingLandscapeRow(
+                viewportWidth: 1776, leadingInset: 0, cardStyle: .borderless, showsSeriesArtwork: true
+            ).continueWatchingWidth
+        }
+        XCTAssertEqual(widths, widths.sorted())
+    }
+
+    #if os(tvOS)
+    func testHugeHomeCardsAtMaximumTextFitTheRowWithoutSacrificingTypeOrThePeek() {
+        let viewport: CGFloat = 1776
+        let height: CGFloat = 622
+        let base = PlozzMetrics(density: .extraLarge, dynamicTypeSize: .accessibility5)
+        let fitted = base.fittingRailHeight(height, focusStyle: .system)
+        let heading = ceil(UIFont.systemFont(ofSize: base.sectionHeaderFontSize, weight: .bold).lineHeight)
+        let labels = ceil(UIFont.systemFont(ofSize: base.cardTitleFontSize, weight: .semibold).lineHeight)
+            + ceil(UIFont.systemFont(ofSize: base.cardSubtitleFontSize).lineHeight)
+            + base.nativePosterCaptionSpacing + base.nativePosterCaptionFocusTravel + 2
+        for style in CardStyle.allCases {
+            let inset = style == .framed ? base.cardInset : base.borderlessCardSideMargin
+            let available = viewport - (style == .framed ? base.cardInset : 0)
+            for captions in [false, true] {
+                let portraitSlot = fitted.portraitRowSlotWidth(
+                    viewportWidth: viewport, leadingInset: 0, cardStyle: style, showsCaption: captions
+                )
+                var surfaces = [(portraitSlot - 2 * inset, CGFloat(2) / 3)]
+                for series in [false, true] {
+                    let landscape = fitted.fittingLandscapeRow(
+                        viewportWidth: viewport, leadingInset: 0, cardStyle: style,
+                        showsSeriesArtwork: series, showsCaption: captions
+                    )
+                    surfaces.append((series ? landscape.continueWatchingWidth : landscape.landscapeWidth,
+                                     series ? ContinueWatchingCardShape.aspectRatio : 16 / 9))
+                }
+                for (width, aspect) in surfaces {
+                    let maximumHeight = height - heading - base.sectionTitleSpacing - base.railTopPadding
+                        - base.railVerticalPadding - (captions ? labels : 0) - (style == .framed ? 2 * inset : 0)
+                    XCTAssertLessThanOrEqual(width / aspect, maximumHeight + 0.5)
+                    let pitch = width + 2 * inset + base.cardSpacing
+                    XCTAssertEqual(available - floor(available / pitch) * pitch, width / 4, accuracy: 0.001)
+                }
+            }
+        }
+        XCTAssertEqual(fitted.sectionHeaderFontSize, base.sectionHeaderFontSize)
+        XCTAssertEqual(fitted.cardTitleFontSize, base.cardTitleFontSize)
+    }
+
+    func testTVTextSizeReflowsHomeRailsAndScalesHeadingsAtEveryDensity() {
+        let sizes: [DynamicTypeSize] = [.large, .xLarge, .xxLarge, .xxxLarge, .accessibility1,
+                                        .accessibility2, .accessibility3, .accessibility4, .accessibility5]
+        let viewport: CGFloat = 1776
+        for density in UIDensity.allCases {
+            let steps = sizes.map { PlozzMetrics(density: density, dynamicTypeSize: $0) }
+            for (smaller, larger) in zip(steps, steps.dropFirst()) {
+                XCTAssertGreaterThan(larger.sectionHeaderFontSize, smaller.sectionHeaderFontSize)
+            }
+            XCTAssertGreaterThan(steps.last!.cardStatusCueFontSize, steps[0].cardStatusCueFontSize)
+            XCTAssertGreaterThan(steps.last!.cardStatusCueHorizontalPadding, steps[0].cardStatusCueHorizontalPadding)
+            XCTAssertGreaterThan(steps.last!.cardStatusCueVerticalPadding, steps[0].cardStatusCueVerticalPadding)
+            for style in CardStyle.allCases {
+                let posters = steps.map { m in
+                    let slot = m.portraitRowSlotWidth(viewportWidth: viewport, leadingInset: 0, cardStyle: style)
+                    let margin = style == .framed ? m.cardInset : m.borderlessCardSideMargin
+                    let available = viewport - (style == .framed ? m.cardInset : 0)
+                    let pitch = slot + m.cardSpacing
+                    XCTAssertEqual(available - floor(available / pitch) * pitch, (slot - 2 * margin) / 4, accuracy: 0.001)
+                    return slot
+                }
+                // Libraries use ordinary landscape cards, not the Continue Watching target.
+                let libraries = steps.map {
+                    $0.fittingLandscapeRow(viewportWidth: viewport, leadingInset: 0, cardStyle: style,
+                                           showsSeriesArtwork: false).landscapeWidth
+                }
+                for widths in [posters, libraries] {
+                    XCTAssertEqual(widths, widths.sorted())
+                    XCTAssertGreaterThan(widths.last!, widths[0])
+                }
+            }
+        }
+        let featured = sizes.map {
+            FeaturedCardLayout.rail(viewportWidth: viewport, television: true,
+                                    textWidthScale: PlozzMetrics(density: .standard, dynamicTypeSize: $0).railTextWidthScale)
+        }
+        XCTAssertGreaterThan(featured.last!.size.width, featured[0].size.width)
+        for (size, gap) in featured {
+            let pitch = size.width + gap
+            let available = viewport - PlozzTheme.Metrics.screenPadding
+            XCTAssertEqual(available - floor(available / pitch) * pitch, size.width / 4, accuracy: 0.001)
+        }
+    }
+    #endif
+
+    func testRailCanParkAtAPartialFinalSlotWithoutLosingTheLeadingStop() {
+        XCTAssertEqual(RowSlotTargets.slot(for: 0, pitch: 366, maximum: 105), 0)
+        XCTAssertEqual(RowSlotTargets.slot(for: 102, pitch: 366, maximum: 105), 105)
+        XCTAssertEqual(RowSlotTargets.slot(for: 550, pitch: 400, maximum: 550), 550)
+        XCTAssertEqual(RowSlotTargets.slot(for: 601, pitch: 400, maximum: 550), 550)
+        XCTAssertEqual(RowSlotTargets.slot(for: 402, pitch: 400, maximum: 550), 400)
     }
 
     func testPortraitRowSizingPreservesDensityAndUnmeasuredFallback() {
