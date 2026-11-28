@@ -1983,6 +1983,7 @@ private struct LiveFullscreenHarness: View {
 
 @MainActor
 final class LiveEngineSpy: LiveChannelEngine {
+    var onLiveOutputReadinessChanged: (@MainActor () -> Void)?
     var volumeBoost: PlayerVolumeBoost = .off
     func setVolumeBoost(_ boost: PlayerVolumeBoost) { volumeBoost = boost }
     var supportsActivePictureAnalysis = false

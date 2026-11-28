@@ -359,6 +359,13 @@ public final class LiveTVPlaybackPreparation {
             )
             finishPreparation(requestID)
             if let previous { release(previous) }
+            if let candidate {
+                // Detached at userInitiated priority so the upstream connect begins immediately
+                // without waiting behind SwiftUI's fullscreen mount on @MainActor.
+                Task.detached(priority: .userInitiated) {
+                    await candidate.preconnectIfSupported()
+                }
+            }
             return true
         } catch {
             pendingLeases.removeValue(forKey: requestID)
@@ -720,6 +727,11 @@ private actor PreparedLiveTVLeaseOwner {
         }
         lastReport = task
         await task.value
+    }
+
+    func preconnectIfSupported() async {
+        guard cleanup == nil else { return }
+        await lease.preconnectIfSupported()
     }
 
     func close() async {

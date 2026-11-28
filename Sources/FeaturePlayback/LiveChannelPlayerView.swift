@@ -1032,13 +1032,22 @@ public struct LiveChannelPlayerView: View {
         playerModel.setWatching(countsAsWatching)
         playerModel.setSessionReporting(sessionReporting)
         playerModel.handleScenePhase(scenePhase)
-        displayTask = Task {
-            guard await displayTransition.preparePlayback(token) else { return }
+        if displayTransition.preparePlaybackImmediatelyIfUnveiled(token) {
             sourceLoadNeeded = false
             sourceTask = Task {
                 guard !Task.isCancelled else { return }
                 await playerModel.start()
                 if !Task.isCancelled { updateDisplayTransition() }
+            }
+        } else {
+            displayTask = Task {
+                guard await displayTransition.preparePlayback(token) else { return }
+                sourceLoadNeeded = false
+                sourceTask = Task {
+                    guard !Task.isCancelled else { return }
+                    await playerModel.start()
+                    if !Task.isCancelled { updateDisplayTransition() }
+                }
             }
         }
     }
@@ -2535,6 +2544,7 @@ final class LiveChannelPlayerModel {
         engine.onProgrammeChanged = nil
         engine.onTracksChanged = nil
         engine.onSubtitleCues = nil
+        engine.onLiveOutputReadinessChanged = nil
         cancelPendingSeek()
         subtitles.clear()
         outputGroup?.unregister(outputID, engine: engine)
@@ -2630,6 +2640,12 @@ final class LiveChannelPlayerModel {
             self.subtitles.tick(self.engine.subtitlePresentationTime)
             self.subtitles.updateLiveCues(cues)
         }
+        engine.onLiveOutputReadinessChanged = { [weak self] in
+            guard let self, !self.stopped, !self.isLoading, !self.hasPresentedFrame,
+                  self.attemptGeneration == generation,
+                  self.engine.liveSnapshot.firstFrameReady else { return }
+            self.refreshFromEngine()
+        }
         trackState.refreshStyle(engine: engine)
     }
 
@@ -2637,7 +2653,10 @@ final class LiveChannelPlayerModel {
         monitorTask?.cancel()
         monitorTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(250))
+                // Poll quickly until the first frame is playing so transitions publish promptly, then settle.
+                let interval: Duration = (self?.hasPresentedFrame == true && self?.phase == .playing)
+                    ? .milliseconds(250) : .milliseconds(40)
+                try? await Task.sleep(for: interval)
                 guard !Task.isCancelled, let self else { return }
                 self.refreshFromEngine()
             }

@@ -107,6 +107,9 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     @State private var topRequest = 0
     @State private var nowRequest = 0
     @State private var channelSequence = LiveTVChannelSequence(channels: [])
+    @State private var channelSequenceTask: Task<Void, Never>?
+    @State private var channelSequenceBuilder: (@Sendable () -> LiveTVChannelSequence)?
+    @State private var channelSequenceRevision = 0
     @State private var controlsActive = false
     @State private var categorySidebarCollapsed = false
     @State private var categorySidebarRevealing = false
@@ -811,7 +814,8 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     private var tuningLineup: [LiveTVPrototypeChannel] {
         let visible = model.visibleChannels
         let visibleIDs = Set(visible.map(\.id))
-        let sequenced = channelSequence.channelIDs.filter(visibleIDs.contains).compactMap { model.channel(id: $0) }
+        let sequence = channelSequenceBuilder?() ?? channelSequence
+        let sequenced = sequence.channelIDs.filter(visibleIDs.contains).compactMap { model.channel(id: $0) }
         return sequenced.isEmpty ? visible : sequenced
     }
 
@@ -1029,6 +1033,12 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         .task(id: catalogActivation.taskID(reloadRequest: reloadRequest)) {
             await reloadCatalog()
         }
+        .task(id: LiveTVConnectionWarmupKey(
+            active: isActive, preloads: preloadsCatalog, authorization: serverAuthorizationID,
+            accounts: serverChoices.map(\.id)
+        )) {
+            await warmServerConnections()
+        }
         .task(id: preview.pendingRequest) {
             await preparePendingPreview()
         }
@@ -1046,6 +1056,29 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             while isActive && !Task.isCancelled {
                 model.synchronizeClock()
                 try? await Task.sleep(for: .seconds(30))
+            }
+        }
+    }
+
+    private struct LiveTVConnectionWarmupKey: Equatable {
+        let active: Bool
+        let preloads: Bool
+        let authorization: String
+        let accounts: [String]
+    }
+
+    private func warmServerConnections() async {
+        guard (isActive || preloadsCatalog), isProfileAuthorized(), !serverChoices.isEmpty else { return }
+        let disabledAccountIDs = Set(imports.configuration.servers.filter { !$0.isEnabled }.map(\.accountID))
+        let providers = serverChoices
+            .filter { !disabledAccountIDs.contains($0.id) }
+            .compactMap { serverProviderResolver($0.id)?.provider }
+        guard !providers.isEmpty else { return }
+        await withTaskGroup(of: Void.self) { group in
+            for provider in providers {
+                group.addTask(priority: .utility) {
+                    await provider.warmLiveTVConnection()
+                }
             }
         }
     }
@@ -1261,6 +1294,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
                 pendingTuneID = nil
                 pendingMultiviewFavorite = nil
                 sheet = nil
+                cancelChannelSequenceTask()
                 if !hasAuthorizedExternalPlayback {
                     leaveMultiview()
                     multiview.setActive(false)
@@ -1305,6 +1339,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
         #endif
         let preservesFullscreen = isActive && isProfileAuthorized() && usesNativeFullscreen && preview.isExpanded
         guard !preservesFullscreen, !hasAuthorizedExternalPlayback else { return }
+        cancelChannelSequenceTask()
         enrollment.invalidate()
         leaveMultiview()
         multiview.setActive(false)
@@ -2497,22 +2532,70 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
             finishMultiviewSelection()
             return
         }
-        if !preview.isExpanded {
-            let channels: [LiveTVPrototypeChannel]
+        let selectedOrigin = !preview.isExpanded && selectedRowID?.channelID == id ? selectedRowID : nil
+        let shouldUpdateSequence = !preview.isExpanded
+        // Kick off playback preparation immediately; compute large channel-up/down sequences off
+        // @MainActor so scanning thousands of channels never delays player launch or load.
+        playback.watch(id, origin: origin ?? selectedOrigin, expandsPlayer: expandsPlayer)
+        if shouldUpdateSequence {
+            cancelChannelSequenceTask()
+            let revision = channelSequenceRevision
             #if os(tvOS)
-            if isSearching && searchScope == .programs {
-                let allowed = model.programmeSearchChannelIDs
-                channels = model.unhiddenCatalogChannels.filter { allowed.contains($0.id) }
-            } else {
-                channels = model.guideChannels.map(\.channel)
+            let isProgramSearch = isSearching && searchScope == .programs
+            let programSearchAllowed = isProgramSearch ? model.programmeSearchChannelIDs : []
+            let unhiddenCatalog = isProgramSearch ? model.unhiddenCatalogChannels : []
+            let guideSnapshot = isProgramSearch ? [] : model.guideChannels
+            let rowCount = isProgramSearch ? unhiddenCatalog.count : guideSnapshot.count
+            let builder: @Sendable () -> LiveTVChannelSequence = {
+                let channels: [LiveTVPrototypeChannel]
+                if isProgramSearch {
+                    channels = unhiddenCatalog.filter { programSearchAllowed.contains($0.id) }
+                } else {
+                    channels = guideSnapshot.map(\.channel)
+                }
+                return LiveTVChannelSequence(channels: channels)
             }
             #else
-            channels = model.guideChannels.map(\.channel)
+            let guideSnapshot = model.guideChannels
+            let rowCount = guideSnapshot.count
+            let builder: @Sendable () -> LiveTVChannelSequence = {
+                LiveTVChannelSequence(channels: guideSnapshot.map(\.channel))
+            }
             #endif
-            channelSequence = LiveTVChannelSequence(channels: channels)
+            if rowCount <= 512 {
+                channelSequence = builder()
+            } else {
+                channelSequenceBuilder = builder
+                channelSequenceTask = Task.detached(priority: .userInitiated) {
+                    guard !Task.isCancelled else { return }
+                    let sequence = builder()
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        guard !Task.isCancelled, channelSequenceRevision == revision else { return }
+                        channelSequence = sequence
+                        channelSequenceTask = nil
+                        channelSequenceBuilder = nil
+                    }
+                }
+            }
         }
-        let selectedOrigin = !preview.isExpanded && selectedRowID?.channelID == id ? selectedRowID : nil
-        playback.watch(id, origin: origin ?? selectedOrigin, expandsPlayer: expandsPlayer)
+    }
+
+    private func cancelChannelSequenceTask() {
+        channelSequenceTask?.cancel()
+        channelSequenceTask = nil
+        channelSequenceBuilder = nil
+        channelSequenceRevision &+= 1
+    }
+
+    private func resolvedChannelSequence() -> LiveTVChannelSequence {
+        if let builder = channelSequenceBuilder {
+            cancelChannelSequenceTask()
+            let sequence = builder()
+            channelSequence = sequence
+            return sequence
+        }
+        return channelSequence
     }
 
     private func handleWatchAcceptance() {
@@ -2533,7 +2616,7 @@ public struct LiveTVPrototypeView<PlayerContent: View>: View {
     }
 
     private func changeChannel(by offset: Int) {
-        guard let id = channelSequence.neighbor(
+        guard let id = resolvedChannelSequence().neighbor(
             of: playback.pendingWatchChannelID ?? playback.preparation.current?.channel.id,
             offset: offset, visibleChannels: model.visibleChannels
         ) else { return }

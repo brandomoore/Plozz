@@ -462,6 +462,177 @@ final class IPTVAuthenticationTests: XCTestCase {
         XCTAssertEqual(IPTVFixture.state.requests.filter { $0.url?.query?.contains("action=") == false }.count, 2)
     }
 
+    func testWarmLiveTVConnectionWarmsXtreamOriginOnlyAndSkipsPlaylistAndFileModes() async throws {
+        let root = temporaryDirectory()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let playlistURL = try XCTUnwrap(URL(string: "https://provider.test/get.php?token=playlist-secret"))
+        IPTVFixture.state.handler = { _ in
+            (200, [:], Data("#EXTM3U\n#EXTINF:-1,One\nhttps://cdn.test/one.ts\n".utf8))
+        }
+        let playlistCred = try IPTVCredential(
+            mode: .playlist, address: playlistURL, headers: ["Authorization": "Bearer playlist-bearer"]
+        )
+        let playlistSession = try await IPTVProvider.signIn(
+            credential: playlistCred, name: "Playlist", deviceID: "fixture",
+            cacheDirectory: root, configuration: IPTVFixture.configuration()
+        )
+        IPTVFixture.state.reset()
+        let playlistProvider = try IPTVProvider(
+            context: .init(
+                session: playlistSession, accountID: "playlist", credentialRevision: .init(),
+                localMediaContext: .init(accountID: "playlist", profileID: "viewer", profileNamespace: nil)
+            ),
+            cacheDirectory: root, configuration: IPTVFixture.configuration()
+        )
+        addTeardownBlock { await playlistProvider.teardown() }
+        await playlistProvider.warmLiveTVConnection()
+        XCTAssertTrue(IPTVFixture.state.requests.isEmpty, "Playlist mode must not probe credential.address under playback redirect rules.")
+
+        let file = root.appendingPathComponent("local.m3u")
+        try Data("#EXTM3U\n#EXTINF:-1,Local\nhttps://cdn.test/local.ts\n".utf8).write(to: file)
+        let fileCred = try IPTVCredential(
+            mode: .file, address: XCTUnwrap(URL(string: "https://imported-playlist.invalid"))
+        )
+        let fileSession = try await IPTVProvider.importFile(
+            file, credential: fileCred, name: "File", deviceID: "fixture", cacheDirectory: root
+        )
+        let fileProvider = try IPTVProvider(
+            context: .init(
+                session: fileSession, accountID: "file", credentialRevision: .init(),
+                localMediaContext: .init(accountID: "file", profileID: "viewer", profileNamespace: nil)
+            ),
+            cacheDirectory: root, configuration: IPTVFixture.configuration()
+        )
+        addTeardownBlock { await fileProvider.teardown() }
+        await fileProvider.warmLiveTVConnection()
+        XCTAssertTrue(IPTVFixture.state.requests.isEmpty, "File mode must not issue network warmup requests.")
+
+        let xtreamHandler: @Sendable (URLRequest) throws -> IPTVFixture.Response = { request in
+            if request.httpMethod == "HEAD" { return (200, [:], Data()) }
+            let query = Dictionary(uniqueKeysWithValues: (
+                URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            ).map { ($0.name, $0.value ?? "") })
+            switch query["action"] {
+            case nil:
+                return (200, [:], Data(#"{"user_info":{"auth":1,"status":"Active","allowed_output_formats":["ts"]}}"#.utf8))
+            case "get_live_categories", "get_vod_categories", "get_series_categories",
+                 "get_vod_streams", "get_series":
+                return (200, [:], Data("[]".utf8))
+            case "get_live_streams":
+                return (200, [:], Data(#"[{"stream_id":42,"name":"Fast Channel"}]"#.utf8))
+            default:
+                throw URLError(.unsupportedURL)
+            }
+        }
+        IPTVFixture.state.handler = xtreamHandler
+        let xtreamCred = try IPTVCredential(
+            mode: .xtream, address: XCTUnwrap(URL(string: "https://provider.test/panel/player_api.php")),
+            username: "viewer", password: "xtream-password",
+            headers: ["X-Custom-Auth": "custom-secret"]
+        )
+        let xtreamSession = try await IPTVProvider.signIn(
+            credential: xtreamCred, name: "Xtream", deviceID: "fixture",
+            cacheDirectory: root, configuration: IPTVFixture.configuration()
+        )
+        IPTVFixture.state.reset()
+        IPTVFixture.state.handler = xtreamHandler
+        let xtreamProvider = try IPTVProvider(
+            context: .init(
+                session: xtreamSession, accountID: "xtream", credentialRevision: .init(),
+                localMediaContext: .init(accountID: "xtream", profileID: "viewer", profileNamespace: nil)
+            ),
+            cacheDirectory: root, configuration: IPTVFixture.configuration()
+        )
+        addTeardownBlock { await xtreamProvider.teardown() }
+
+        async let warmOne: Void = xtreamProvider.warmLiveTVConnection()
+        async let warmTwo: Void = xtreamProvider.warmLiveTVConnection()
+        _ = await (warmOne, warmTwo)
+
+        let warmRequests = IPTVFixture.state.requests
+        XCTAssertEqual(warmRequests.count, 2, "Concurrent warmups must coalesce to 1 Xtream auth + 1 origin HEAD.")
+        let headRequest = try XCTUnwrap(warmRequests.first { $0.httpMethod == "HEAD" })
+        XCTAssertEqual(headRequest.url?.absoluteString, "https://provider.test/")
+        XCTAssertNil(headRequest.value(forHTTPHeaderField: "X-Custom-Auth"))
+
+        IPTVFixture.state.reset()
+        IPTVFixture.state.handler = xtreamHandler
+        let lease = try await xtreamProvider.openLiveTVChannel(id: "live:42")
+        addTeardownBlock { await lease.close() }
+        guard case .authenticatedHTTP(let locator) = lease.playbackSource else {
+            return XCTFail("Expected authenticated HTTP locator.")
+        }
+        _ = try await xtreamProvider.resolveHTTPResource(locator)
+        XCTAssertTrue(
+            IPTVFixture.state.requests.isEmpty,
+            "First channel open after warmup must reuse pre-authenticated Xtream state with zero synchronous API calls."
+        )
+    }
+
+    func testBackgroundXtreamReauthenticationRevokesExpiredAccountWithoutFakingFreshnessOnOutage() async throws {
+        let stateLock = NSLock()
+        var authMode = "active"
+        let handler: @Sendable (URLRequest) throws -> IPTVFixture.Response = { request in
+            let query = Dictionary(uniqueKeysWithValues: (
+                URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            ).map { ($0.name, $0.value ?? "") })
+            switch query["action"] {
+            case nil:
+                let current = stateLock.withLock { authMode }
+                if current == "timeout" { throw URLError(.timedOut) }
+                if current == "expired" {
+                    return (200, [:], Data(#"{"user_info":{"auth":1,"status":"Expired"}}"#.utf8))
+                }
+                return (200, [:], Data(#"{"user_info":{"auth":1,"status":"Active","allowed_output_formats":["ts"]}}"#.utf8))
+            case "get_live_categories":
+                return (200, [:], Data("[]".utf8))
+            case "get_live_streams":
+                return (200, [:], Data(#"[{"stream_id":7,"name":"Channel Seven"}]"#.utf8))
+            default:
+                throw URLError(.unsupportedURL)
+            }
+        }
+        IPTVFixture.state.handler = handler
+        let credential = try IPTVCredential(
+            mode: .xtream, address: XCTUnwrap(URL(string: "https://provider.test")),
+            username: "viewer", password: "secret"
+        )
+        let client = try IPTVClient(
+            credential: credential, directory: temporaryDirectory(), configuration: IPTVFixture.configuration()
+        )
+        addTeardownBlock { await client.cancel() }
+        _ = try await client.liveChannels()
+        let record = try await client.record("live:7")
+
+        IPTVFixture.state.reset()
+        IPTVFixture.state.handler = handler
+        stateLock.withLock { authMode = "timeout" }
+        await client.backdateAuthenticationForTesting(by: 305)
+        _ = try await client.delivery(for: record)
+        await client.awaitBackgroundAuthenticationForTesting()
+        XCTAssertEqual(IPTVFixture.state.requests.count, 1)
+
+        // Within the 15s transient-error cooldown, rapid zaps do not spam player_api.php.
+        _ = try await client.delivery(for: record)
+        XCTAssertEqual(IPTVFixture.state.requests.count, 1)
+
+        // Once the cooldown is cleared, authentication is still older than 300s (not faked as fresh)
+        // and an Expired response revokes cached auth so the next delivery surfaces IPTVError.expired.
+        stateLock.withLock { authMode = "expired" }
+        await client.backdateAuthenticationForTesting(by: 1)
+        _ = try await client.delivery(for: record)
+        await client.awaitBackgroundAuthenticationForTesting()
+        XCTAssertEqual(IPTVFixture.state.requests.count, 2)
+
+        do {
+            _ = try await client.delivery(for: record)
+            XCTFail("Revoked background auth must force synchronous validation on the next delivery.")
+        } catch {
+            XCTAssertEqual(error as? IPTVError, .expired)
+        }
+    }
+
     private func checkPlayback(_ credential: IPTVCredential) async throws {
         let root = temporaryDirectory()
         let session = try await IPTVProvider.signIn(

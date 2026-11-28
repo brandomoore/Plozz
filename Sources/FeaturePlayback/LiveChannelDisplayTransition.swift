@@ -36,6 +36,13 @@ final class LiveChannelDisplayTransition {
         return generation
     }
 
+    /// Fast path when no fade veil is active: accept display events synchronously without an async Task hop.
+    func preparePlaybackImmediatelyIfUnveiled(_ token: UUID) -> Bool {
+        guard !veil.isVeiled, token == generation else { return false }
+        acceptsDisplayEvents = true
+        return true
+    }
+
     /// The output policy/load must not run until the existing fade reaches black.
     func preparePlayback(_ token: UUID) async -> Bool {
         if veil.isVeiled { await veil.awaitVeilOpaque() }

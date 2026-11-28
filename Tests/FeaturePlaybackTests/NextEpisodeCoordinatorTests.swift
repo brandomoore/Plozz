@@ -501,15 +501,28 @@ final class NextEpisodeCoordinatorTests: XCTestCase {
     // MARK: - pure meta formatting
 
     func testUpNextMetaSeasonEpisodeAndRuntime() {
+        let usEnglish = Locale(identifier: "en_US")
         let item = MediaItem(id: "e", title: "E", kind: .episode,
                              seasonNumber: 2, episodeNumber: 3, runtime: 48 * 60)
-        XCTAssertEqual(NextEpisodeCoordinator.upNextMeta(for: item), "S2 · E3 · 48m")
+        XCTAssertEqual(NextEpisodeCoordinator.upNextMeta(for: item, locale: usEnglish), "S2 · E3 · 48m")
+        XCTAssertEqual(
+            NextEpisodeCoordinator.upNextMeta(for: item),
+            NextEpisodeCoordinator.upNextMeta(for: item, locale: .current)
+        )
     }
 
     func testUpNextRuntimeLabelHoursAndMinutes() {
-        XCTAssertEqual(NextEpisodeCoordinator.upNextRuntimeLabel(48 * 60), "48m")
-        XCTAssertEqual(NextEpisodeCoordinator.upNextRuntimeLabel(62 * 60), "1h 2m")
-        XCTAssertEqual(NextEpisodeCoordinator.upNextRuntimeLabel(60 * 60), "1h")
+        let usEnglish = Locale(identifier: "en_US")
+        let canadianEnglish = Locale(identifier: "en_CA")
+        XCTAssertEqual(NextEpisodeCoordinator.upNextRuntimeLabel(48 * 60, locale: usEnglish), "48m")
+        XCTAssertEqual(NextEpisodeCoordinator.upNextRuntimeLabel(62 * 60, locale: usEnglish), "1h 2m")
+        XCTAssertEqual(NextEpisodeCoordinator.upNextRuntimeLabel(60 * 60, locale: usEnglish), "1h")
+        XCTAssertEqual(NextEpisodeCoordinator.upNextRuntimeLabel(48 * 60, locale: canadianEnglish), "48min")
+        XCTAssertEqual(NextEpisodeCoordinator.upNextRuntimeLabel(62 * 60, locale: canadianEnglish), "1h 2min")
+        XCTAssertEqual(
+            NextEpisodeCoordinator.upNextRuntimeLabel(48 * 60),
+            NextEpisodeCoordinator.upNextRuntimeLabel(48 * 60, locale: .current)
+        )
     }
 }
 

@@ -8,11 +8,28 @@ import Network
 /// behind a per-playback, loopback-only endpoint and authorize each upstream
 /// request against the original stream origin instead.
 actor IPTVPlaybackProxy {
+    private static let formatProbeMaxBytes = 1_024
+    /// Minimum initial TS/M2TS bytes so AetherEngine's `AVIOReader.bodyBeginsWithMPEGTS`
+    /// can verify aligned sync markers (377 B for 188-byte TS, 389 B for 192-byte M2TS)
+    /// on the first loopback chunk instead of falling back to `av_probe_input_buffer2`.
+    private static let minimumTransportPrefixBytes = 389
+    private static let handoffTTLSeconds: TimeInterval = 5
+    private static let uriAttributeRegex = try! NSRegularExpression(pattern: #"\bURI="([^"]+)""#)
+    private struct HeldStreamHandoff {
+        let token: UUID
+        let prefix: Data
+        let stream: IPTVHTTPChunkStream
+        let response: HTTPURLResponse
+        let evidence: IPTVPlaybackResponseEvidence
+        let receivedBytes: Int
+        let expiry: Task<Void, Never>
+    }
     private let listener: NWListener
     private let origin: URL
     private let headers: [String: String]
     private let formatHint: MediaFormatHint
     private let http: IPTVHTTP
+    private let ownsHTTP: Bool
     private let isLive: Bool
     private let uptime: @Sendable () -> TimeInterval
     private let diagnostic: PlaybackFailureAttempt?
@@ -34,12 +51,17 @@ actor IPTVPlaybackProxy {
     private var playbackURL: URL?
     private var deliveryFailure: PlaybackDeliveryFailure?
     private var livePlaylistURL: URL?
+    private var cachedManifestHandoff: (data: Data, expiresAt: TimeInterval)?
+    private var cachedFailureHandoff: (status: Int, expiresAt: TimeInterval)?
+    private var heldStreamHandoff: HeldStreamHandoff?
+    private var preconnectTask: Task<Void, Never>?
     private var diagnosticSequence = 0
     private let diagnosticStarted = ProcessInfo.processInfo.systemUptime
 
     init(
         origin: URL, headers: [String: String], formatHint: MediaFormatHint = .init(),
         configuration: URLSessionConfiguration? = nil,
+        sharedHTTP: IPTVHTTP? = nil,
         sensitiveValues: [String] = [], content: PlaybackFailureDiagnostic.Content = .live,
         diagnostics: PlaybackFailureDiagnostics = .shared,
         uptime: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
@@ -49,10 +71,16 @@ actor IPTVPlaybackProxy {
         self.formatHint = formatHint
         isLive = content == .live
         self.uptime = uptime
-        http = IPTVHTTP(
-            configuration: configuration, resourceTimeout: 86_400,
-            sensitiveValues: sensitiveValues, redirectScope: .playback
-        )
+        if let sharedHTTP {
+            http = sharedHTTP
+            ownsHTTP = false
+        } else {
+            http = IPTVHTTP(
+                configuration: configuration, resourceTimeout: 86_400,
+                sensitiveValues: sensitiveValues, redirectScope: .playback
+            )
+            ownsHTTP = true
+        }
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         listener = try NWListener(using: parameters)
@@ -102,9 +130,13 @@ actor IPTVPlaybackProxy {
         if let shutdown { await shutdown.value; return }
         stopped = true
         livePlaylistURL = nil
+        let pendingPreconnect = preconnectTask
+        preconnectTask = nil
+        pendingPreconnect?.cancel()
+        discardHandoffs()
         listener.newConnectionHandler = nil
         listener.cancel()
-        http.cancel()
+        if ownsHTTP { http.cancel() }
         if let playbackURL { PlaybackDeliveryFailure.unregister(loopbackURL: playbackURL) }
         let waiting = rootWaiters
         rootWaiters.removeAll()
@@ -112,9 +144,161 @@ actor IPTVPlaybackProxy {
         let pending = requests.values.map(\.1)
         for (connection, task) in requests.values { task.cancel(); connection.cancel() }
         requests.removeAll()
-        let completion = Task { for task in pending { await task.value } }
+        let completion = Task {
+            await pendingPreconnect?.value
+            for task in pending { await task.value }
+        }
         shutdown = completion
         await completion.value
+        discardHandoffs()
+    }
+
+    /// Starts the single upstream connection for a committed live channel (MPEG-TS, HLS, or
+    /// extensionless) in parallel with player mount so network TTFB overlaps SwiftUI/engine setup.
+    func preconnectDirectLive() {
+        guard isLive, !stopped,
+              liveRootRequest == nil, heldStreamHandoff == nil, cachedManifestHandoff == nil,
+              preconnectTask == nil else { return }
+        let evidence = IPTVPlaybackResponseEvidence()
+        preconnectTask = Task { [weak self] in
+            guard let self else { return }
+            await self.runPreconnect(evidence: evidence)
+        }
+    }
+
+    private func runPreconnect(evidence: IPTVPlaybackResponseEvidence) async {
+        var diagnosticStage: PlaybackFailureDiagnostic.Stage? = .response
+        var rejectedBody = false
+        var receivedBytes = 0
+        do {
+            let (stream, response) = try await openUpstream(
+                url: origin, forwardedHeaders: [:], method: "GET", evidence: evidence
+            )
+            var handedOff = false
+            defer { if !handedOff { stream.cancel() } }
+            try Task.checkCancellation()
+            guard !stopped else { throw CancellationError() }
+            diagnosticStage = .body
+            var prefix = Data()
+            while prefix.count < 16, let chunk = try await stream.nextChunk() {
+                prefix.append(chunk)
+                receivedBytes += chunk.count
+                try Task.checkCancellation()
+            }
+            evidence.received(receivedBytes)
+            try Task.checkCancellation()
+            guard !stopped else { throw CancellationError() }
+            if response.statusCode != 206, response.value(forHTTPHeaderField: "Content-Range") == nil,
+               let format = Self.nonVideoBodyFormat(prefix) {
+                receivedBytes = min(receivedBytes, 16)
+                evidence.received(receivedBytes)
+                evidence.detect(format)
+                rejectedBody = true
+                throw AppError.invalidResponse
+            }
+            let contentType = response.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
+            let prefixText = String(decoding: prefix.prefix(32), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            let hasManifestHeader = prefixText.hasPrefix("#EXTM3U") || prefixText.hasPrefix("\u{FEFF}#EXTM3U")
+            if contentType.contains("mpegurl") || hasManifestHeader {
+                evidence.detect(.hls)
+                var body = prefix
+                while let chunk = try await stream.nextChunk() {
+                    guard body.count + chunk.count < 8 * 1_024 * 1_024 else { throw IPTVError.oversizedRecord }
+                    body.append(chunk)
+                    receivedBytes += chunk.count
+                    evidence.received(receivedBytes)
+                    try Task.checkCancellation()
+                }
+                try Task.checkCancellation()
+                guard !stopped else { throw CancellationError() }
+                guard let text = String(data: body, encoding: .utf8) else { throw IPTVError.malformed }
+                evidence.playlist(Self.playlistEvidence(text))
+                diagnosticStage = .manifest
+                let rewritten = try rewrite(text, baseURL: response.url ?? origin)
+                try Task.checkCancellation()
+                if hasManifestHeader { livePlaylistURL = response.url }
+                let data = Data(rewritten.utf8)
+                evidence.finish(outcome: .complete, receivedBytes: receivedBytes)
+                diagnosticStage = nil
+                guard !stopped else { return }
+                cachedManifestHandoff = (data, uptime() + Self.handoffTTLSeconds)
+                return
+            }
+            let targetBytes = mediaSuffix(for: origin).isEmpty
+                ? Self.formatProbeMaxBytes : Self.minimumTransportPrefixBytes
+            if mediaSuffix(for: origin).isEmpty || Self.looksLikeTransportStreamStart(prefix) {
+                while prefix.count < targetBytes,
+                      !Self.hasTransportStreamSync(prefix),
+                      let chunk = try await stream.nextChunk() {
+                    try Task.checkCancellation()
+                    prefix.append(chunk)
+                    receivedBytes += chunk.count
+                }
+                evidence.received(receivedBytes)
+            }
+            try Task.checkCancellation()
+            guard !stopped else { throw CancellationError() }
+            let token = UUID()
+            let ttl = Self.handoffTTLSeconds
+            let expiry = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(ttl)) }
+                catch { return }
+                await self?.expireHeldStreamHandoff(token)
+            }
+            heldStreamHandoff = HeldStreamHandoff(
+                token: token, prefix: prefix, stream: stream,
+                response: response, evidence: evidence,
+                receivedBytes: receivedBytes, expiry: expiry
+            )
+            handedOff = true
+        } catch {
+            let recorded = recordUpstreamFailure(
+                error, stage: diagnosticStage, rejectedBody: rejectedBody,
+                evidence: evidence, receivedBytes: receivedBytes
+            )
+            if recorded {
+                PlozzLog.playback.error("Authenticated IPTV preconnect failed")
+                if refusal == nil {
+                    let status = evidence.snapshot.status.flatMap { (400...599).contains($0) ? $0 : nil } ?? 502
+                    cachedFailureHandoff = (status, uptime() + Self.handoffTTLSeconds)
+                }
+            }
+        }
+    }
+
+    private func discardHandoffs() {
+        cachedManifestHandoff = nil
+        cachedFailureHandoff = nil
+        if let held = heldStreamHandoff {
+            heldStreamHandoff = nil
+            held.expiry.cancel()
+            held.stream.cancel()
+        }
+    }
+
+    private func expireHeldStreamHandoff(_ token: UUID) {
+        guard let held = heldStreamHandoff, held.token == token else { return }
+        heldStreamHandoff = nil
+        held.stream.cancel()
+    }
+
+    private static func looksLikeTransportStreamStart(_ prefix: Data) -> Bool {
+        guard !prefix.isEmpty else { return false }
+        if prefix[prefix.startIndex] == 0x47 { return true }
+        if prefix.count > 4, prefix[prefix.index(prefix.startIndex, offsetBy: 4)] == 0x47 { return true }
+        return false
+    }
+
+    private static func hasTransportStreamSync(_ prefix: Data) -> Bool {
+        let bytes = [UInt8](prefix)
+        for (stride, offset) in [(188, 0), (192, 4), (204, 0)] {
+            if bytes.count > offset + stride * 2,
+               bytes[offset] == 0x47, bytes[offset + stride] == 0x47,
+               bytes[offset + stride * 2] == 0x47 {
+                return true
+            }
+        }
+        return false
     }
 
     private func accept(_ connection: NWConnection) {
@@ -231,7 +415,7 @@ actor IPTVPlaybackProxy {
         var sentResponse = false
         var diagnosticStage: PlaybackFailureDiagnostic.Stage?
         var rejectedBody = false
-        let responseEvidence = IPTVPlaybackResponseEvidence()
+        var activeEvidence = IPTVPlaybackResponseEvidence()
         var receivedBytes = 0
         do {
             var head = Data()
@@ -252,75 +436,159 @@ actor IPTVPlaybackProxy {
             connection.receive(minimumIncompleteLength: 1, maximumLength: 1) { [weak self] _, _, _, _ in
                 Task { await self?.cancelRequest(id) }
             }
-            if isLive, url == origin { try await acquireLiveRoot(id) }
-            if let refusal {
-                if let expiresAt = refusal.expiresAt, uptime() >= expiresAt {
-                    self.refusal = nil
-                    deliveryFailure?.clearRateLimit()
-                } else {
-                    try await Self.send(connection, data: Self.failureHead(
-                        refusal.status, retryAfter: refusal.expiresAt.map { max(0, $0 - uptime()) }
-                    ))
-                    return
-                }
+            let isLiveRoot = isLive && url == origin
+            if isLiveRoot { try await acquireLiveRoot(id) }
+            if try await sendCachedRefusalIfNeeded(connection) {
+                sentResponse = true
+                return
             }
             var outgoing: [String: String] = [:]
+            var isFormatProbe = false
             for field in text.components(separatedBy: "\r\n").dropFirst() {
                 guard let colon = field.firstIndex(of: ":") else { continue }
                 let name = field[..<colon].lowercased()
+                let value = field[field.index(after: colon)...].trimmingCharacters(in: .whitespaces)
                 if name == "range" || name == "if-range" {
-                    outgoing[String(field[..<colon])] = field[field.index(after: colon)...]
-                        .trimmingCharacters(in: .whitespaces)
+                    outgoing[String(field[..<colon])] = value
+                } else if name == "x-plozz-format-probe" {
+                    isFormatProbe = value == "1"
                 }
             }
-            diagnosticStage = .response
-            let (bytes, response) = try await openUpstream(
-                url: url, forwardedHeaders: outgoing, method: String(request[0]), evidence: responseEvidence
+            let isLiveRootGet = isLiveRoot && request[0] == "GET"
+            let startsAtByteZero = outgoing.isEmpty || (
+                outgoing.count == 1
+                && outgoing.first?.key.lowercased() == "range"
+                && outgoing.first?.value.replacingOccurrences(of: " ", with: "").lowercased() == "bytes=0-"
             )
-            defer { bytes.task.cancel() }
-            let upstreamTask = bytes.task
+            let canReuseHandoff = isLiveRootGet && !isFormatProbe && startsAtByteZero
+            let canSharePreconnect = isLiveRootGet && startsAtByteZero
+            // Wait for any in-flight preconnect before inspecting handoffs so both format probes
+            // and direct player opens adopt the single preconnected upstream response, while HEAD
+            // or non-zero-range root requests cancel and drain it before opening their own request.
+            if canSharePreconnect, let pendingPreconnect = preconnectTask {
+                preconnectTask = nil
+                await withTaskCancellationHandler {
+                    await pendingPreconnect.value
+                } onCancel: {
+                    pendingPreconnect.cancel()
+                }
+                try Task.checkCancellation()
+            } else if isLiveRoot, let pendingPreconnect = preconnectTask {
+                preconnectTask = nil
+                pendingPreconnect.cancel()
+                await pendingPreconnect.value
+                try Task.checkCancellation()
+            }
+            if try await sendCachedRefusalIfNeeded(connection) {
+                sentResponse = true
+                return
+            }
+            if canSharePreconnect, let failed = cachedFailureHandoff {
+                if uptime() < failed.expiresAt {
+                    if !isFormatProbe { cachedFailureHandoff = nil }
+                    try await Self.send(connection, data: Self.failureHead(failed.status))
+                    sentResponse = true
+                    return
+                } else {
+                    cachedFailureHandoff = nil
+                }
+            }
+            // Fast path 1: serve a preconnected/probed rewritten manifest. A format probe leaves
+            // the cache intact for the immediately following player open; the player consumes it.
+            if canSharePreconnect, let cached = cachedManifestHandoff {
+                if uptime() < cached.expiresAt {
+                    if !isFormatProbe { cachedManifestHandoff = nil }
+                    try await Self.send(connection, data: Data(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/vnd.apple.mpegurl\r\nContent-Length: \(cached.data.count)\r\nConnection: close\r\n\r\n".utf8
+                    ))
+                    sentResponse = true
+                    try await Self.send(connection, data: cached.data)
+                    return
+                } else {
+                    cachedManifestHandoff = nil
+                }
+            }
+            // Fast path 2: a format probe on an already-preconnected binary stream answers from
+            // the buffered prefix while keeping the held stream open for the player load.
+            if isLiveRootGet, isFormatProbe, startsAtByteZero, let held = heldStreamHandoff {
+                let probeSlice = held.prefix.prefix(Self.formatProbeMaxBytes)
+                try await Self.send(connection, data: Data(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: \(probeSlice.count)\r\nConnection: close\r\n\r\n".utf8
+                ))
+                sentResponse = true
+                if !probeSlice.isEmpty { try await Self.send(connection, data: Data(probeSlice)) }
+                return
+            }
+            let adoptedHandoff: HeldStreamHandoff?
+            if canReuseHandoff, let held = heldStreamHandoff {
+                heldStreamHandoff = nil
+                held.expiry.cancel()
+                adoptedHandoff = held
+            } else {
+                if isLiveRoot { discardHandoffs() }
+                adoptedHandoff = nil
+            }
+            diagnosticStage = .response
+            let stream: IPTVHTTPChunkStream
+            let response: HTTPURLResponse
+            if let adoptedHandoff {
+                stream = adoptedHandoff.stream
+                response = adoptedHandoff.response
+                activeEvidence = adoptedHandoff.evidence
+                receivedBytes = adoptedHandoff.receivedBytes
+            } else {
+                (stream, response) = try await openUpstream(
+                    url: url, forwardedHeaders: outgoing, method: String(request[0]), evidence: activeEvidence
+                )
+            }
+            var handedOff = false
+            defer { if !handedOff { stream.cancel() } }
             try await withTaskCancellationHandler {
                 if request[0] == "HEAD" {
-                    responseEvidence.finish(outcome: .complete, receivedBytes: 0)
+                    activeEvidence.finish(outcome: .complete, receivedBytes: 0)
                     diagnosticStage = nil
                     try await Self.send(connection, data: responseHead(response, chunked: false))
                     return
                 }
                 diagnosticStage = .body
-                var iterator = bytes.makeAsyncIterator()
-                var prefix = Data()
-                while prefix.count < 16, let byte = try await iterator.next() {
-                    prefix.append(byte)
-                    receivedBytes += 1
-                }
-                responseEvidence.received(receivedBytes)
-                // Keys, encrypted segments and byte ranges are opaque bytes, not documents.
-                if isLive, url == origin, !outgoing.keys.contains(where: { $0.lowercased() == "range" }),
-                   response.statusCode != 206, response.value(forHTTPHeaderField: "Content-Range") == nil,
-                   let format = Self.nonVideoBodyFormat(prefix) {
-                    responseEvidence.detect(format)
-                    rejectedBody = true
-                    throw AppError.invalidResponse
+                var prefix: Data
+                if let adoptedHandoff {
+                    prefix = adoptedHandoff.prefix
+                } else {
+                    prefix = Data()
+                    while prefix.count < 16, let chunk = try await stream.nextChunk() {
+                        prefix.append(chunk)
+                        receivedBytes += chunk.count
+                    }
+                    activeEvidence.received(receivedBytes)
+                    // Keys, encrypted segments and byte ranges are opaque bytes, not documents.
+                    if isLive, url == origin, !outgoing.keys.contains(where: { $0.lowercased() == "range" }),
+                       response.statusCode != 206, response.value(forHTTPHeaderField: "Content-Range") == nil,
+                       let format = Self.nonVideoBodyFormat(prefix) {
+                        receivedBytes = min(receivedBytes, 16)
+                        activeEvidence.received(receivedBytes)
+                        activeEvidence.detect(format)
+                        rejectedBody = true
+                        throw AppError.invalidResponse
+                    }
                 }
                 let contentType = response.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
-                let prefixText = String(decoding: prefix, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                let prefixText = String(decoding: prefix.prefix(32), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
                 let hasManifestHeader = prefixText.hasPrefix("#EXTM3U")
                     || prefixText.hasPrefix("\u{FEFF}#EXTM3U")
-                let manifest = contentType.contains("mpegurl") || hasManifestHeader
+                let manifest = adoptedHandoff == nil && (contentType.contains("mpegurl") || hasManifestHeader)
                 if manifest {
-                    responseEvidence.detect(.hls)
+                    activeEvidence.detect(.hls)
                     var body = prefix
-                    while let byte = try await iterator.next() {
-                        guard body.count < 8 * 1_024 * 1_024 else { throw IPTVError.oversizedRecord }
-                        body.append(byte)
-                        receivedBytes += 1
-                        if body.count.isMultiple(of: 65_536) {
-                            responseEvidence.received(receivedBytes)
-                            try Task.checkCancellation()
-                        }
+                    while let chunk = try await stream.nextChunk() {
+                        guard body.count + chunk.count < 8 * 1_024 * 1_024 else { throw IPTVError.oversizedRecord }
+                        body.append(chunk)
+                        receivedBytes += chunk.count
+                        activeEvidence.received(receivedBytes)
+                        try Task.checkCancellation()
                     }
                     guard let text = String(data: body, encoding: .utf8) else { throw IPTVError.malformed }
-                    responseEvidence.playlist(Self.playlistEvidence(text))
+                    activeEvidence.playlist(Self.playlistEvidence(text))
                     diagnosticStage = .manifest
                     let rewritten = try rewrite(text, baseURL: response.url ?? url)
                     try Task.checkCancellation()
@@ -330,91 +598,93 @@ actor IPTVPlaybackProxy {
                         livePlaylistURL = response.url
                     }
                     let data = Data(rewritten.utf8)
-                    responseEvidence.finish(outcome: .complete, receivedBytes: receivedBytes)
+                    activeEvidence.finish(outcome: .complete, receivedBytes: receivedBytes)
                     diagnosticStage = nil
+                    if isLiveRootGet, isFormatProbe, !stopped {
+                        cachedManifestHandoff = (data, uptime() + Self.handoffTTLSeconds)
+                    }
                     try await Self.send(connection, data: Data(
                         "HTTP/1.1 200 OK\r\nContent-Type: application/vnd.apple.mpegurl\r\nContent-Length: \(data.count)\r\nConnection: close\r\n\r\n".utf8
                     ))
                     sentResponse = true
                     try await Self.send(connection, data: data)
+                } else if isLiveRootGet, isFormatProbe {
+                    while prefix.count < Self.formatProbeMaxBytes,
+                          !Self.hasTransportStreamSync(prefix),
+                          let chunk = try await stream.nextChunk() {
+                        try Task.checkCancellation()
+                        prefix.append(chunk)
+                        receivedBytes += chunk.count
+                    }
+                    activeEvidence.received(receivedBytes)
+                    if !stopped, !Task.isCancelled, !prefix.isEmpty {
+                        let token = UUID()
+                        let ttl = Self.handoffTTLSeconds
+                        let expiry = Task { [weak self] in
+                            do { try await Task.sleep(for: .seconds(ttl)) }
+                            catch { return }
+                            await self?.expireHeldStreamHandoff(token)
+                        }
+                        heldStreamHandoff = HeldStreamHandoff(
+                            token: token, prefix: prefix, stream: stream,
+                            response: response, evidence: activeEvidence,
+                            receivedBytes: receivedBytes, expiry: expiry
+                        )
+                        handedOff = true
+                    }
+                    let probeSlice = prefix.prefix(Self.formatProbeMaxBytes)
+                    diagnosticStage = nil
+                    try await Self.send(connection, data: Data(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: \(probeSlice.count)\r\nConnection: close\r\n\r\n".utf8
+                    ))
+                    sentResponse = true
+                    if !probeSlice.isEmpty { try await Self.send(connection, data: Data(probeSlice)) }
                 } else {
+                    if isLive, url == origin, adoptedHandoff == nil,
+                       Self.looksLikeTransportStreamStart(prefix) {
+                        // Deliver aligned TS/M2TS sync bytes in the first chunk so AetherEngine's
+                        // live MPEG-TS prefix fast path does not fall back to a multi-KiB probe.
+                        while prefix.count < Self.minimumTransportPrefixBytes,
+                              !Self.hasTransportStreamSync(prefix),
+                              let chunk = try await stream.nextChunk() {
+                            try Task.checkCancellation()
+                            prefix.append(chunk)
+                            receivedBytes += chunk.count
+                        }
+                    }
                     diagnosticStage = nil
                     try await Self.send(connection, data: responseHead(response, chunked: true))
                     sentResponse = true
-                    var chunk = prefix
                     diagnosticStage = .body
-                    while let byte = try await iterator.next() {
-                        chunk.append(byte)
-                        receivedBytes += 1
-                        if chunk.count == 65_536 {
-                            responseEvidence.received(receivedBytes)
-                            try Task.checkCancellation()
-                            diagnosticStage = nil
-                            try await Self.sendChunk(connection, data: chunk)
-                            chunk.removeAll(keepingCapacity: true)
-                            diagnosticStage = .body
-                        }
+                    if !prefix.isEmpty {
+                        activeEvidence.received(receivedBytes)
+                        try Task.checkCancellation()
+                        diagnosticStage = nil
+                        try await Self.sendChunk(connection, data: prefix)
+                        diagnosticStage = .body
                     }
-                    responseEvidence.finish(outcome: .complete, receivedBytes: receivedBytes)
+                    while let chunk = try await stream.nextChunk() {
+                        receivedBytes += chunk.count
+                        activeEvidence.received(receivedBytes)
+                        try Task.checkCancellation()
+                        diagnosticStage = nil
+                        try await Self.sendChunk(connection, data: chunk)
+                        diagnosticStage = .body
+                    }
+                    activeEvidence.finish(outcome: .complete, receivedBytes: receivedBytes)
                     diagnosticStage = nil
-                    if !chunk.isEmpty { try await Self.sendChunk(connection, data: chunk) }
                     try await Self.send(connection, data: Data("0\r\n\r\n".utf8))
                 }
-            } onCancel: { upstreamTask.cancel() }
+            } onCancel: { if !handedOff { stream.cancel() } }
         } catch {
-            let cancelled = Task.isCancelled || error is CancellationError
-                || (error as NSError).domain == NSURLErrorDomain && (error as NSError).code == NSURLErrorCancelled
-            responseEvidence.finish(
-                outcome: cancelled || diagnosticStage == nil ? .consumerClosed : .upstreamFailure,
-                receivedBytes: receivedBytes,
-                networkCode: (error as NSError).domain == NSURLErrorDomain ? (error as NSError).code : nil
+            _ = recordUpstreamFailure(
+                error, stage: diagnosticStage, rejectedBody: rejectedBody,
+                evidence: activeEvidence, receivedBytes: receivedBytes
             )
-            if !Task.isCancelled, !(error is CancellationError), let diagnosticStage {
-                let failure = (error as? IPTVError)?.setupFailure ?? .sanitized(error)
-                let evidence = responseEvidence.snapshot
-                let failureDiagnostic = diagnostic?.fail(
-                    stage: diagnosticStage, reason: failure.reason,
-                    domain: failure.networkCode == nil ? .none : .url, code: failure.networkCode,
-                    httpStatus: evidence.status, format: evidence.format,
-                    evidence: .init(delivery: deliveryFailure?.evidence)
-                )
-                if rejectedBody {
-                    deliveryFailure?.clearRateLimit()
-                    deliveryFailure?.record(.invalidResponse, diagnostic: failureDiagnostic)
-                    if refusal == nil || refusal.map({ [429, 509].contains($0.status) }) == true {
-                        refusal = (502, nil)
-                    }
-                } else if let status = evidence.status,
-                   [401, 403, 429, 451, 509].contains(status) || error as? AppError == .conflict {
-                    let retryAfter: TimeInterval?
-                    if case AppError.rateLimited(let delay) = error { retryAfter = delay }
-                    else { retryAfter = nil }
-                    let appError: AppError
-                    switch status {
-                    case 401, 403: appError = .unauthorized
-                    case 429, 509: appError = .rateLimited(retryAfter: retryAfter)
-                    case 451: appError = .accessRestricted
-                    case 503: appError = .conflict
-                    default: appError = .invalidResponse
-                    }
-                    if ![429, 509].contains(status) { deliveryFailure?.clearRateLimit() }
-                    deliveryFailure?.record(appError, diagnostic: failureDiagnostic)
-                    if refusal == nil || refusal.map({ [429, 509].contains($0.status) }) == true {
-                        var expiresAt = retryAfter.map { uptime() + $0 }.flatMap { $0.isFinite ? $0 : nil }
-                        if let previous = refusal, [429, 509].contains(status) {
-                            // Overlapping HLS requests may extend, but never shorten, a cooldown.
-                            expiresAt = previous.expiresAt.flatMap { previousExpiry in
-                                expiresAt.map { max(previousExpiry, $0) }
-                            }
-                        }
-                        refusal = (status, expiresAt)
-                    }
-                }
-            }
             if !Task.isCancelled { PlozzLog.playback.error("Authenticated IPTV delivery failed") }
             if !sentResponse {
                 do {
-                    let status = responseEvidence.snapshot.status
+                    let status = activeEvidence.snapshot.status
                     try await Self.send(connection, data: Self.failureHead(
                         status.flatMap { (400...599).contains($0) ? $0 : nil } ?? 502,
                         retryAfter: refusal?.expiresAt.map { max(0, $0 - uptime()) }
@@ -424,11 +694,84 @@ actor IPTVPlaybackProxy {
         }
     }
 
+    private func sendCachedRefusalIfNeeded(_ connection: NWConnection) async throws -> Bool {
+        guard let refusal else { return false }
+        if let expiresAt = refusal.expiresAt, uptime() >= expiresAt {
+            self.refusal = nil
+            deliveryFailure?.clearRateLimit()
+            return false
+        }
+        try await Self.send(connection, data: Self.failureHead(
+            refusal.status, retryAfter: refusal.expiresAt.map { max(0, $0 - uptime()) }
+        ))
+        return true
+    }
+
+    @discardableResult
+    private func recordUpstreamFailure(
+        _ error: any Error,
+        stage: PlaybackFailureDiagnostic.Stage?,
+        rejectedBody: Bool,
+        evidence: IPTVPlaybackResponseEvidence,
+        receivedBytes: Int
+    ) -> Bool {
+        let nsError = error as NSError
+        let cancelled = stopped || Task.isCancelled || error is CancellationError
+            || (nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled)
+        evidence.finish(
+            outcome: cancelled || stage == nil ? .consumerClosed : .upstreamFailure,
+            receivedBytes: receivedBytes,
+            networkCode: nsError.domain == NSURLErrorDomain ? nsError.code : nil
+        )
+        guard !cancelled, let stage else { return false }
+        let failure = (error as? IPTVError)?.setupFailure ?? .sanitized(error)
+        let snapshot = evidence.snapshot
+        let failureDiagnostic = diagnostic?.fail(
+            stage: stage, reason: failure.reason,
+            domain: failure.networkCode == nil ? .none : .url, code: failure.networkCode,
+            httpStatus: snapshot.status, format: snapshot.format,
+            evidence: .init(delivery: deliveryFailure?.evidence)
+        )
+        if rejectedBody {
+            deliveryFailure?.clearRateLimit()
+            deliveryFailure?.record(.invalidResponse, diagnostic: failureDiagnostic)
+            if refusal == nil || refusal.map({ [429, 509].contains($0.status) }) == true {
+                refusal = (502, nil)
+            }
+        } else if let status = snapshot.status,
+                  [401, 403, 429, 451, 509].contains(status) || error as? AppError == .conflict {
+            let retryAfter: TimeInterval?
+            if case AppError.rateLimited(let delay) = error { retryAfter = delay }
+            else { retryAfter = nil }
+            let appError: AppError
+            switch status {
+            case 401, 403: appError = .unauthorized
+            case 429, 509: appError = .rateLimited(retryAfter: retryAfter)
+            case 451: appError = .accessRestricted
+            case 503: appError = .conflict
+            default: appError = .invalidResponse
+            }
+            if ![429, 509].contains(status) { deliveryFailure?.clearRateLimit() }
+            deliveryFailure?.record(appError, diagnostic: failureDiagnostic)
+            if refusal == nil || refusal.map({ [429, 509].contains($0.status) }) == true {
+                var expiresAt = retryAfter.map { uptime() + $0 }.flatMap { $0.isFinite ? $0 : nil }
+                if let previous = refusal, [429, 509].contains(status) {
+                    // Overlapping HLS requests may extend, but never shorten, a cooldown.
+                    expiresAt = previous.expiresAt.flatMap { previousExpiry in
+                        expiresAt.map { max(previousExpiry, $0) }
+                    }
+                }
+                refusal = (status, expiresAt)
+            }
+        }
+        return true
+    }
+
     private func openUpstream(
         url: URL, forwardedHeaders: [String: String], method: String,
         evidence: IPTVPlaybackResponseEvidence
-    ) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
-        func fetch(_ target: URL) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
+    ) async throws -> (IPTVHTTPChunkStream, HTTPURLResponse) {
+        func fetch(_ target: URL) async throws -> (IPTVHTTPChunkStream, HTTPURLResponse) {
             let scoped = IPTVCredential.sameOrigin(origin, target) ? headers : [:]
             diagnosticSequence = min(1_000_000, diagnosticSequence + 1)
             var request = PlaybackDeliveryEvidence.Request(
@@ -440,7 +783,7 @@ actor IPTVPlaybackProxy {
             )
             request.rangeRequested = forwardedHeaders.keys.contains { $0.lowercased() == "range" }
             evidence.begin(request, delivery: deliveryFailure)
-            return try await http.bytes(
+            return try await http.chunks(
                 url: target, headers: scoped.merging(forwardedHeaders) { _, forwarded in forwarded }, method: method,
                 receivedResponse: { response in
                     evidence.record(response: response, target: target, origin: self.origin)
@@ -617,7 +960,7 @@ actor IPTVPlaybackProxy {
     }
 
     func rewrite(_ manifest: String, baseURL: URL) throws -> String {
-        let expression = try NSRegularExpression(pattern: #"\bURI="([^"]+)""#)
+        let expression = Self.uriAttributeRegex
         let normalized = manifest.hasPrefix("\u{FEFF}") ? String(manifest.dropFirst()) : manifest
         return try normalized.components(separatedBy: .newlines).map { line in
             if line.trimmingCharacters(in: .whitespaces).isEmpty { return line }

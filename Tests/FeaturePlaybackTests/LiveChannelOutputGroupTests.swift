@@ -1,4 +1,5 @@
 #if DEBUG && canImport(UIKit)
+import CoreModels
 import XCTest
 @testable import FeaturePlayback
 
@@ -161,6 +162,49 @@ final class LiveChannelOutputGroupTests: XCTestCase {
         XCTAssertEqual(first.liveLoads, 1)
         XCTAssertTrue(first.outputPolicy.isAudible)
         firstModel.stop()
+    }
+
+    func testReadinessCallbackPresentsFirstFrameImmediatelyWithoutMonitorPoll() async {
+        let engine = LiveEngineSpy()
+        engine.liveSnapshot = .init(phase: .loading, firstFrameReady: false)
+        let model = LiveChannelPlayerModel(
+            engine: engine, streamURL: URL(string: "https://example.invalid/live.ts")!
+        )
+        await model.start()
+        XCTAssertFalse(model.hasPresentedFrame)
+        engine.liveSnapshot = .init(phase: .playing, firstFrameReady: true)
+        engine.onLiveOutputReadinessChanged?()
+        XCTAssertTrue(model.hasPresentedFrame)
+        XCTAssertEqual(model.phase, .playing)
+        model.stop()
+    }
+
+    func testDisplayTransitionUnveiledFastPathAndVeiledGuard() async {
+        let transition = LiveChannelDisplayTransition()
+        var unveiledSettings = PlaybackSettings.default
+        unveiledSettings.fadeOnDynamicRangeChange = false
+        unveiledSettings.fadeOnFrameRateChange = false
+        let inlineToken = transition.beginPlayback(
+            isFullscreen: false, changesSource: false, range: nil, settings: unveiledSettings
+        )
+        XCTAssertFalse(transition.preparePlaybackImmediatelyIfUnveiled(UUID()))
+        XCTAssertTrue(transition.preparePlaybackImmediatelyIfUnveiled(inlineToken))
+
+        var veiledSettings = PlaybackSettings.default
+        veiledSettings.fadeOnDynamicRangeChange = true
+        veiledSettings.fadeOnFrameRateChange = true
+        let veiledToken = transition.beginPlayback(
+            isFullscreen: true, changesSource: true, range: .hdr10, settings: veiledSettings
+        )
+        if transition.veil.isVeiled {
+            XCTAssertFalse(
+                transition.preparePlaybackImmediatelyIfUnveiled(veiledToken),
+                "Active transition veil must wait for opacity instead of taking the unveiled fast path."
+            )
+        } else {
+            XCTAssertTrue(transition.preparePlaybackImmediatelyIfUnveiled(veiledToken))
+        }
+        transition.reset()
     }
 }
 #endif

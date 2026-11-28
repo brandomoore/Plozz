@@ -1017,12 +1017,11 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         serverRenditionAudio = nil
         chapters = []
         streamingFailure = nil
-        liveScrubThumbnails = LiveHLSScrubThumbnails(playlistURL: url, headers: httpHeaders) { [weak self] in
-            (self?.engine.currentAVPlayer?.currentItem?.accessLog()?.events.last?.uri).flatMap(URL.init(string:))
-        }
         let outputPolicy = liveOutputPolicy
         defer { finishOutputLoad(outputGeneration, policy: outputPolicy) }
         let liveGeneration = beginLiveAttempt()
+        liveScrubThumbnails = nil
+        liveScrubThumbnailSource = (url, httpHeaders)
         liveDeliveryFailure = PlaybackDeliveryFailure.state(for: url)
         let probeGeneration = probePublicationGate.beginLoad()
         sourceFormatCancellable?.cancel()
@@ -1072,7 +1071,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
             // declaration. Activate only after that boundary: the bare
             // AetherPlayerView has no AVPlayerViewController to do it for us,
             // while Aether remains the sole owner of category configuration.
-            try Self.activateLiveAudioSession()
+            try await Self.activateLiveAudioSession()
+            guard liveAttemptGate.accepts(liveGeneration), !Task.isCancelled else { return }
             if intendsPause {
                 engine.pause()
                 isPaused = true
@@ -1101,13 +1101,21 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         }
     }
 
-    /// Scrub previews for the native HLS route, built for the source `loadLive`
-    /// was given (the playlist AVPlayer plays, with its headers).
+    /// Scrub previews for the native HLS route, built lazily on first scrub so channel tunes
+    /// do not allocate and tear down an unused ephemeral URLSession.
+    private var liveScrubThumbnailSource: (url: URL, headers: [String: String])?
     private var liveScrubThumbnails: LiveHLSScrubThumbnails?
 
     public func liveScrubThumbnail(secondsIntoWindow seconds: TimeInterval, maxWidth: Int) async -> CGImage? {
-        guard engine.videoRoute == .remoteBypass, let liveScrubThumbnails else { return nil }
-        return await liveScrubThumbnails.thumbnail(secondsIntoWindow: seconds, maxWidth: maxWidth)
+        guard engine.videoRoute == .remoteBypass, let source = liveScrubThumbnailSource else { return nil }
+        let thumbnails = liveScrubThumbnails ?? {
+            let created = LiveHLSScrubThumbnails(playlistURL: source.url, headers: source.headers) { [weak self] in
+                (self?.engine.currentAVPlayer?.currentItem?.accessLog()?.events.last?.uri).flatMap(URL.init(string:))
+            }
+            liveScrubThumbnails = created
+            return created
+        }()
+        return await thumbnails.thumbnail(secondsIntoWindow: seconds, maxWidth: maxWidth)
     }
 
     public func seekToLiveEdge() async {
@@ -1347,10 +1355,14 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         try Task.checkCancellation()
     }
 
-    private nonisolated static func activateLiveAudioSession() throws {
+    private nonisolated static func activateLiveAudioSession() async throws {
+        try Task.checkCancellation()
         #if os(iOS) || os(tvOS)
-        try AVAudioSession.sharedInstance().setActive(true)
+        try await Task.detached(priority: .userInitiated) {
+            try AVAudioSession.sharedInstance().setActive(true)
+        }.value
         #endif
+        try Task.checkCancellation()
     }
 
     nonisolated static func livePhase(
@@ -1399,6 +1411,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     private func beginLiveAttempt() -> UInt64 {
         liveStartupBuffer = .default
+        liveScrubThumbnails = nil
+        liveScrubThumbnailSource = nil
         liveSourceProbe?.cancel()
         liveSourceProbe = nil
         liveFailureCaptureTask?.cancel()
@@ -1422,6 +1436,8 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
 
     private func endLiveAttempt() {
         liveStartupBuffer = .default
+        liveScrubThumbnails = nil
+        liveScrubThumbnailSource = nil
         liveSourceProbe?.cancel()
         liveSourceProbe = nil
         liveFailureCaptureTask?.cancel()
@@ -1648,6 +1664,7 @@ public final class PlozzigenVideoEngine: VideoEngine, LiveChannelEngine {
         chapters = []
         serverRenditionAudio = nil
         liveScrubThumbnails = nil
+        liveScrubThumbnailSource = nil
         bypassAudioTask?.cancel()
         bypassAudioTask = nil
         bypassAudio = BypassAudio()
