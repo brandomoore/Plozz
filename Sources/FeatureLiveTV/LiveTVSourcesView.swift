@@ -1140,11 +1140,9 @@ struct LiveTVProfileAccountControls: View {
                             catalog: catalog, accountID: source.accountID, sourceID: source.id, canManage: canManage
                         )
                     } label: {
-                        SettingsRowLabel(icon: "slider.horizontal.3", title: "Manage channels", trailing: {
-                            LiveTVSourceChevron()
-                        })
+                        SettingsDisclosureLabel { Label("Manage channels", systemImage: "slider.horizontal.3") }
                     }
-                    .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                    .settingsActionRow()
                     .accessibilityIdentifier("live-tv-manage-channels-\(source.id)")
                 }
                 if let imports {
@@ -1152,19 +1150,12 @@ struct LiveTVProfileAccountControls: View {
                 }
                 if let status = imports?.serverSources.first(where: { $0.id == source.id && $0.source.accountID == source.accountID }) {
                     LiveTVServerSourceSummary(source: source, status: status, showsName: false)
-                    if guidePreparation?.statuses[source.accountID] == nil, status.guidePhase == .loaded {
-                        Text("\(status.programCount) loaded program listings")
-                    }
-                    if let date = guidePreparation?.statuses[source.accountID]?.refreshedAt ?? status.lastGuideRefresh {
-                        Text("Guide refreshed: \(date, format: .dateTime.month().day().hour().minute())")
-                            .font(.caption)
-                    }
                 }
                 if retry != nil {
                     Button { refreshing = true } label: {
-                        SettingsRowLabel(icon: "arrow.clockwise", title: "Refresh channels")
+                        Label("Refresh channels", systemImage: "arrow.clockwise")
                     }
-                    .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                    .settingsActionRow()
                     .disabled(refreshing || imports?.isLoading == true)
                     .accessibilityIdentifier("live-tv-refresh-channels-\(source.id)")
                     if refreshing { ProgressView("Loading channels") }
@@ -1175,10 +1166,10 @@ struct LiveTVProfileAccountControls: View {
                         guard canManage() else { return }
                         guidePreparation.start(accountID: source.accountID, refresh: true)
                     } label: {
-                        SettingsRowLabel(icon: "arrow.clockwise", title: "Refresh guide")
+                        Label("Refresh guide", systemImage: "arrow.clockwise")
                     }
                     .disabled(guidePreparation.statuses[source.accountID]?.phase == .loading)
-                    .buttonStyle(SettingsFocusButtonStyle(size: .contained))
+                    .settingsActionRow()
                     .accessibilityIdentifier("live-tv-refresh-guide-\(source.id)")
                 }
             }
@@ -1399,26 +1390,57 @@ struct LiveTVServerSourceSummary: View {
                 Text("Disabled").font(.caption)
             } else if let status {
                 let preparation = guidePreparation?.statuses[source.accountID]
-                if status.failure != nil {
+                let refreshed = (preparation?.refreshedAt ?? status.lastGuideRefresh).map { date in
+                    Text("Guide refreshed: \(date, format: .dateTime.month().day().hour().minute())")
+                }
+                if preparation == nil {
+                    Label {
+                        SettingsDescribedControl {
+                            if status.failure != nil {
+                                Text("Refresh failed").font(.caption)
+                            } else if let availability = status.availability {
+                                LiveTVServerAvailabilitySummary(availability: availability)
+                            } else if status.phase == .loading {
+                                ProgressView("Loading channels")
+                            } else if status.phase == .loaded {
+                                Text("\(status.channelCount) channels").font(.caption)
+                            } else {
+                                Text("Ready to load").font(.caption)
+                            }
+                        } description: {
+                            if status.guidePhase == .loading {
+                                ProgressView("Loading guide")
+                                    .accessibilityIdentifier("live-tv-source-guide-loading-\(source.id)")
+                            } else if status.guidePhase == .loaded {
+                                Text("\(status.programCount) loaded program listings")
+                            }
+                            refreshed
+                        }
+                    } icon: {
+                        Image(systemName: status.failure == nil ? "tv" : "exclamationmark.triangle")
+                    }
+                } else if status.failure != nil {
                     Label("Refresh failed", systemImage: "exclamationmark.triangle").font(.caption)
-                } else if let availability = status.availability,
-                          !availability.supportsPlayback || preparation == nil {
+                } else if let availability = status.availability, !availability.supportsPlayback {
                     LiveTVServerAvailabilitySummary(availability: availability)
                 } else if status.phase == .loading {
                     ProgressView("Loading channels")
-                } else if preparation == nil, status.phase == .loaded {
-                    Text("\(status.channelCount) channels").font(.caption)
-                } else if preparation == nil {
-                    Text("Ready to load").font(.caption)
                 }
                 if let preparation, preparation.phase == .loaded, let total = preparation.channelCount {
-                    LabeledContent("Guide ready") {
-                        if total == 1 { Text("1 channel") }
-                        else { Text("\(total) channels") }
-                    }
-                    if preparation.channelsWithListings < total {
-                        Text("\(preparation.channelsWithListings) of \(total) channels have current listings")
-                            .settingsRowSecondary()
+                    Label {
+                        SettingsDescribedControl {
+                            LabeledContent("Guide ready") {
+                                if total == 1 { Text("1 channel") }
+                                else { Text("\(total) channels") }
+                            }
+                        } description: {
+                            if preparation.channelsWithListings < total {
+                                Text("\(preparation.channelsWithListings) of \(total) channels have current listings")
+                            }
+                            refreshed
+                        }
+                    } icon: {
+                        Image(systemName: "checkmark.circle")
                     }
                 } else if let preparation {
                     #if os(tvOS)
@@ -1428,9 +1450,7 @@ struct LiveTVServerSourceSummary: View {
                         LiveTVGuidePreparationStatus(status: preparation)
                     }
                     #endif
-                } else if status.guidePhase == .loading {
-                    ProgressView("Loading guide")
-                        .accessibilityIdentifier("live-tv-source-guide-loading-\(source.id)")
+                    refreshed?.settingsHelperText()
                 }
             }
         }

@@ -304,8 +304,9 @@ and video pickers do not repeat it.
 Follow [Settings copy and placement](../../docs/swiftui-guidelines.md#settings-copy-and-placement)
 when choosing between a plain control, a group footer, and `SettingsDescribedControl`.
 The shared components own helper typography, spacing, and separators.
-Seerr appears in the active profile's category list, not Manage Plozz. It edits only
-that profile's connections; the existing Kids-profile restrictions still apply.
+Seerr appears with its monochrome logo in the active profile's category list
+on TV and mobile, not under Manage Plozz. It edits only that profile's
+connections; the existing Kids-profile restrictions still apply.
 Downloads follows Libraries in the mobile profile card and uses that profile's
 existing download model. It remains hidden for Kids profiles and unavailable on tvOS.
 On mobile, the active profile's avatar and name form the first row of this same

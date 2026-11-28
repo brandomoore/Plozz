@@ -177,7 +177,7 @@ final class SettingsCommunityPresentationTests: XCTestCase {
                 compatibleWith: UITraitCollection(preferredContentSizeCategory:
                     textSize == .accessibility3 ? .accessibilityExtraLarge : .large)
             )
-            let titles = try ["Playback", "Subtitles", "Live TV", "Libraries", "Appearance",
+            let titles = try ["Playback", "Subtitles", "Live TV", "Sources", "Downloads", "Appearance",
                               "Screens", "Trackers", "Seerr", "Language"].enumerated().map { index, title in
                 // Recognize each row at native resolution rather than downsampling the tall category list.
                 let rowTop = index * 180

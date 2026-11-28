@@ -591,7 +591,7 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
             NavigationStack {
                 LiveTVSettingsPage(title: "Source details", sourceName: source.name) {
                     LiveTVProfileAccountControls(
-                        model: model, source: source, imports: imports, catalog: nil, retry: nil, canManage: { true }
+                        model: model, source: source, imports: imports, catalog: nil, retry: { _ in }, canManage: { true }
                     )
                 }
             }
@@ -607,7 +607,7 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
             window.rootViewController = nil
             previous?.makeKeyAndVisible()
         }
-        func visibleText() async throws -> String {
+        func visibleLines() async throws -> [VNRecognizedText] {
             try await settle(window)
             let image = snapshot(window)
             let attachment = XCTAttachment(image: image)
@@ -618,13 +618,21 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
             request.recognitionLevel = .accurate
             request.recognitionLanguages = ["en-US"]
             try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
-            return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            return (request.results ?? []).compactMap { $0.topCandidates(1).first }
         }
-        let initial = try await visibleText()
+        func leadingEdge(_ text: String, in lines: [VNRecognizedText]) throws -> CGFloat {
+            let line = try XCTUnwrap(lines.first { $0.string.contains(text) }, "Missing \(text)")
+            let range = try XCTUnwrap(line.string.range(of: text))
+            return try XCTUnwrap(line.boundingBox(for: range)).boundingBox.minX * window.bounds.width
+        }
+        let initialLines = try await visibleLines()
+        let initial = initialLines.map(\.string).joined(separator: " ")
         XCTAssertTrue(initial.contains("Refresh guide"), initial)
+        XCTAssertEqual(try leadingEdge("Ready to load", in: initialLines),
+                       try leadingEdge("Show in guide", in: initialLines), accuracy: 3)
         preparation.start(accountID: source.accountID, refresh: true)
         await fulfillment(of: [started], timeout: 3)
-        let loading = try await visibleText()
+        let loading = try await visibleLines().map(\.string).joined(separator: " ")
         XCTAssertTrue(loading.contains("Refreshing guide"), loading)
         XCTAssertEqual(loading.components(separatedBy: "Refreshing guide").count - 1, 1, loading)
         XCTAssertFalse(loading.contains("0 loaded program listings"), loading)
@@ -634,10 +642,15 @@ final class LiveTVSourcesPresentationTests: XCTestCase {
         await preparation.waitForCompletion(accountID: source.accountID)
         let result = try XCTUnwrap(preparation.statuses[source.accountID])
         preparation.dismissNotification(accountID: source.accountID, requestID: result.requestID)
-        let completed = try await visibleText()
+        let lines = try await visibleLines()
+        let completed = lines.map(\.string).joined(separator: " ")
         XCTAssertTrue(completed.contains("Guide ready"), completed)
         XCTAssertEqual(completed.components(separatedBy: "1 channel").count - 1, 1, completed)
         XCTAssertFalse(completed.contains("current listings"), completed)
+        let titleEdge = try leadingEdge("Show in guide", in: lines)
+        for label in ["Guide ready", "Guide refreshed:", "Refresh channels", "Refresh guide"] {
+            XCTAssertEqual(try leadingEdge(label, in: lines), titleEdge, accuracy: 3, label)
+        }
     }
 
     func testSourceOverflowUsesMeasuredRowsAndDirectionalSharedFade() async throws {

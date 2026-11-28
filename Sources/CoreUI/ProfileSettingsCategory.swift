@@ -18,6 +18,8 @@ public enum ProfileSettingsCategory: String, CaseIterable, Identifiable, Sendabl
 
     public var id: Self { self }
 
+    public var assetIcon: String? { self == .seerr ? "SeerrIcon" : nil }
+
     public var localizedTitle: LocalizedStringResource? {
         switch self {
         case .playback: "Playback"

@@ -569,7 +569,7 @@ public struct SettingsView: View {
                     AppLanguagePicker(model: appLanguage, isCategoryRow: true)
                 case .seerr:
                     if !activeProfile.isKids {
-                        SettingsSectionButton(title: Text(verbatim: "Seerr"), icon: category.symbol, assetIcon: "SeerrIcon",
+                        SettingsSectionButton(title: Text(verbatim: "Seerr"), icon: category.symbol, assetIcon: category.assetIcon,
                                               value: seerrRowValue, route: .seerr)
                     }
                 default:

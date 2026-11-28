@@ -309,7 +309,13 @@ struct PlozziOSSettingsCategoryLabel: View {
                 }
             }
         } icon: {
-            Image(systemName: isSealed ? "lock.fill" : category.symbol)
+            if isSealed {
+                Image(systemName: "lock.fill")
+            } else if let asset = category.assetIcon {
+                SettingsBrandIcon(name: asset)
+            } else {
+                Image(systemName: category.symbol)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
@@ -874,9 +880,20 @@ struct PlozziOSSignOutSettingsSection: View {
     }
 }
 
-struct PlozziOSCommunitySettingsSection: View {
+private struct SettingsBrandIcon: View {
+    let name: String
     @ScaledMetric(relativeTo: .body) private var iconSize = 22
 
+    var body: some View {
+        Image(decorative: name)
+            .renderingMode(.template)
+            .resizable()
+            .scaledToFit()
+            .frame(width: iconSize, height: iconSize)
+    }
+}
+
+struct PlozziOSCommunitySettingsSection: View {
     var body: some View {
         SettingsSectionGroup("Community") {
             communityLink(
@@ -898,12 +915,7 @@ struct PlozziOSCommunitySettingsSection: View {
                 Label {
                     title
                 } icon: {
-                    Image(icon)
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: iconSize, height: iconSize)
-                        .accessibilityHidden(true)
+                    SettingsBrandIcon(name: icon)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "arrow.up.forward")
