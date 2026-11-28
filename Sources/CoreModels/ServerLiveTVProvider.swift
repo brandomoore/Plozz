@@ -30,6 +30,10 @@ public protocol ServerLiveTVProviding: Sendable {
     /// when there is nothing to keep up to date.
     func updateSavedLiveTVGuide() async throws -> Date?
     func openLiveTVChannel(id: String) async throws -> any LiveTVStreamLease
+    /// Optional non-blocking warmup called when Live TV preloads or becomes active so providers
+    /// can probe backup portals, pre-authenticate, and warm their pooled playback HTTP connection
+    /// before the first tune. Must never open a media stream or consume a provider stream slot.
+    func warmLiveTVConnection() async
 }
 
 public extension ServerLiveTVProviding {
@@ -42,6 +46,8 @@ public extension ServerLiveTVProviding {
     func refreshLiveTVAvailability() async throws -> ServerLiveTVAvailability {
         try await liveTVAvailability()
     }
+
+    func warmLiveTVConnection() async {}
 }
 
 /// Identifies one refresh across channel/window batches without sharing failures

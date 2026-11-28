@@ -204,6 +204,8 @@ extension SettingsSearchCatalog {
               keywords: "live television IPTV source M3U guide EPG XMLTV"),
         .init("live-source-enabled", page: .liveTVSources, title: "Use this source",
               keywords: "live television IPTV source M3U guide EPG XMLTV"),
+        .init("live-source-alternate-addresses", page: .liveTVSources, title: "Backup server addresses",
+              keywords: "live television IPTV Xtream DNS failover backup server URL mirror portal"),
         .init("guide-lookback", page: .liveTVSources, title: "Keep previous days",
               keywords: "live television IPTV source M3U guide EPG XMLTV"),
         .init("guide-lookahead", page: .liveTVSources, title: "Look ahead",

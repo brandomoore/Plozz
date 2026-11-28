@@ -109,6 +109,7 @@ struct PlozziOSSettingsView: View {
         )
         .offlineStatusOverlay(appModel: appModel, palette: palette)
         .environment(appModel.guidePreparation)
+        .environment(appModel.liveTVAlternateAddresses)
         .environment(\.themePalette, palette)
         .environment(\.colorScheme, palette.isLight ? .light : .dark)
         .tint(palette.primaryText)

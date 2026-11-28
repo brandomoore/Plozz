@@ -16,14 +16,19 @@ public struct IPTVCredential: Codable, Sendable, Equatable, CustomStringConverti
     private let additionalGuideURLs: [URL]?
     private let configuredGuideHeaders: [String: String]?
     private let discoversPlaylistGuides: Bool?
+    /// Optional backup/mirror portal URLs for Xtream accounts; absent in older credentials.
+    private var configuredAlternateAddresses: [URL]?
     public let identity: UUID
     public let catalogKey: Data
+
+    public static let maximumAlternateAddresses = 15
 
     public init(
         mode: Mode, address: URL, username: String = "", password: String = "",
         headers: [String: String] = [:], guideURL: URL? = nil,
         additionalGuideURLs: [URL] = [], guideHeaders: [String: String] = [:],
         discoversPlaylistGuides: Bool = true,
+        alternateAddresses: [URL] = [],
         identity: UUID = UUID()
     ) throws {
         guard let parts = URLComponents(url: address, resolvingAgainstBaseURL: false),
@@ -33,7 +38,8 @@ public struct IPTVCredential: Codable, Sendable, Equatable, CustomStringConverti
               additionalGuideURLs.allSatisfy(LiveTVPlaylistSource.isSupportedURL),
               additionalGuideURLs.count < 32,
               guideURL != nil || guideHeaders.isEmpty,
-              mode != .xtream || (!username.isEmpty && !password.isEmpty) else {
+              mode != .xtream || (!username.isEmpty && !password.isEmpty),
+              mode == .xtream || alternateAddresses.isEmpty else {
             throw AppError.invalidResponse
         }
         var clean = parts
@@ -57,6 +63,7 @@ public struct IPTVCredential: Codable, Sendable, Equatable, CustomStringConverti
             clean.password = nil
         }
         guard let url = clean.url else { throw AppError.invalidResponse }
+        let normalizedAlternates = try Self.normalizeAlternateAddresses(alternateAddresses, primary: url)
         try Self.validate(headers: resolvedHeaders)
         try Self.validate(headers: guideHeaders)
         self.mode = mode
@@ -68,6 +75,7 @@ public struct IPTVCredential: Codable, Sendable, Equatable, CustomStringConverti
         self.additionalGuideURLs = additionalGuideURLs
         configuredGuideHeaders = guideHeaders
         self.discoversPlaylistGuides = discoversPlaylistGuides
+        configuredAlternateAddresses = normalizedAlternates.isEmpty ? nil : normalizedAlternates
         self.identity = identity
         catalogKey = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
     }
@@ -89,6 +97,7 @@ public struct IPTVCredential: Codable, Sendable, Equatable, CustomStringConverti
               result.guideURL.map(LiveTVPlaylistSource.isSupportedURL) != false,
               (result.additionalGuideURLs ?? []).allSatisfy(LiveTVPlaylistSource.isSupportedURL),
               (result.additionalGuideURLs ?? []).count < 32,
+              areValidAlternateAddresses(result.configuredAlternateAddresses ?? [], primary: result.address, mode: result.mode),
               result.mode != .xtream || (!result.username.isEmpty && !result.password.isEmpty) else {
             throw AppError.unauthorized
         }
@@ -113,7 +122,81 @@ public struct IPTVCredential: Codable, Sendable, Equatable, CustomStringConverti
     }
 
     public func headers(for url: URL) -> [String: String] {
-        Self.sameOrigin(address, url) ? headers : [:]
+        portalAddresses.contains(where: { Self.sameOrigin($0, url) }) ? headers : [:]
+    }
+
+    /// Backup/mirror portal URLs configured for an Xtream account.
+    public var alternateAddresses: [URL] { configuredAlternateAddresses ?? [] }
+
+    /// Primary portal address followed by any configured backup portal addresses.
+    public var portalAddresses: [URL] {
+        mode == .xtream ? [address] + alternateAddresses : [address]
+    }
+
+    /// The same credential, identity and catalogue key included, with another set of Xtream backup portal addresses.
+    public func replacingAlternateAddresses(_ urls: [URL]) throws -> IPTVCredential {
+        guard mode == .xtream else { throw AppError.invalidResponse }
+        let normalized = try Self.normalizeAlternateAddresses(urls, primary: address)
+        var copy = self
+        copy.configuredAlternateAddresses = normalized.isEmpty ? nil : normalized
+        return copy
+    }
+
+    /// Normalizes an Xtream portal address (scheme/host required, strips trailing slashes, `.php` file, and query).
+    public static func normalizedXtreamAddress(_ url: URL) throws -> URL {
+        guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              ["http", "https"].contains(parts.scheme?.lowercased() ?? ""),
+              parts.host?.isEmpty == false, parts.fragment == nil,
+              parts.user == nil, parts.password == nil else {
+            throw AppError.invalidResponse
+        }
+        var clean = parts
+        if clean.path.lowercased().hasSuffix(".php") {
+            clean.path = (clean.path as NSString).deletingLastPathComponent
+        }
+        while clean.path.hasSuffix("/") { clean.path.removeLast() }
+        clean.query = nil
+        guard let normalized = clean.url, LiveTVPlaylistSource.isSupportedURL(normalized) else {
+            throw AppError.invalidResponse
+        }
+        return normalized
+    }
+
+    private static func normalizeAlternateAddresses(_ urls: [URL], primary: URL) throws -> [URL] {
+        guard urls.count <= maximumAlternateAddresses else { throw AppError.invalidResponse }
+        var seen = Set<String>([canonicalPortalKey(primary)])
+        var result: [URL] = []
+        for raw in urls {
+            let normalized = try normalizedXtreamAddress(raw)
+            let key = canonicalPortalKey(normalized)
+            if seen.insert(key).inserted {
+                result.append(normalized)
+            }
+        }
+        return result
+    }
+
+    private static func areValidAlternateAddresses(_ urls: [URL], primary: URL, mode: Mode) -> Bool {
+        guard mode == .xtream || urls.isEmpty else { return false }
+        guard urls.count <= maximumAlternateAddresses else { return false }
+        var seen = Set<String>([canonicalPortalKey(primary)])
+        for url in urls {
+            guard LiveTVPlaylistSource.isSupportedURL(url),
+                  let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                  parts.user == nil, parts.password == nil else { return false }
+            let key = canonicalPortalKey(url)
+            guard seen.insert(key).inserted else { return false }
+        }
+        return true
+    }
+
+    private static func canonicalPortalKey(_ url: URL) -> String {
+        let scheme = url.scheme?.lowercased() ?? ""
+        let host = url.host?.lowercased() ?? ""
+        let port = url.port ?? (scheme == "https" ? 443 : 80)
+        var path = url.path
+        while path.hasSuffix("/") { path.removeLast() }
+        return "\(scheme)://\(host):\(port)\(path)"
     }
 
     public var explicitGuideURLs: [URL] { (guideURL.map { [$0] } ?? []) + (additionalGuideURLs ?? []) }

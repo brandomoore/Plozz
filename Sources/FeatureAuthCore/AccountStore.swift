@@ -33,6 +33,8 @@ public protocol AccountPersisting: Sendable {
     func updateMediaShareLibrary(from descriptor: SyncedAccountDescriptor) throws -> Bool
     func updateServerAddresses(expected: Account, alternatives: [URL]) throws
     func updateServerMetadata(expected: Account, server: MediaServer) throws
+    /// Saves the user's Xtream backup/failover server addresses in the IPTV account's stored credential.
+    func replaceIPTVAlternateAddresses(expected: Account, addresses: [URL]) throws
 }
 
 public struct AccountRegistration: Sendable {
@@ -46,6 +48,10 @@ public extension AccountPersisting {
     }
 
     func updateServerMetadata(expected: Account, server: MediaServer) throws {
+        throw AccountStoreError.metadataUpdatesUnavailable
+    }
+
+    func replaceIPTVAlternateAddresses(expected: Account, addresses: [URL]) throws {
         throw AccountStoreError.metadataUpdatesUnavailable
     }
 
@@ -522,6 +528,21 @@ public final class AccountStore: AccountPersisting, RotatingCredentialStoring, @
         var account = Account(id: expected.id, from: session, addedAt: expected.addedAt)
         account.server.alternateConnectionURLs = expected.server.alternateConnectionURLs
         _ = try addManagedAccountLocked(account, token: session.accessToken, activate: false)
+    }
+
+    public func replaceIPTVAlternateAddresses(
+        expected: Account, addresses: [URL]
+    ) throws {
+        guard expected.server.provider == .iptv else { throw AccountStoreError.metadataUpdatesUnavailable }
+        Self.processMutationLock.lock()
+        defer { Self.processMutationLock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
+        defer { invalidateCredentialCacheAfterMutationLocked() }
+        guard try persistedAccountsLockedThrowing().first(where: { $0.id == expected.id }) == expected,
+              let token = try secureStore.readString(for: tokenKey(expected.id)) else { throw AppError.conflict }
+        let updated = try IPTVCredential.decode(token).replacingAlternateAddresses(addresses)
+        _ = try addManagedAccountLocked(expected, token: try updated.encoded(), activate: false)
     }
 
     public func updateServerAddresses(expected: Account, alternatives: [URL]) throws {

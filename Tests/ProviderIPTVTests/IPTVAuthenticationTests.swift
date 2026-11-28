@@ -455,7 +455,7 @@ final class IPTVAuthenticationTests: XCTestCase {
         let channels = try await first.liveChannels()
         XCTAssertEqual(channels.map(\.id), ["live:10"])
         let restored = try IPTVClient(credential: credential, directory: root, configuration: IPTVFixture.configuration())
-        let (url, _, _) = try await restored.delivery("live:10")
+        let url = try await restored.delivery("live:10").url
         let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
         XCTAssertEqual(components.percentEncodedPath, "/prefix/live/viewer%40example.test/fixture%2Fp%20a%26%3F%2B%23/10.m3u8")
         XCTAssertNil(components.query)
