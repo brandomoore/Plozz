@@ -84,6 +84,8 @@ account's library selection. **Manage channels** shows only channels belonging
 to that enrollment and edits this profile's visibility preferences. The disclosure
 and refresh actions use the shared Settings rows. The last refresh time sits
 beneath the guide status, on the same text keyline rather than in a separate row.
+On Apple TV, the status row uses the same content insets as the neighboring
+controls, including the trailing channel count.
 Guide lists use a profile's source label when set, otherwise the saved Live TV name. An
 account no longer available to the profile is not listed. Standalone URL and
 file playlists keep their own editors and parental approval controls. Eligible

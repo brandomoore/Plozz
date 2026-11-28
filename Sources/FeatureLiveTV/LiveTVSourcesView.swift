@@ -1150,6 +1150,7 @@ struct LiveTVProfileAccountControls: View {
                 }
                 if let status = imports?.serverSources.first(where: { $0.id == source.id && $0.source.accountID == source.accountID }) {
                     LiveTVServerSourceSummary(source: source, status: status, showsName: false)
+                        .settingsFormRowLayout()
                 }
                 if retry != nil {
                     Button { refreshing = true } label: {
